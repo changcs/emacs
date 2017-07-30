@@ -928,7 +928,7 @@ get_server_config (const char *config_file, struct sockaddr_in *server,
 	  char *path = xmalloc (strlen (home) + strlen (config_file)
 				+ EXTRA_SPACE);
 	  char *z = stpcpy (path, home);
-	  z = stpcpy (z, "/.emacs.d/server/");
+	  z = stpcpy (z, "/.emacs2.d/server/");
 	  strcpy (z, config_file);
           config = fopen (path, "rb");
 	  free (path);
@@ -939,7 +939,7 @@ get_server_config (const char *config_file, struct sockaddr_in *server,
 	  char *path = xmalloc (strlen (home) + strlen (config_file)
 				+ EXTRA_SPACE);
 	  char *z = stpcpy (path, home);
-	  z = stpcpy (z, "/.emacs.d/server/");
+	  z = stpcpy (z, "/.emacs2.d/server/");
 	  strcpy (z, config_file);
           config = fopen (path, "rb");
 	  free (path);

@@ -2459,7 +2459,7 @@ the bug number, and browsing the URL must return mbox output."
       (with-temp-file tmpfile
 	(mm-disable-multibyte)
 	(dolist (id ids)
-	  (let ((file (format "~/.emacs.d/debbugs-cache/%s" id)))
+	  (let ((file (format "~/.emacs2.d/debbugs-cache/%s" id)))
 	    (if (and (not gnus-plugged)
 		     (file-exists-p file))
 		(insert-file-contents file)
