@@ -12316,7 +12316,7 @@ x_term_init (Lisp_Object display_name, char *xrm_option, char *resource_name)
 #if ! GTK_CHECK_VERSION (2, 90, 0)
         /* Load our own gtkrc if it exists.  */
         {
-          const char *file = "~/.emacs.d/gtkrc";
+          const char *file = "~/.emacs2.d/gtkrc";
           Lisp_Object s, abs_file;
 
           s = build_string (file);

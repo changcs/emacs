@@ -66,7 +66,7 @@ See `erc-encoding-coding-alist'."
 	 user-emacs-directory)
 	((boundp 'user-init-directory)
 	 user-init-directory)
-	(t "~/.emacs.d/"))
+	(t "~/.emacs2.d/"))
   "Directory beneath which additional per-user Emacs-specific files
 are placed.
 Note that this should end with a directory separator.")

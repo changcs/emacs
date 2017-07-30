@@ -498,7 +498,7 @@ for preventing Firefox from stealing the keyboard focus."
   :group 'js)
 
 (defcustom js-js-tmpdir
-  "~/.emacs.d/js/js"
+  "~/.emacs2.d/js/js"
   "Temporary directory used by `js-mode' to communicate with Mozilla.
 This directory must be readable and writable by both Mozilla and Emacs."
   :type 'directory
