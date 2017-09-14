@@ -16,7 +16,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
+along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 
 /* Put the code here rather than in configure.ac using AH_BOTTOM.
    This way, the code does not get processed by autoheader.  For
@@ -57,7 +57,9 @@ typedef bool bool_bf;
 #endif
 
 /* Simulate __has_attribute on compilers that lack it.  It is used only
-   on arguments like alloc_size that are handled in this simulation.  */
+   on arguments like alloc_size that are handled in this simulation.
+   __has_attribute should be used only in #if expressions, as Oracle
+   Studio 12.5's __has_attribute does not work in plain code.  */
 #ifndef __has_attribute
 # define __has_attribute(a) __has_attribute_##a
 # define __has_attribute_alloc_size GNUC_PREREQ (4, 3, 0)
@@ -263,7 +265,7 @@ extern int emacs_setenv_TZ (char const *);
 #define ATTRIBUTE_CONST _GL_ATTRIBUTE_CONST
 #define ATTRIBUTE_UNUSED _GL_UNUSED
 
-#if GNUC_PREREQ (3, 3, 0)
+#if GNUC_PREREQ (3, 3, 0) && !defined __ICC
 # define ATTRIBUTE_MAY_ALIAS __attribute__ ((__may_alias__))
 #else
 # define ATTRIBUTE_MAY_ALIAS

@@ -16,7 +16,7 @@
 
    You should have received a copy of the GNU General Public
    License along with gnulib; if not, see
-   <http://www.gnu.org/licenses/>.  */
+   <https://www.gnu.org/licenses/>.  */
 
 #ifndef _GETOPT_PFX_CORE_H
 #define _GETOPT_PFX_CORE_H 1
@@ -47,6 +47,11 @@
 # define opterr __GETOPT_ID (opterr)
 # define optind __GETOPT_ID (optind)
 # define optopt __GETOPT_ID (optopt)
+
+/* The system's getopt.h may have already included getopt-core.h to
+   declare the unprefixed identifiers.  Undef _GETOPT_CORE_H so that
+   getopt-core.h declares them with prefixes.  */
+# undef _GETOPT_CORE_H
 #endif
 
 #include <getopt-core.h>

@@ -15,7 +15,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
+along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 
 
 #include <config.h>
@@ -228,8 +228,6 @@ for example, (type-of 1) returns `integer'.  */)
 	  return Qmarker;
 	case Lisp_Misc_Overlay:
 	  return Qoverlay;
-	case Lisp_Misc_Float:
-          return Qfloat;
         case Lisp_Misc_Finalizer:
           return Qfinalizer;
 #ifdef HAVE_MODULES
@@ -700,12 +698,10 @@ global value outside of any lexical scope.  */)
   return (EQ (valcontents, Qunbound) ? Qnil : Qt);
 }
 
-/* FIXME: It has been previously suggested to make this function an
-   alias for symbol-function, but upon discussion at Bug#23957,
-   there is a risk breaking backward compatibility, as some users of
-   fboundp may expect `t' in particular, rather than any true
-   value.  An alias is still welcome so long as the compatibility
-   issues are addressed.  */
+/* It has been previously suggested to make this function an alias for
+   symbol-function, but upon discussion at Bug#23957, there is a risk
+   breaking backward compatibility, as some users of fboundp may
+   expect `t' in particular, rather than any true value.  */
 DEFUN ("fboundp", Ffboundp, Sfboundp, 1, 1, 0,
        doc: /* Return t if SYMBOL's function definition is not void.  */)
   (register Lisp_Object symbol)
@@ -1827,7 +1823,7 @@ The function `default-value' gets the default value and `set-default' sets it.  
   struct Lisp_Symbol *sym;
   struct Lisp_Buffer_Local_Value *blv = NULL;
   union Lisp_Val_Fwd valcontents;
-  bool forwarded;
+  bool forwarded UNINIT;
 
   CHECK_SYMBOL (variable);
   sym = XSYMBOL (variable);
@@ -2611,7 +2607,7 @@ uintmax_t
 cons_to_unsigned (Lisp_Object c, uintmax_t max)
 {
   bool valid = false;
-  uintmax_t val;
+  uintmax_t val UNINIT;
   if (INTEGERP (c))
     {
       valid = XINT (c) >= 0;
@@ -2665,7 +2661,7 @@ intmax_t
 cons_to_signed (Lisp_Object c, intmax_t min, intmax_t max)
 {
   bool valid = false;
-  intmax_t val;
+  intmax_t val UNINIT;
   if (INTEGERP (c))
     {
       val = XINT (c);

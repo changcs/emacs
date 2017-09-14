@@ -16,7 +16,7 @@
 
    You should have received a copy of the GNU General Public
    License along with gnulib; if not, see
-   <http://www.gnu.org/licenses/>.  */
+   <https://www.gnu.org/licenses/>.  */
 
 #ifndef _GETOPT_PFX_EXT_H
 #define _GETOPT_PFX_EXT_H 1
@@ -45,6 +45,11 @@
 # define getopt_long_only __GETOPT_ID (getopt_long_only)
 # define option __GETOPT_ID (option)
 # define _getopt_internal __GETOPT_ID (getopt_internal)
+
+/* The system's getopt.h may have already included getopt-ext.h to
+   declare the unprefixed identifiers.  Undef _GETOPT_EXT_H so that
+   getopt-ext.h declares them with prefixes.  */
+# undef _GETOPT_EXT_H
 #endif
 
 /* Standalone applications get correct prototypes for getopt_long and

@@ -19,7 +19,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -193,13 +193,12 @@ Unlike `reverse', this keeps the property-value pairs intact."
 
 (defsubst json-peek ()
   "Return the character at point."
-  (let ((char (char-after (point))))
-    (or char :json-eof)))
+  (following-char))
 
 (defsubst json-pop ()
   "Advance past the character at point, returning it."
   (let ((char (json-peek)))
-    (if (eq char :json-eof)
+    (if (zerop char)
         (signal 'json-end-of-file nil)
       (json-advance)
       char)))
@@ -381,7 +380,7 @@ representation will be parsed correctly."
      (special (cdr special))
      ((not (eq char ?u)) char)
      ;; Special-case UTF-16 surrogate pairs,
-     ;; cf. https://tools.ietf.org/html/rfc7159#section-7.  Note that
+     ;; cf. <https://tools.ietf.org/html/rfc7159#section-7>.  Note that
      ;; this clause overlaps with the next one and therefore has to
      ;; come first.
      ((looking-at
@@ -407,6 +406,8 @@ representation will be parsed correctly."
   (let ((characters '())
         (char (json-peek)))
     (while (not (= char ?\"))
+      (when (< char 32)
+        (signal 'json-string-format (list (prin1-char char))))
       (push (if (= char ?\\)
                 (json-read-escaped-char)
               (json-pop))
@@ -415,7 +416,7 @@ representation will be parsed correctly."
     ;; Skip over the '"'
     (json-advance)
     (if characters
-        (apply 'string (nreverse characters))
+        (concat (nreverse characters))
       "")))
 
 ;; String encoding
@@ -639,7 +640,9 @@ become JSON objects."
           (signal 'json-error (list 'bleah)))))
     ;; Skip over the "]"
     (json-advance)
-    (apply json-array-type (nreverse elements))))
+    (pcase json-array-type
+      (`vector (nreverse (vconcat elements)))
+      (`list (nreverse elements)))))
 
 ;; Array encoding
 
@@ -666,31 +669,31 @@ become JSON objects."
 
 ;;; JSON reader.
 
-(defvar json-readtable
+(defmacro json-readtable-dispatch (char)
+  "Dispatch reader function for CHAR."
+  (declare (debug (symbolp)))
   (let ((table
          '((?t json-read-keyword "true")
            (?f json-read-keyword "false")
            (?n json-read-keyword "null")
            (?{ json-read-object)
            (?\[ json-read-array)
-           (?\" json-read-string))))
-    (mapc (lambda (char)
-            (push (list char 'json-read-number) table))
-          '(?- ?+ ?. ?0 ?1 ?2 ?3 ?4 ?5 ?6 ?7 ?8 ?9))
-    table)
-  "Readtable for JSON reader.")
+           (?\" json-read-string)))
+        res)
+    (dolist (c '(?- ?+ ?. ?0 ?1 ?2 ?3 ?4 ?5 ?6 ?7 ?8 ?9))
+      (push (list c 'json-read-number) table))
+    (pcase-dolist (`(,c . ,rest) table)
+      (push `((eq ,char ,c) (,@rest)) res))
+    `(cond ,@res (t (signal 'json-readtable-error ,char)))))
 
 (defun json-read ()
   "Parse and return the JSON object following point.
 Advances point just past JSON object."
   (json-skip-whitespace)
   (let ((char (json-peek)))
-    (if (not (eq char :json-eof))
-        (let ((record (cdr (assq char json-readtable))))
-          (if (functionp (car record))
-              (apply (car record) (cdr record))
-            (signal 'json-readtable-error record)))
-      (signal 'json-end-of-file nil))))
+    (if (zerop char)
+        (signal 'json-end-of-file nil)
+      (json-readtable-dispatch char))))
 
 ;; Syntactic sugar for the reader
 

@@ -15,7 +15,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -917,30 +917,36 @@ IGNORES is a list of glob patterns."
   (grep-compute-defaults)
   (defvar grep-find-template)
   (defvar grep-highlight-matches)
-  (let* ((grep-find-template (replace-regexp-in-string "<C>" "<C> -E"
-                                                       grep-find-template t t))
-         (grep-highlight-matches nil)
-         ;; TODO: Sanitize the regexp to remove Emacs-specific terms,
-         ;; so that Grep can search for the "relaxed" version.  Can we
-         ;; do that reliably enough, without creating false negatives?
-         (command (xref--rgrep-command (xref--regexp-to-extended regexp)
-                                       files
-                                       (expand-file-name dir)
-                                       ignores))
-         (buf (get-buffer-create " *xref-grep*"))
-         (grep-re (caar grep-regexp-alist))
-         hits)
+  (pcase-let*
+      ((grep-find-template (replace-regexp-in-string "<C>" "<C> -E"
+                                                     grep-find-template t t))
+       (grep-highlight-matches nil)
+       ;; TODO: Sanitize the regexp to remove Emacs-specific terms,
+       ;; so that Grep can search for the "relaxed" version.  Can we
+       ;; do that reliably enough, without creating false negatives?
+       (command (xref--rgrep-command (xref--regexp-to-extended regexp)
+                                     files
+                                     (expand-file-name dir)
+                                     ignores))
+       (buf (get-buffer-create " *xref-grep*"))
+       (`(,grep-re ,file-group ,line-group . ,_) (car grep-regexp-alist))
+       (status nil)
+       (hits nil))
     (with-current-buffer buf
       (erase-buffer)
-      (call-process-shell-command command nil t)
-      ;; FIXME: What to do when the call fails?
-      ;; "find: ‘xyzgrep’: No such file or directory\n"
-      ;; The problem is, find-grep can exit with a nonzero code even
-      ;; when there are some matches in the output.
+      (setq status
+            (call-process-shell-command command nil t))
       (goto-char (point-min))
+      ;; Can't use the exit status: Grep exits with 1 to mean "no
+      ;; matches found".  Find exits with 1 if any of the invocations
+      ;; exit with non-zero. "No matches" and "Grep program not found"
+      ;; are all the same to it.
+      (when (and (/= (point-min) (point-max))
+                 (not (looking-at grep-re)))
+        (user-error "Search failed with status %d: %s" status (buffer-string)))
       (while (re-search-forward grep-re nil t)
-        (push (list (string-to-number (match-string 2))
-                    (match-string 1)
+        (push (list (string-to-number (match-string line-group))
+                    (match-string file-group)
                     (buffer-substring-no-properties (point) (line-end-position)))
               hits)))
     (xref--convert-hits (nreverse hits) regexp)))

@@ -15,7 +15,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
+along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 
 #include <config.h>
 
@@ -452,14 +452,6 @@ exec_byte_code (Lisp_Object bytestr, Lisp_Object vector, Lisp_Object maxdepth,
 	 the table clearer.  */
 #define LABEL(OP) [OP] = &&insn_ ## OP
 
-#if GNUC_PREREQ (4, 6, 0)
-# pragma GCC diagnostic push
-# pragma GCC diagnostic ignored "-Woverride-init"
-#elif defined __clang__
-# pragma GCC diagnostic push
-# pragma GCC diagnostic ignored "-Winitializer-overrides"
-#endif
-
       /* This is the dispatch table for the threaded interpreter.  */
       static const void *const targets[256] =
 	{
@@ -470,10 +462,6 @@ exec_byte_code (Lisp_Object bytestr, Lisp_Object vector, Lisp_Object maxdepth,
 	  BYTE_CODES
 #undef DEFINE
 	};
-
-#if GNUC_PREREQ (4, 6, 0) || defined __clang__
-# pragma GCC diagnostic pop
-#endif
 
 #endif
 

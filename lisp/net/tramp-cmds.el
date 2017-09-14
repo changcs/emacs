@@ -19,7 +19,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -85,7 +85,9 @@ When called interactively, a Tramp connection has to be selected."
 	      (tramp-make-tramp-file-name
 	       (tramp-file-name-method x)
 	       (tramp-file-name-user x)
+	       (tramp-file-name-domain x)
 	       (tramp-file-name-host x)
+	       (tramp-file-name-port x)
 	       (tramp-file-name-localname x)))
 	    (tramp-list-connections)))
 	  name)

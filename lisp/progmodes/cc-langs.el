@@ -26,7 +26,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -115,7 +115,7 @@
 
 ;; For Emacs < 22.2.
 (eval-and-compile
-  (unless (fboundp 'declare-function) (defmacro declare-function (&rest r))))
+  (unless (fboundp 'declare-function) (defmacro declare-function (&rest _))))
 
 (eval-when-compile
   (let ((load-path
@@ -130,7 +130,7 @@
 
 
 ;; This file is not always loaded.  See note above.
-(cc-external-require (if (eq c--mapcan-status 'cl-mapcan) 'cl-lib 'cl))
+(cc-external-require (if (eq c--cl-library 'cl-lib) 'cl-lib 'cl))
 
 
 ;;; Setup for the `c-lang-defvar' system.
@@ -245,12 +245,12 @@ the evaluated constant value at compile time."
     (unless (listp (car-safe ops))
       (setq ops (list ops)))
     (cond ((eq opgroup-filter t)
-	   (setq opgroup-filter (lambda (opgroup) t)))
+	   (setq opgroup-filter (lambda (_opgroup) t)))
 	  ((not (functionp opgroup-filter))
 	   (setq opgroup-filter `(lambda (opgroup)
 				   (memq opgroup ',opgroup-filter)))))
     (cond ((eq op-filter t)
-	   (setq op-filter (lambda (op) t)))
+	   (setq op-filter (lambda (_op) t)))
 	  ((stringp op-filter)
 	   (setq op-filter `(lambda (op)
 			      (string-match ,op-filter op)))))
@@ -474,18 +474,19 @@ so that all identifiers are recognized as words.")
   ;; The value here may be a list of functions or a single function.
   t nil
   c++ '(c-extend-region-for-CPP
-;	c-before-after-change-extend-region-for-lambda-capture ; doesn't seem needed.
 	c-before-change-check-raw-strings
 	c-before-change-check-<>-operators
 	c-depropertize-CPP
-	c-before-after-change-digit-quote
 	c-invalidate-macro-cache
-	c-truncate-bs-cache)
+	c-truncate-bs-cache
+	c-parse-quotes-before-change)
   (c objc) '(c-extend-region-for-CPP
 	     c-depropertize-CPP
 	     c-invalidate-macro-cache
-	     c-truncate-bs-cache)
-  ;; java 'c-before-change-check-<>-operators
+	     c-truncate-bs-cache
+	     c-parse-quotes-before-change)
+  java 'c-parse-quotes-before-change
+       ;; 'c-before-change-check-<>-operators
   awk 'c-awk-record-region-clear-NL)
 (c-lang-defvar c-get-state-before-change-functions
 	       (let ((fs (c-lang-const c-get-state-before-change-functions)))
@@ -515,18 +516,19 @@ parameters \(point-min) and \(point-max).")
   t '(c-depropertize-new-text
       c-change-expand-fl-region)
   (c objc) '(c-depropertize-new-text
+	     c-parse-quotes-after-change
 	     c-extend-font-lock-region-for-macros
 	     c-neutralize-syntax-in-and-mark-CPP
 	     c-change-expand-fl-region)
   c++ '(c-depropertize-new-text
+	c-parse-quotes-after-change
 	c-extend-font-lock-region-for-macros
-;	c-before-after-change-extend-region-for-lambda-capture ; doesn't seem needed.
-	c-before-after-change-digit-quote
 	c-after-change-re-mark-raw-strings
 	c-neutralize-syntax-in-and-mark-CPP
 	c-restore-<>-properties
 	c-change-expand-fl-region)
   java '(c-depropertize-new-text
+	 c-parse-quotes-after-change
 	 c-restore-<>-properties
 	 c-change-expand-fl-region)
   awk '(c-depropertize-new-text
@@ -608,6 +610,12 @@ EOL terminated statements."
   t nil
   (c c++ objc) t)
 (c-lang-defvar c-has-bitfields (c-lang-const c-has-bitfields))
+
+(c-lang-defconst c-has-quoted-numbers
+  "Whether the language has numbers quoted like 4'294'967'295."
+  t nil
+  c++ t)
+(c-lang-defvar c-has-quoted-numbers (c-lang-const c-has-quoted-numbers))
 
 (c-lang-defconst c-modified-constant
   "Regexp that matches a “modified” constant literal such as \"L\\='a\\='\",
@@ -1177,6 +1185,24 @@ This regexp is assumed to not match any non-operator identifier."
 (make-obsolete-variable 'c-opt-op-identitier-prefix 'c-opt-op-identifier-prefix
 			"CC Mode 5.31.4, 2006-04-14")
 
+(c-lang-defconst c-ambiguous-overloadable-or-identifier-prefixes
+  ;; A list of strings which can be either overloadable operators or
+  ;; identifier prefixes.
+  t (c--intersection
+     (c-filter-ops (c-lang-const c-identifier-ops)
+			     '(prefix)
+			     t)
+     (c-lang-const c-overloadable-operators)
+     :test 'string-equal))
+
+(c-lang-defconst c-ambiguous-overloadable-or-identifier-prefix-re
+  ;; A regexp matching strings which can be either overloadable operators
+  ;; or identifier prefixes.
+  t (c-make-keywords-re
+	t (c-lang-const c-ambiguous-overloadable-or-identifier-prefixes)))
+(c-lang-defvar c-ambiguous-overloadable-or-identifier-prefix-re
+  (c-lang-const c-ambiguous-overloadable-or-identifier-prefix-re))
+
 (c-lang-defconst c-other-op-syntax-tokens
   "List of the tokens made up of characters in the punctuation or
 parenthesis syntax classes that have uses other than as expression
@@ -1449,6 +1475,7 @@ comment style.  Other stuff like the syntax table must also be set up
 properly."
   t    "/*"
   awk  nil)
+(c-lang-defvar c-block-comment-starter (c-lang-const c-block-comment-starter))
 
 (c-lang-defconst c-block-comment-ender
   "String that ends block comments, or nil if such don't exist.
@@ -1458,6 +1485,7 @@ comment style.  Other stuff like the syntax table must also be set up
 properly."
   t    "*/"
   awk  nil)
+(c-lang-defvar c-block-comment-ender (c-lang-const c-block-comment-ender))
 
 (c-lang-defconst c-block-comment-ender-regexp
   ;; Regexp which matches the end of a block comment (if such exists in the
@@ -1515,27 +1543,30 @@ properly."
 (c-lang-defvar c-doc-comment-start-regexp
   (c-lang-const c-doc-comment-start-regexp))
 
+(c-lang-defconst c-block-comment-is-default
+  "Non-nil when the default comment style is block comment."
+  ;; Note to maintainers of derived modes: You are responsible for ensuring
+  ;; the pertinent `c-block-comment-{starter,ender}' or
+  ;; `c-line-comment-{starter,ender}' are non-nil.
+  t nil
+  c t)
+(c-lang-defvar c-block-comment-is-default
+  (c-lang-const c-block-comment-is-default))
+
 (c-lang-defconst comment-start
   "String that starts comments inserted with M-; etc.
 `comment-start' is initialized from this."
-  ;; Default: Prefer line comments to block comments, and pad with a space.
-  t (concat (or (c-lang-const c-line-comment-starter)
-		(c-lang-const c-block-comment-starter))
-	    " ")
-  ;; In C we still default to the block comment style since line
-  ;; comments aren't entirely portable.
-  c "/* ")
+  t (concat
+     (if (c-lang-const c-block-comment-is-default)
+	 (c-lang-const c-block-comment-starter)
+       (c-lang-const c-line-comment-starter))
+     " "))
 (c-lang-setvar comment-start (c-lang-const comment-start))
 
 (c-lang-defconst comment-end
   "String that ends comments inserted with M-; etc.
 `comment-end' is initialized from this."
-  ;; Default: Use block comment style if comment-start uses block
-  ;; comments, and pad with a space in that case.
-  t (if (string-match (concat "\\`\\("
-			      (c-lang-const c-block-comment-start-regexp)
-			      "\\)")
-		      (c-lang-const comment-start))
+  t (if (c-lang-const c-block-comment-is-default)
 	(concat " " (c-lang-const c-block-comment-ender))
       ""))
 (c-lang-setvar comment-end (c-lang-const comment-end))
@@ -2839,14 +2870,7 @@ Note that Java specific rules are currently applied to tell this from
 			    left-assoc
 			    right-assoc
 			    right-assoc-sequence)
-			  t))
-
-	   (unambiguous-prefix-ops (c--set-difference nonkeyword-prefix-ops
-						      in-or-postfix-ops
-						      :test 'string-equal))
-	   (ambiguous-prefix-ops (c--intersection nonkeyword-prefix-ops
-						  in-or-postfix-ops
-						  :test 'string-equal)))
+			  t)))
 
       (concat
        "\\("

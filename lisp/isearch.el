@@ -20,7 +20,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -2036,9 +2036,9 @@ For a click in the echo area, invoke `isearch-yank-x-selection'.
 Otherwise invoke whatever the calling mouse-2 command sequence
 is bound to outside of Isearch."
   (interactive "e")
-  (let* ((w (posn-window (event-start click)))
-	 (overriding-terminal-local-map nil)
-	 (binding (key-binding (this-command-keys-vector) t)))
+  (let ((w (posn-window (event-start click)))
+        (binding (let ((overriding-terminal-local-map nil))
+                   (key-binding (this-command-keys-vector) t))))
     (if (and (window-minibuffer-p w)
 	     (not (minibuffer-window-active-p w))) ; in echo area
 	(isearch-yank-x-selection)

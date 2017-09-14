@@ -18,7 +18,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -503,6 +503,9 @@ the range of text to assign text property SYMBOL with value VALUE."
 		  (error nil)))))
     (unless prop
       (message "Warning: invalid <x-display> parameter %s" param))
-    (list start end 'display prop)))
+    ;; Disabled in Emacs 25.3 to avoid execution of arbitrary Lisp
+    ;; forms in display properties stored within enriched text.
+    ;; (list start end 'display prop)))
+    (list start end)))
 
 ;;; enriched.el ends here

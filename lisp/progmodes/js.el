@@ -22,7 +22,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary
 
@@ -472,6 +472,11 @@ The value must not be negative."
 (defcustom js-flat-functions nil
   "Treat nested functions as top-level functions in `js-mode'.
 This applies to function movement, marking, and so on."
+  :type 'boolean
+  :group 'js)
+
+(defcustom js-indent-align-list-continuation t
+  "Align continuation of non-empty ([{ lines in `js-mode'."
   :type 'boolean
   :group 'js)
 
@@ -2092,7 +2097,8 @@ indentation is aligned to that column."
                  (switch-keyword-p (looking-at "default\\_>\\|case\\_>[^:]"))
                  (continued-expr-p (js--continued-expression-p)))
              (goto-char (nth 1 parse-status)) ; go to the opening char
-             (if (looking-at "[({[]\\s-*\\(/[/*]\\|$\\)")
+             (if (or (not js-indent-align-list-continuation)
+                     (looking-at "[({[]\\s-*\\(/[/*]\\|$\\)"))
                  (progn ; nothing following the opening paren/bracket
                    (skip-syntax-backward " ")
                    (when (eq (char-before) ?\)) (backward-list))
@@ -2373,6 +2379,10 @@ i.e., customize JSX element indentation with `sgml-basic-offset',
   (let ((js--filling-paragraph t)
         (fill-paragraph-function #'c-fill-paragraph))
     (c-fill-paragraph justify)))
+
+(defun js-do-auto-fill ()
+  (let ((js--filling-paragraph t))
+    (c-do-auto-fill)))
 
 ;;; Type database and Imenu
 
@@ -3857,6 +3867,7 @@ If one hasn't been set, or if it's stale, prompt for a new one."
   (setq-local comment-start "// ")
   (setq-local comment-end "")
   (setq-local fill-paragraph-function #'js-c-fill-paragraph)
+  (setq-local normal-auto-fill-function #'js-do-auto-fill)
 
   ;; Parse cache
   (add-hook 'before-change-functions #'js--flush-caches t t)

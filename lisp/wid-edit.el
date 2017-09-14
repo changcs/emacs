@@ -20,7 +20,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Wishlist items (from widget.texi):
 
@@ -3694,15 +3694,17 @@ example:
 (defun widget-color--choose-action (widget &optional _event)
   (list-colors-display
    nil nil
-   `(lambda (color)
-      (when (buffer-live-p ,(current-buffer))
-	(widget-value-set ',(widget-get widget :parent) color)
-	(let* ((buf (get-buffer "*Colors*"))
-	       (win (get-buffer-window buf 0)))
-	  (if win
-	      (quit-window nil win)
-	    (bury-buffer buf)))
-	(pop-to-buffer ,(current-buffer))))))
+   (let ((cbuf (current-buffer))
+         (wp (widget-get widget :parent)))
+     (lambda (color)
+       (when (buffer-live-p cbuf)
+	 (widget-value-set wp color)
+	 (let* ((buf (get-buffer "*Colors*"))
+	        (win (get-buffer-window buf 0)))
+	   (if win
+	       (quit-window nil win)
+	     (bury-buffer buf)))
+	 (pop-to-buffer cbuf))))))
 
 (defun widget-color-sample-face-get (widget)
   (let* ((value (condition-case nil

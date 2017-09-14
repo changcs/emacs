@@ -18,7 +18,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -256,7 +256,6 @@ This function is run from `before-save-hook'."
 	   ;; We return nil in case this is used in write-contents-functions.
 	   nil)))
 
-;;;###autoload
 (defun dns-mode-ipv6-to-nibbles (&optional negate-prefix)
   "Convert an IPv6 address around or before point.
 Replace the address by its ip6.arpa-representation for use in

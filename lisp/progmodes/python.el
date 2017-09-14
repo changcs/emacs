@@ -23,7 +23,7 @@
 ;; General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -80,7 +80,7 @@
 
 ;; Using the "console" subcommand to start IPython in server-client
 ;; mode is known to fail intermittently due a bug on IPython itself
-;; (see URL `http://debbugs.gnu.org/cgi/bugreport.cgi?bug=18052#27').
+;; (see URL `https://debbugs.gnu.org/cgi/bugreport.cgi?bug=18052#27').
 ;; There seems to be a race condition in the IPython server (A.K.A
 ;; kernel) when code is sent while it is still initializing, sometimes
 ;; causing the shell to get stalled.  With that said, if an IPython
@@ -97,7 +97,7 @@
 
 ;; Missing or delayed output used to happen due to differences between
 ;; Operating Systems' pipe buffering (e.g. CPython 3.3.4 in Windows 7.
-;; See URL `http://debbugs.gnu.org/cgi/bugreport.cgi?bug=17304').  To
+;; See URL `https://debbugs.gnu.org/cgi/bugreport.cgi?bug=17304').  To
 ;; avoid this, the `python-shell-unbuffered' defaults to non-nil and
 ;; controls whether `python-shell-calculate-process-environment'
 ;; should set the "PYTHONUNBUFFERED" environment variable on startup:
@@ -273,7 +273,7 @@
 (autoload 'help-function-arglist "help-fns")
 
 ;;;###autoload
-(add-to-list 'auto-mode-alist (cons (purecopy "\\.pyw?\\'")  'python-mode))
+(add-to-list 'auto-mode-alist (cons (purecopy "\\.py[iw]?\\'") 'python-mode))
 ;;;###autoload
 (add-to-list 'interpreter-mode-alist (cons (purecopy "python[0-9.]*") 'python-mode))
 
@@ -1048,13 +1048,13 @@ possibilities can be narrowed to specific indentation points."
            (max line-indentation base-indent)))
         (`(,(or :after-block-start
                 :after-backslash-first-line
+                :after-backslash-assignment-continuation
                 :inside-paren-newline-start) . ,start)
          ;; Add one indentation level.
          (goto-char start)
          (+ (current-indentation) python-indent-offset))
         (`(,(or :inside-paren
                 :after-backslash-block-continuation
-                :after-backslash-assignment-continuation
                 :after-backslash-dotted-continuation) . ,start)
          ;; Use the column given by the context.
          (goto-char start)
@@ -2212,6 +2212,11 @@ machine then modifies `tramp-remote-process-environment' and
 Do not set this variable directly, instead use
 `python-shell-prompt-set-calculated-regexps'.")
 
+(defvar python-shell--block-prompt nil
+  "Input block prompt for inferior python shell.
+Do not set this variable directly, instead use
+`python-shell-prompt-set-calculated-regexps'.")
+
 (defvar python-shell--prompt-calculated-output-regexp nil
   "Calculated output prompt regexp for inferior python shell.
 Do not set this variable directly, instead use
@@ -2245,7 +2250,11 @@ detection and just returns nil."
                 ;; `condition-case' and displaying the error message to
                 ;; the user in the no-prompts warning.
                 (ignore-errors
-                  (let ((code-file (python-shell--save-temp-file code)))
+                  (let ((code-file
+                         ;; Python 2.x on Windows does not handle
+                         ;; carriage returns in unbuffered mode.
+                         (let ((inhibit-eol-conversion (getenv "PYTHONUNBUFFERED")))
+                           (python-shell--save-temp-file code))))
                     ;; Use `process-file' as it is remote-host friendly.
                     (process-file
                      interpreter
@@ -2362,6 +2371,7 @@ and `python-shell-output-prompt-regexp' using the values from
         (dolist (prompt (butlast detected-prompts))
           (setq prompt (regexp-quote prompt))
           (cl-pushnew prompt input-prompts :test #'string=))
+        (setq python-shell--block-prompt (nth 1 detected-prompts))
         (cl-pushnew (regexp-quote
                      (car (last detected-prompts)))
                     output-prompts :test #'string=))
@@ -2722,6 +2732,7 @@ variable.
   (set (make-local-variable 'python-shell-interpreter-args)
        (or python-shell--interpreter-args python-shell-interpreter-args))
   (set (make-local-variable 'python-shell--prompt-calculated-input-regexp) nil)
+  (set (make-local-variable 'python-shell--block-prompt) nil)
   (set (make-local-variable 'python-shell--prompt-calculated-output-regexp) nil)
   (python-shell-prompt-set-calculated-regexps)
   (setq comint-prompt-regexp python-shell--prompt-calculated-input-regexp)
@@ -2731,7 +2742,8 @@ variable.
        '(ansi-color-process-output
          python-shell-comint-watch-for-first-prompt-output-filter
          python-pdbtrack-comint-output-filter-function
-         python-comint-postoutput-scroll-to-bottom))
+         python-comint-postoutput-scroll-to-bottom
+         comint-watch-for-password-prompt))
   (set (make-local-variable 'compilation-error-regexp-alist)
        python-shell-compilation-regexp-alist)
   (add-hook 'completion-at-point-functions
@@ -3627,7 +3639,14 @@ using that one instead of current buffer's process."
                        ;; Also, since pdb interaction is single-line
                        ;; based, this is enough.
                        (string-match-p python-shell-prompt-pdb-regexp prompt))
-                   #'python-shell-completion-get-completions)
+                   (if (or (equal python-shell--block-prompt prompt)
+                           (string-match-p
+                            python-shell-prompt-block-regexp prompt))
+                       ;; The non-native completion mechanism sends
+                       ;; newlines to the interpreter, so we can't use
+                       ;; it during a multiline statement (Bug#28051).
+                       #'ignore
+                     #'python-shell-completion-get-completions))
                   (t #'python-shell-completion-native-get-completions)))))
     (list start end
           (completion-table-dynamic

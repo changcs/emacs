@@ -20,7 +20,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 ;;
@@ -235,7 +235,7 @@ This method is obsolete."
            (let ((f (intern (format "%s-child-p" name))))
              `((defalias ',f ',testsym2)
                (make-obsolete
-                ',f ,(format "use (cl-typep ... '%s) instead" name)
+                ',f ,(format "use (cl-typep ... \\='%s) instead" name)
                 "25.1"))))
 
        ;; When using typep, (typep OBJ 'myclass) returns t for objects which
@@ -246,7 +246,7 @@ This method is obsolete."
        ;; test, so we can let typep have the CLOS documented behavior
        ;; while keeping our above predicate clean.
 
-       (put ',name 'cl-deftype-satisfies #',testsym2)
+       (define-symbol-prop ',name 'cl-deftype-satisfies #',testsym2)
 
        (eieio-defclass-internal ',name ',superclasses ',slots ',options-and-doc)
 

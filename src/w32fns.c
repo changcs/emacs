@@ -467,7 +467,7 @@ if the entry is new.  */)
   block_input ();
 
   /* replace existing entry in w32-color-map or add new entry. */
-  entry = Fassoc (name, Vw32_color_map);
+  entry = Fassoc (name, Vw32_color_map, Qnil);
   if (NILP (entry))
     {
       entry = Fcons (name, rgb);
@@ -4413,8 +4413,8 @@ w32_wnd_proc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	  TranslateMessage (&windows_msg);
 	  goto dflt;
 	}
-
       /* Fall through */
+      FALLTHROUGH;
 
     case WM_SYSCHAR:
     case WM_CHAR:
@@ -4677,6 +4677,7 @@ w32_wnd_proc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
       if (w32_pass_extra_mouse_buttons_to_system)
 	goto dflt;
       /* else fall through and process them.  */
+      FALLTHROUGH;
     case WM_MBUTTONDOWN:
     case WM_MBUTTONUP:
     handle_plain_button:
@@ -4782,6 +4783,7 @@ w32_wnd_proc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	  track_mouse_event_fn (&tme);
 	  track_mouse_window = hwnd;
 	}
+      FALLTHROUGH;
     case WM_HSCROLL:
     case WM_VSCROLL:
       if (w32_mouse_move_interval <= 0
@@ -4823,6 +4825,7 @@ w32_wnd_proc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
       if (w32_pass_multimedia_buttons_to_system)
 	goto dflt;
       /* Otherwise, pass to lisp, the same way we do with mousehwheel.  */
+      FALLTHROUGH;
 
       /* FIXME!!!  This is never reached so what's the purpose?  If the
 	 non-zero return remark below is right we're doing it wrong all
@@ -5085,6 +5088,7 @@ w32_wnd_proc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     case WM_MOUSELEAVE:
       /* No longer tracking mouse.  */
       track_mouse_window = NULL;
+      FALLTHROUGH;
 
     case WM_ACTIVATEAPP:
     case WM_ACTIVATE:
@@ -5125,6 +5129,7 @@ w32_wnd_proc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	      menu_free_timer = 0;
 	    }
 	}
+      FALLTHROUGH;
     case WM_MOVE:
     case WM_SIZE:
     command:
@@ -5163,6 +5168,7 @@ w32_wnd_proc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
          fails (see bug#25875).  But if it fails, we want to find out
          about it, so let's leave 1000 for now.  */
       sleep (1000);
+      FALLTHROUGH;
 
     case WM_WINDOWPOSCHANGING:
       /* Don't restrict the sizing of any kind of frames.  If the window
@@ -5889,6 +5895,8 @@ This function is an internal primitive--use `make-frame' instead.  */)
 		       NULL, NULL, RES_TYPE_BOOLEAN);
   x_default_parameter (f, parameters, Qno_accept_focus, Qnil,
 		       NULL, NULL, RES_TYPE_BOOLEAN);
+  x_default_parameter (f, parameters, Qno_special_glyphs, Qnil,
+		       NULL, NULL, RES_TYPE_BOOLEAN);
 
   /* Process alpha here (Bug#16619).  On XP this fails with child
      frames.  For `no-focus-on-map' frames delay processing of alpha
@@ -5957,6 +5965,14 @@ This function is an internal primitive--use `make-frame' instead.  */)
   f->output_data.w32->hourglass_cursor = w32_load_cursor (IDC_WAIT);
   f->output_data.w32->horizontal_drag_cursor = w32_load_cursor (IDC_SIZEWE);
   f->output_data.w32->vertical_drag_cursor = w32_load_cursor (IDC_SIZENS);
+  f->output_data.w32->left_edge_cursor = w32_load_cursor (IDC_SIZEWE);
+  f->output_data.w32->top_left_corner_cursor = w32_load_cursor (IDC_SIZENWSE);
+  f->output_data.w32->top_edge_cursor = w32_load_cursor (IDC_SIZENS);
+  f->output_data.w32->top_right_corner_cursor = w32_load_cursor (IDC_SIZENESW);
+  f->output_data.w32->right_edge_cursor = w32_load_cursor (IDC_SIZEWE);
+  f->output_data.w32->bottom_right_corner_cursor = w32_load_cursor (IDC_SIZENWSE);
+  f->output_data.w32->bottom_edge_cursor = w32_load_cursor (IDC_SIZENS);
+  f->output_data.w32->bottom_left_corner_cursor = w32_load_cursor (IDC_SIZENESW);
 
   f->output_data.w32->current_cursor = f->output_data.w32->nontext_cursor;
 
@@ -7049,6 +7065,8 @@ x_create_tip_frame (struct w32_display_info *dpyinfo, Lisp_Object parms)
 		       "cursorColor", "Foreground", RES_TYPE_STRING);
   x_default_parameter (f, parms, Qborder_color, build_string ("black"),
 		       "borderColor", "BorderColor", RES_TYPE_STRING);
+  x_default_parameter (f, parms, Qno_special_glyphs, Qt,
+		       NULL, NULL, RES_TYPE_BOOLEAN);
 
   /* Init faces before x_default_parameter is called for the
      scroll-bar-width parameter because otherwise we end up in
@@ -7159,7 +7177,7 @@ compute_tip_xy (struct frame *f,
 		int width, int height, int *root_x, int *root_y)
 {
   Lisp_Object left, top, right, bottom;
-  int min_x = 0, min_y, max_x = 0, max_y;
+  int min_x = 0, min_y = 0, max_x = 0, max_y = 0;
 
   /* User-specified position?  */
   left = Fcdr (Fassq (Qleft, parms));
@@ -8950,32 +8968,46 @@ menu bar or tool bar of FRAME.  */)
   if (EQ (type, Qouter_edges))
     {
       RECT rectangle;
+      BOOL success = false;
 
       block_input ();
       /* Outer frame rectangle, including outer borders and title bar. */
-      GetWindowRect (FRAME_W32_WINDOW (f), &rectangle);
+      success = GetWindowRect (FRAME_W32_WINDOW (f), &rectangle);
       unblock_input ();
 
-      return list4 (make_number (rectangle.left),
-		    make_number (rectangle.top),
-		    make_number (rectangle.right),
-		    make_number (rectangle.bottom));
+      if (success)
+	return list4 (make_number (rectangle.left),
+		      make_number (rectangle.top),
+		      make_number (rectangle.right),
+		      make_number (rectangle.bottom));
+      else
+	return Qnil;
     }
   else
     {
       RECT rectangle;
       POINT pt;
       int left, top, right, bottom;
+      BOOL success;
 
       block_input ();
       /* Inner frame rectangle, excluding borders and title bar.  */
-      GetClientRect (FRAME_W32_WINDOW (f), &rectangle);
+      success = GetClientRect (FRAME_W32_WINDOW (f), &rectangle);
       /* Get top-left corner of native rectangle in screen
 	 coordinates.  */
+      if (!success)
+	{
+	  unblock_input ();
+	  return Qnil;
+	}
+
       pt.x = 0;
       pt.y = 0;
-      ClientToScreen (FRAME_W32_WINDOW (f), &pt);
+      success = ClientToScreen (FRAME_W32_WINDOW (f), &pt);
       unblock_input ();
+
+      if (!success)
+	return Qnil;
 
       left = pt.x;
       top = pt.y;
@@ -10330,6 +10362,7 @@ frame_parm_handler w32_frame_parm_handlers[] =
   x_set_no_accept_focus,
   x_set_z_group,
   0, /* x_set_override_redirect */
+  x_set_no_special_glyphs,
 };
 
 void
@@ -10681,6 +10714,11 @@ default value t means to add the width of one canonical character of the
 tip frame.  */);
   Vw32_tooltip_extra_pixels = Qt;
 
+  DEFVAR_BOOL ("w32-disable-abort-dialog",
+	       w32_disable_abort_dialog,
+	       doc: /* Non-nil means don't display the abort dialog when aborting.  */);
+  w32_disable_abort_dialog = 0;
+
 #if 0 /* TODO: Port to W32 */
   defsubr (&Sx_change_window_property);
   defsubr (&Sx_delete_window_property);
@@ -10875,6 +10913,9 @@ w32_backtrace (void **buffer, int limit)
 void
 emacs_abort (void)
 {
+  if (w32_disable_abort_dialog)
+    abort ();
+
   int button;
   button = MessageBox (NULL,
 		       "A fatal error has occurred!\n\n"

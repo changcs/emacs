@@ -20,7 +20,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -172,14 +172,15 @@ The name is made by appending a number to PREFIX, default \"G\"."
 		 (setq cl--gensym-counter (1+ cl--gensym-counter))))))
     (make-symbol (format "%s%d" pfix num))))
 
+(defvar cl--gentemp-counter 0)
 ;;;###autoload
 (defun cl-gentemp (&optional prefix)
   "Generate a new interned symbol with a unique name.
-The name is made by appending a number to PREFIX, default \"G\"."
-  (let ((pfix (if (stringp prefix) prefix "G"))
+The name is made by appending a number to PREFIX, default \"T\"."
+  (let ((pfix (if (stringp prefix) prefix "T"))
 	name)
-    (while (intern-soft (setq name (format "%s%d" pfix cl--gensym-counter)))
-      (setq cl--gensym-counter (1+ cl--gensym-counter)))
+    (while (intern-soft (setq name (format "%s%d" pfix cl--gentemp-counter)))
+      (setq cl--gentemp-counter (1+ cl--gentemp-counter)))
     (intern name)))
 
 
@@ -2047,28 +2048,22 @@ This is like `cl-flet', but for macros instead of functions.
       cl--old-macroexpand
     (symbol-function 'macroexpand)))
 
-(defun cl--symbol-macro-key (sym)
-  "Return the key used in `macroexpand-all-environment' for symbol macro SYM."
-  ;; In the past we've used `symbol-name' instead, but that doesn't
-  ;; preserve the `eq'uality between different symbols of the same name.
-  `(:cl-symbol-macro . ,sym))
-
 (defun cl--sm-macroexpand (exp &optional env)
   "Special macro expander used inside `cl-symbol-macrolet'.
 This function replaces `macroexpand' during macro expansion
 of `cl-symbol-macrolet', and does the same thing as `macroexpand'
 except that it additionally expands symbol macros."
-  (let ((macroexpand-all-environment env))
+  (let ((macroexpand-all-environment env)
+        (venv (alist-get :cl-symbol-macros env)))
     (while
         (progn
           (setq exp (funcall cl--old-macroexpand exp env))
           (pcase exp
             ((pred symbolp)
              ;; Perform symbol-macro expansion.
-             ;; FIXME: Calling `cl--symbol-macro-key' for every var reference
-             ;; is a bit more costly than I'd like.
-             (when (cdr (assoc (cl--symbol-macro-key exp) env))
-               (setq exp (cadr (assoc (cl--symbol-macro-key exp) env)))))
+             (let ((symval (assq exp venv)))
+               (when symval
+                 (setq exp (cadr symval)))))
             (`(setq . ,_)
              ;; Convert setq to setf if required by symbol-macro expansion.
              (let* ((args (mapcar (lambda (f) (cl--sm-macroexpand f env))
@@ -2086,7 +2081,7 @@ except that it additionally expands symbol macros."
              (let ((letf nil) (found nil) (nbs ()))
                (dolist (binding bindings)
                  (let* ((var (if (symbolp binding) binding (car binding)))
-                        (sm (assoc (cl--symbol-macro-key var) env)))
+                        (sm (assq var venv)))
                    (push (if (not (cdr sm))
                              binding
                            (let ((nexp (cadr sm)))
@@ -2144,30 +2139,28 @@ by EXPANSION, and (setq NAME ...) will act like (setf EXPANSION ...).
 
 \(fn ((NAME EXPANSION) ...) FORM...)"
   (declare (indent 1) (debug ((&rest (symbolp sexp)) cl-declarations body)))
-  (cond
-   ((cdr bindings)
-    `(cl-symbol-macrolet (,(car bindings))
-       (cl-symbol-macrolet ,(cdr bindings) ,@body)))
-   ((null bindings) (macroexp-progn body))
-   (t
-    (let ((previous-macroexpand (symbol-function 'macroexpand)))
-      (unwind-protect
-          (progn
-            (fset 'macroexpand #'cl--sm-macroexpand)
-            (let ((expansion
-                   ;; FIXME: For N bindings, this will traverse `body' N times!
-                   (macroexpand-all (macroexp-progn body)
-                                    (cons (list (cl--symbol-macro-key
-                                                 (caar bindings))
-                                                (cl-cadar bindings))
-                                          macroexpand-all-environment))))
-              (if (or (null (cdar bindings)) (cl-cddar bindings))
-                  (macroexp--warn-and-return
-                   (format-message "Malformed `cl-symbol-macrolet' binding: %S"
-                                   (car bindings))
-                   expansion)
-                expansion)))
-        (fset 'macroexpand previous-macroexpand))))))
+  (let ((previous-macroexpand (symbol-function 'macroexpand))
+        (malformed-bindings nil))
+    (dolist (binding bindings)
+      (unless (and (consp binding) (symbolp (car binding))
+                   (consp (cdr binding)) (null (cddr binding)))
+        (push binding malformed-bindings)))
+    (unwind-protect
+        (progn
+          (fset 'macroexpand #'cl--sm-macroexpand)
+          (let* ((venv (cdr (assq :cl-symbol-macros macroexpand-all-environment)))
+                 (expansion
+                  (macroexpand-all (macroexp-progn body)
+                                   (cons (cons :cl-symbol-macros
+                                               (append bindings venv))
+                                         macroexpand-all-environment))))
+            (if malformed-bindings
+                (macroexp--warn-and-return
+                 (format-message "Malformed `cl-symbol-macrolet' binding(s): %S"
+                                 (nreverse malformed-bindings))
+                 expansion)
+              expansion)))
+      (fset 'macroexpand previous-macroexpand))))
 
 ;;; Multiple values.
 
@@ -2511,8 +2504,9 @@ The function's arguments should be treated as immutable.
              ,(if (memq '&key args)
                   `(&whole cl-whole &cl-quote ,@args)
                 (cons '&cl-quote args))
+             ,(format "compiler-macro for inlining `%s'." name)
              (cl--defsubst-expand
-              ',argns '(cl-block ,name ,@body)
+              ',argns '(cl-block ,name ,@(cdr (macroexp-parse-body body)))
               ;; We used to pass `simple' as
               ;; (not (or unsafe (cl-expr-access-order pbody argns)))
               ;; But this is much too simplistic since it

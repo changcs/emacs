@@ -18,7 +18,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Code:
 
@@ -1047,7 +1047,7 @@ callback data (if any)."
 (defun epg--status-TRUST_MARGINAL (context _string)
   (let ((signature (car (epg-context-result-for context 'verify))))
     (if (and signature
-	     (eq (epg-signature-status signature) 'marginal))
+	     (eq (epg-signature-status signature) 'good))
 	(setf (epg-signature-validity signature) 'marginal))))
 
 (defun epg--status-TRUST_FULLY (context _string)

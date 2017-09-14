@@ -20,7 +20,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -366,7 +366,7 @@ zero, otherwise they start from one."
   :version "26.1")
 
 (defcustom mode-line-percent-position '(-3 "%p")
-  "Specification of \"percentage offset\" of window through buffer
+  "Specification of \"percentage offset\" of window through buffer.
 This option specifies both the field width and the type of offset
 displayed in `mode-line-position', a component of the default
 `mode-line-format'."
@@ -382,14 +382,15 @@ displayed in `mode-line-position', a component of the default
                  (6 "%q")))
   :version "26.1"
   :group 'mode-line)
+(put 'mode-line-percent-position 'risky-local-variable t)
 
 (defvar mode-line-position
   `((:propertize
      mode-line-percent-position
-     'local-map mode-line-column-line-number-mode-map
-     'mouse-face 'mode-line-highlight
+     local-map ,mode-line-column-line-number-mode-map
+     mouse-face mode-line-highlight
      ;; XXX needs better description
-     'help-echo "Size indication mode\n\
+     help-echo "Size indication mode\n\
 mouse-1: Display Line and Column Mode Menu")
     (size-indication-mode
      (8 ,(propertize

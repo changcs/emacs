@@ -19,7 +19,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 ;;
@@ -194,6 +194,8 @@ changes to a supertype are not reflected in its subtypes)."
 	((button--area-button-p button)
 	 (get-text-property (cdr button)
 			    prop (button--area-button-string button)))
+	((markerp button)
+	 (get-text-property button prop (marker-buffer button)))
 	(t ; Must be a text-property button.
 	 (get-text-property button prop))))
 

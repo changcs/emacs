@@ -21,7 +21,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -166,7 +166,7 @@ is set to `defun'.")
 	(forward-char 1)
 	(forward-sexp 2)
 	(backward-sexp 1)
-	(looking-at "\\sw"))
+	(looking-at "\\(:\\|\\sw\\)"))
     (error t)))
 
 (defun lisp-indent-find-method (symbol &optional no-compat)

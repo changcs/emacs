@@ -12,7 +12,7 @@
    GNU General Public License for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
+   along with this program.  If not, see <https://www.gnu.org/licenses/>.  */
 
 /* Many stdio implementations have the same logic and therefore can share
    the same implementation of stdio extension API, except that some fields
@@ -99,6 +99,8 @@
                          int _file; \
                          unsigned int _flag; \
                        } *) fp)
+# elif defined __VMS                /* OpenVMS */
+#  define fp_ ((struct _iobuf *) fp)
 # else
 #  define fp_ fp
 # endif

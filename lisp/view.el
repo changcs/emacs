@@ -4,7 +4,7 @@
 ;; Foundation, Inc.
 
 ;; Author: K. Shane Hartman
-;; Maintainer: Inge Frick <inge@nada.kth.se>
+;; Maintainer: emacs-devel@gnu.org
 ;; Keywords: files
 
 ;; This file is part of GNU Emacs.
@@ -20,7 +20,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 

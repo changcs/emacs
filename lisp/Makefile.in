@@ -15,7 +15,7 @@
 # GNU General Public License for more details.
 
 # You should have received a copy of the GNU General Public License
-# along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+# along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 SHELL = @SHELL@
 
@@ -78,7 +78,7 @@ LOADDEFS = $(lisp)/calendar/cal-loaddefs.el \
 	$(lisp)/net/tramp-loaddefs.el
 
 # All generated autoload files.
-loaddefs = $(shell find ${srcdir} -name '*loaddefs.el')
+loaddefs = $(shell find ${srcdir} -name '*loaddefs.el' ! -name '.*')
 # Elisp files auto-generated.
 AUTOGENEL = ${loaddefs} ${srcdir}/cus-load.el ${srcdir}/finder-inf.el \
   ${srcdir}/subdirs.el ${srcdir}/eshell/esh-groups.el
@@ -243,8 +243,8 @@ update-gnus-news:
 FORCE:
 .PHONY: FORCE
 
-tagsfiles = $(shell find ${srcdir} -name '*.el')
-tagsfiles := $(filter-out ${srcdir}/%loaddefs.el,${tagsfiles})
+tagsfiles = $(shell find ${srcdir} -name '*.el' \
+	        ! -name '.*' ! -name '*loaddefs.el')
 tagsfiles := $(filter-out ${srcdir}/ldefs-boot.el,${tagsfiles})
 tagsfiles := $(filter-out ${srcdir}/eshell/esh-groups.el,${tagsfiles})
 
@@ -470,7 +470,7 @@ check-declare:
 ## This finds a lot of duplicates between foo.el and obsolete/foo.el.
 check-defun-dups:
 	sed -n -e '/^(defun /s/\(.\)(.*/\1/p' \
-	  $$(find . -name '*.el' -print | \
+	  $$(find . -name '*.el' ! -name '.*' -print | \
 	  grep -Ev '(loaddefs|ldefs-boot)\.el|obsolete') | sort | uniq -d
 
 # Dependencies
@@ -481,7 +481,7 @@ check-defun-dups:
 ## ones that don't change very often at that) seems pretty pointless
 ## to me.
 
-# http://debbugs.gnu.org/1004
+# https://debbugs.gnu.org/1004
 # CC Mode uses a compile time macro system which causes a compile time
 # dependency in cc-*.elc files on the macros in other cc-*.el and the
 # version string in cc-defs.el.

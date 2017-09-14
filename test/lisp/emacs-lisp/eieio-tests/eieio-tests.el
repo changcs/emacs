@@ -18,7 +18,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 ;;
@@ -894,7 +894,7 @@ Subclasses to override slot attributes.")
 
 (ert-deftest eieio-test-37-obsolete-name-in-constructor ()
   ;; FIXME repeated intermittent failures on hydra (bug#24503)
-  (skip-unless (not (getenv "NIX_STORE")))
+  (skip-unless (not (getenv "EMACS_HYDRA_CI")))
   (should (equal (eieio--testing "toto") '("toto" 2))))
 
 (ert-deftest eieio-autoload ()

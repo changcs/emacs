@@ -18,7 +18,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
+;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -159,7 +159,12 @@
     (insert "body { f")
     (let ((completions (css-mode-tests--completions)))
       (should (member "filter" completions))
-      (should-not (member "position" completions)))))
+      (should-not (member "position" completions))))
+  ;; Bug#27392
+  (with-temp-buffer
+    (css-mode)
+    (insert "html { grid")
+    (should (> (length (css-mode-tests--completions)) 0))))
 
 (ert-deftest css-test-foreign-completions ()
   (let ((other-buffer-1 (generate-new-buffer "1"))
