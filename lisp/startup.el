@@ -1197,7 +1197,7 @@ please check its value")
 			       (expand-file-name
 				"init"
 				(file-name-as-directory
-				 (concat "~" init-file-user "/.emacs2.d")))))
+				 (concat "~" init-file-user "/.emacs.d")))))
 			  (load otherfile t t)
 
 			  ;; If we did not find the user's init file,
@@ -1385,7 +1385,7 @@ the `--debug-init' option to view a complete error backtrace."
 	   (display-warning 'initialization
 			    (format-message "\
 Your `load-path' seems to contain\n\
-your `.emacs2.d' directory: %s\n\
+your `.emacs.d' directory: %s\n\
 This is likely to cause problems...\n\
 Consider using a subdirectory instead, e.g.: %s"
                                     dir (expand-file-name
