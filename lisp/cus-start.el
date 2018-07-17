@@ -1,6 +1,6 @@
 ;;; cus-start.el --- define customization properties of builtins  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1997, 1999-2017 Free Software Foundation, Inc.
+;; Copyright (C) 1997, 1999-2018 Free Software Foundation, Inc.
 
 ;; Author: Per Abrahamsen <abraham@dina.kvl.dk>
 ;; Keywords: internal
@@ -223,6 +223,14 @@ Leaving \"Default\" unchecked is equivalent with specifying a default of
 	     (visible-bell display boolean)
 	     (no-redraw-on-reenter display boolean)
 
+             ;; doc.c
+             (text-quoting-style display
+                                 (choice
+                                  (const :tag "Prefer \\=‘curved\\=’ quotes, if possible" nil)
+                                  (const :tag "\\=‘Curved\\=’ quotes" curved)
+                                  (const :tag "\\='Straight\\=' quotes" straight)
+                                  (const :tag "\\=`Grave\\=' quotes (no translation)" grave)))
+
              ;; dosfns.c
 	     (dos-display-scancodes display boolean)
 	     (dos-hyper-key keyboard integer)
@@ -269,9 +277,10 @@ Leaving \"Default\" unchecked is equivalent with specifying a default of
 		     ((eq system-type 'darwin)
 		      (or (getenv "TMPDIR") (getenv "TMP") (getenv "TEMP")
 			  ;; See bug#7135.
-			  (let ((tmp (ignore-errors
-				       (shell-command-to-string
-					"getconf DARWIN_USER_TEMP_DIR"))))
+			  (let* (file-name-handler-alist
+				 (tmp (ignore-errors
+				        (shell-command-to-string
+					 "getconf DARWIN_USER_TEMP_DIR"))))
 			    (and (stringp tmp)
 				 (setq tmp (replace-regexp-in-string
 					    "\n\\'" "" tmp))
@@ -319,6 +328,13 @@ Leaving \"Default\" unchecked is equivalent with specifying a default of
 					    (const :tag "Always" t)
 					    (repeat (symbol :tag "Parameter")))
 					   "25.1")
+	     (iconify-child-frame frames
+				  (choice
+				   (const :tag "Do nothing" nil)
+                                   (const :tag "Iconify top level frame instead" iconify-top-level)
+                                   (const :tag "Make frame invisible instead" make-invisible)
+                                   (const :tag "Iconify" t))
+				  "26.1")
 	     (tooltip-reuse-hidden-frame tooltip boolean "26.1")
 	     ;; fringe.c
 	     (overflow-newline-into-fringe fringe boolean)
@@ -398,6 +414,10 @@ Leaving \"Default\" unchecked is equivalent with specifying a default of
 	     ;; msdos.c
 	     (dos-unsupported-char-glyph display integer)
 	     ;; nsterm.m
+             ;;
+             ;; FIXME: Why does ⌃ use nil instead of none?  Also the
+             ;; description is confusing; setting it to nil disables ⌃
+             ;; entirely.
 	     (ns-control-modifier
 	      ns
 	      (choice (const :tag "No modifier" nil)
@@ -414,13 +434,13 @@ Leaving \"Default\" unchecked is equivalent with specifying a default of
 		      (const super)) "24.1")
 	     (ns-command-modifier
 	      ns
-	      (choice (const :tag "No modifier" nil)
+	      (choice (const :tag "No modifier (work as layout switch)" none)
 		      (const control) (const meta)
 		      (const alt) (const hyper)
 		      (const super)) "23.1")
 	     (ns-right-command-modifier
 	      ns
-	      (choice (const :tag "No modifier (work as command)" none)
+	      (choice (const :tag "No modifier (work as layout switch)" none)
 		      (const :tag "Use the value of ns-command-modifier"
 			     left)
 		      (const control) (const meta)
@@ -690,13 +710,15 @@ since it could result in memory overflow and make Emacs crash."
 	  (put symbol 'risky-local-variable (cadr prop)))
       (if (setq prop (memq :set rest))
 	  (put symbol 'custom-set (cadr prop)))
-      ;; Note this is the _only_ initialize property we handle.
-      (if (eq (cadr (memq :initialize rest)) 'custom-initialize-delay)
-          ;; These vars are defined early and should hence be initialized
-          ;; early, even if this file happens to be loaded late.  so add them
-          ;; to the end of custom-delayed-init-variables.  Otherwise,
-          ;; auto-save-file-name-transforms will appear in M-x customize-rogue.
-	  (add-to-list 'custom-delayed-init-variables symbol 'append))
+      ;; Don't re-add to custom-delayed-init-variables post-startup.
+      (unless after-init-time
+	;; Note this is the _only_ initialize property we handle.
+	(if (eq (cadr (memq :initialize rest)) 'custom-initialize-delay)
+	    ;; These vars are defined early and should hence be initialized
+	    ;; early, even if this file happens to be loaded late.  so add them
+	    ;; to the end of custom-delayed-init-variables.  Otherwise,
+	    ;; auto-save-file-name-transforms will appear in customize-rogue.
+	    (add-to-list 'custom-delayed-init-variables symbol 'append)))
       ;; If this is NOT while dumping Emacs, set up the rest of the
       ;; customization info.  This is the stuff that is not needed
       ;; until someone does M-x customize etc.

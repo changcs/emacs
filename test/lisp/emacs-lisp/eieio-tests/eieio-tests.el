@@ -1,6 +1,6 @@
 ;;; eieio-tests.el -- eieio tests routines
 
-;; Copyright (C) 1999-2003, 2005-2010, 2012-2017 Free Software
+;; Copyright (C) 1999-2003, 2005-2010, 2012-2018 Free Software
 ;; Foundation, Inc.
 
 ;; Author: Eric M. Ludlam <zappo@gnu.org>
@@ -689,7 +689,7 @@ Do not override for `prot-2'."
 (defvar eitest-II2 nil)
 (defvar eitest-II3 nil)
 (ert-deftest eieio-test-29-instance-inheritor ()
-  (setq eitest-II1 (II "II Test."))
+  (setq eitest-II1 (II))
   (oset eitest-II1 slot2 'cat)
   (setq eitest-II2 (clone eitest-II1 "eitest-II2 Test."))
   (oset eitest-II2 slot1 'moose)
@@ -893,8 +893,8 @@ Subclasses to override slot attributes.")
   (list newname 2))
 
 (ert-deftest eieio-test-37-obsolete-name-in-constructor ()
-  ;; FIXME repeated intermittent failures on hydra (bug#24503)
-  (skip-unless (not (getenv "EMACS_HYDRA_CI")))
+  ;; FIXME repeated intermittent failures on hydra and elsewhere (bug#24503).
+  :tags '(:unstable)
   (should (equal (eieio--testing "toto") '("toto" 2))))
 
 (ert-deftest eieio-autoload ()

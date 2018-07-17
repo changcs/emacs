@@ -1,6 +1,6 @@
 /* Process support for GNU Emacs on the Microsoft Windows API.
 
-Copyright (C) 1992, 1995, 1999-2017 Free Software Foundation, Inc.
+Copyright (C) 1992, 1995, 1999-2018 Free Software Foundation, Inc.
 
 This file is part of GNU Emacs.
 
@@ -15,7 +15,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
+along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 
 /*
    Drew Bliss                   Oct 14, 1993
@@ -838,7 +838,7 @@ alarm (int seconds)
        updates the status of the read accordingly, and signals the 2nd
        event object, char_avail, on whose handle sys_select is
        waiting.  This tells sys_select that the file descriptor
-       allocated for the subprocess or the the stream is ready to be
+       allocated for the subprocess or the stream is ready to be
        read from.
 
    When the subprocess exits or the network/serial stream is closed,
@@ -3763,14 +3763,17 @@ them blocking when trying to access unmounted drives etc.  */);
 
   DEFVAR_INT ("w32-pipe-read-delay", w32_pipe_read_delay,
 	      doc: /* Forced delay before reading subprocess output.
-This is done to improve the buffering of subprocess output, by
-avoiding the inefficiency of frequently reading small amounts of data.
+This may need to be done to improve the buffering of subprocess output,
+by avoiding the inefficiency of frequently reading small amounts of data.
+Typically needed only with DOS programs on Windows 9X; set to 50 if
+throughput with such programs is slow.
 
 If positive, the value is the number of milliseconds to sleep before
-reading the subprocess output.  If negative, the magnitude is the number
-of time slices to wait (effectively boosting the priority of the child
-process temporarily).  A value of zero disables waiting entirely.  */);
-  w32_pipe_read_delay = 50;
+signaling that output from a subprocess is ready to be read.
+If negative, the value is the number of time slices to wait (effectively
+boosting the priority of the child process temporarily).
+A value of zero disables waiting entirely.  */);
+  w32_pipe_read_delay = 0;
 
   DEFVAR_INT ("w32-pipe-buffer-size", w32_pipe_buffer_size,
 	      doc: /* Size of buffer for pipes created to communicate with subprocesses.

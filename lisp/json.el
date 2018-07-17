@@ -1,6 +1,6 @@
 ;;; json.el --- JavaScript Object Notation parser / generator -*- lexical-binding: t -*-
 
-;; Copyright (C) 2006-2017 Free Software Foundation, Inc.
+;; Copyright (C) 2006-2018 Free Software Foundation, Inc.
 
 ;; Author: Theresa O'Connor <ted@oconnor.cx>
 ;; Version: 1.4
@@ -187,29 +187,30 @@ Unlike `reverse', this keeps the property-value pairs intact."
 
 ;; Reader utilities
 
-(defsubst json-advance (&optional n)
+(define-inline json-advance (&optional n)
   "Advance N characters forward."
-  (forward-char n))
+  (inline-quote (forward-char ,n)))
 
-(defsubst json-peek ()
+(define-inline json-peek ()
   "Return the character at point."
-  (following-char))
+  (inline-quote (following-char)))
 
-(defsubst json-pop ()
+(define-inline json-pop ()
   "Advance past the character at point, returning it."
-  (let ((char (json-peek)))
-    (if (zerop char)
-        (signal 'json-end-of-file nil)
-      (json-advance)
-      char)))
+  (inline-quote
+   (let ((char (json-peek)))
+     (if (zerop char)
+         (signal 'json-end-of-file nil)
+       (json-advance)
+       char))))
 
-(defun json-skip-whitespace ()
+(define-inline json-skip-whitespace ()
   "Skip past the whitespace at point."
   ;; See
   ;; https://www.ecma-international.org/publications/files/ECMA-ST/ECMA-404.pdf
   ;; or https://tools.ietf.org/html/rfc7159#section-2 for the
   ;; definition of whitespace in JSON.
-  (skip-chars-forward "\t\r\n "))
+  (inline-quote (skip-chars-forward "\t\r\n ")))
 
 
 
@@ -303,7 +304,8 @@ KEYWORD is the keyword expected."
                             (thing-at-point 'word)))))
           (json-advance))
         keyword)
-  (unless (looking-at "\\(\\s-\\|[],}]\\|$\\)")
+  (json-skip-whitespace)
+  (unless (looking-at "\\([],}]\\|$\\)")
     (signal 'json-unknown-keyword
             (list (save-excursion
                     (backward-word-strictly 1)
@@ -470,11 +472,10 @@ Returns the updated object, which you should save, e.g.:
     (setq obj (json-add-to-object obj \"foo\" \"bar\"))
 Please see the documentation of `json-object-type' and `json-key-type'."
   (let ((json-key-type
-         (if (eq json-key-type nil)
+         (or json-key-type
              (cdr (assq json-object-type '((hash-table . string)
                                            (alist . symbol)
-                                           (plist . keyword))))
-           json-key-type)))
+                                           (plist . keyword)))))))
     (setq key
           (cond ((eq json-key-type 'string)
                  key)
@@ -608,8 +609,7 @@ Please see the documentation of `json-object-type' and `json-key-type'."
   "Return a JSON representation of LIST.
 Tries to DWIM: simple lists become JSON arrays, while alists and plists
 become JSON objects."
-  (cond ((null list)         "null")
-        ((json-alist-p list) (json-encode-alist list))
+  (cond ((json-alist-p list) (json-encode-alist list))
         ((json-plist-p list) (json-encode-plist list))
         ((listp list)        (json-encode-array list))
         (t
@@ -684,7 +684,7 @@ become JSON objects."
       (push (list c 'json-read-number) table))
     (pcase-dolist (`(,c . ,rest) table)
       (push `((eq ,char ,c) (,@rest)) res))
-    `(cond ,@res (t (signal 'json-readtable-error ,char)))))
+    `(cond ,@res (t (signal 'json-readtable-error (list ,char))))))
 
 (defun json-read ()
   "Parse and return the JSON object following point.
@@ -722,12 +722,12 @@ Advances point just past JSON object."
         ((stringp object)      (json-encode-string object))
         ((keywordp object)     (json-encode-string
                                 (substring (symbol-name object) 1)))
+        ((listp object)        (json-encode-list object))
         ((symbolp object)      (json-encode-string
                                 (symbol-name object)))
         ((numberp object)      (json-encode-number object))
         ((arrayp object)       (json-encode-array object))
         ((hash-table-p object) (json-encode-hash-table object))
-        ((listp object)        (json-encode-list object))
         (t                     (signal 'json-error (list object)))))
 
 ;; Pretty printing
@@ -742,6 +742,8 @@ Advances point just past JSON object."
   (interactive "r")
   (atomic-change-group
     (let ((json-encoding-pretty-print t)
+          ;; Distinguish an empty objects from 'null'
+          (json-null :json-null)
           ;; Ensure that ordering is maintained
           (json-object-type 'alist)
           (txt (delete-and-extract-region begin end)))

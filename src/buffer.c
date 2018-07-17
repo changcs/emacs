@@ -1,6 +1,6 @@
 /* Buffer manipulation primitives for GNU Emacs.
 
-Copyright (C) 1985-1989, 1993-1995, 1997-2017 Free Software Foundation,
+Copyright (C) 1985-1989, 1993-1995, 1997-2018 Free Software Foundation,
 Inc.
 
 This file is part of GNU Emacs.
@@ -61,7 +61,7 @@ struct buffer *all_buffers;
    Setting the default value also goes through the alist of buffers
    and stores into each buffer that does not say it has a local value.  */
 
-struct buffer alignas (GCALIGNMENT) buffer_defaults;
+struct buffer buffer_defaults;
 
 /* This structure marks which slots in a buffer have corresponding
    default values in buffer_defaults.
@@ -84,7 +84,7 @@ struct buffer buffer_local_flags;
 /* This structure holds the names of symbols whose values may be
    buffer-local.  It is indexed and accessed in the same way as the above.  */
 
-struct buffer alignas (GCALIGNMENT) buffer_local_symbols;
+struct buffer buffer_local_symbols;
 
 /* Return the symbol of the per-buffer variable at offset OFFSET in
    the buffer structure.  */
@@ -108,7 +108,6 @@ int last_per_buffer_idx;
 static void call_overlay_mod_hooks (Lisp_Object list, Lisp_Object overlay,
                                     bool after, Lisp_Object arg1,
                                     Lisp_Object arg2, Lisp_Object arg3);
-static void swap_out_buffer_local_variables (struct buffer *b);
 static void reset_buffer_local_variables (struct buffer *, bool);
 
 /* Alist of all buffer names vs the buffers.  This used to be
@@ -386,9 +385,9 @@ Value is nil if OBJECT is not a buffer or if it has been killed.  */)
 }
 
 DEFUN ("buffer-list", Fbuffer_list, Sbuffer_list, 0, 1, 0,
-       doc: /* Return a list of all existing live buffers.
-If the optional arg FRAME is a frame, we return the buffer list in the
-proper order for that frame: the buffers show in FRAME come first,
+       doc: /* Return a list of all live buffers.
+If the optional arg FRAME is a frame, return the buffer list in the
+proper order for that frame: the buffers shown in FRAME come first,
 followed by the rest of the buffers.  */)
   (Lisp_Object frame)
 {
@@ -991,10 +990,29 @@ reset_buffer_local_variables (struct buffer *b, bool permanent_too)
   else
     {
       Lisp_Object tmp, last = Qnil;
+      Lisp_Object buffer;
+      XSETBUFFER (buffer, b);
+
       for (tmp = BVAR (b, local_var_alist); CONSP (tmp); tmp = XCDR (tmp))
         {
           Lisp_Object local_var = XCAR (XCAR (tmp));
           Lisp_Object prop = Fget (local_var, Qpermanent_local);
+          Lisp_Object sym = local_var;
+
+          /* Watchers are run *before* modifying the var.  */
+          if (XSYMBOL (local_var)->u.s.trapped_write == SYMBOL_TRAPPED_WRITE)
+            notify_variable_watchers (local_var, Qnil,
+                                      Qmakunbound, Fcurrent_buffer ());
+
+          eassert (XSYMBOL (sym)->u.s.redirect == SYMBOL_LOCALIZED);
+          /* Need not do anything if some other buffer's binding is
+	     now cached.  */
+          if (EQ (SYMBOL_BLV (XSYMBOL (sym))->where, buffer))
+	    {
+	      /* Symbol is set up for this buffer's old local value:
+	         swap it out!  */
+	      swap_in_global_binding (XSYMBOL (sym));
+	    }
 
           if (!NILP (prop))
             {
@@ -1021,7 +1039,8 @@ reset_buffer_local_variables (struct buffer *b, bool permanent_too)
                           newlist = Fcons (elt, newlist);
                       }
                   newlist = Fnreverse (newlist);
-                  if (XSYMBOL (local_var)->trapped_write == SYMBOL_TRAPPED_WRITE)
+                  if (XSYMBOL (local_var)->u.s.trapped_write
+		      == SYMBOL_TRAPPED_WRITE)
                     notify_variable_watchers (local_var, newlist,
                                               Qmakunbound, Fcurrent_buffer ());
                   XSETCDR (XCAR (tmp), newlist);
@@ -1033,10 +1052,6 @@ reset_buffer_local_variables (struct buffer *b, bool permanent_too)
             bset_local_var_alist (b, XCDR (tmp));
           else
             XSETCDR (last, XCDR (tmp));
-
-          if (XSYMBOL (local_var)->trapped_write == SYMBOL_TRAPPED_WRITE)
-            notify_variable_watchers (local_var, Qnil,
-                                      Qmakunbound, Fcurrent_buffer ());
         }
     }
 
@@ -1086,7 +1101,11 @@ is first appended to NAME, to speed up finding a non-existent buffer.  */)
   else
     {
       char number[sizeof "-999999"];
-      int i = XFASTINT (Frandom (make_number (999999)));
+
+      /* Use XINT instead of XFASTINT to work around GCC bug 80776.  */
+      int i = XINT (Frandom (make_number (1000000)));
+      eassume (0 <= i && i < 1000000);
+
       AUTO_STRING_WITH_LEN (lnumber, number, sprintf (number, "-%d", i));
       genbase = concat2 (name, lnumber);
       if (NILP (Fget_buffer (genbase)))
@@ -1166,7 +1185,7 @@ buffer_local_value (Lisp_Object variable, Lisp_Object buffer)
   sym = XSYMBOL (variable);
 
  start:
-  switch (sym->redirect)
+  switch (sym->u.s.redirect)
     {
     case SYMBOL_VARALIAS: sym = indirect_variable (sym); goto start;
     case SYMBOL_PLAINVAL: result = SYMBOL_VAL (sym); break;
@@ -1315,7 +1334,12 @@ menu bar menus and the frame title.  */)
 DEFUN ("set-buffer-modified-p", Fset_buffer_modified_p, Sset_buffer_modified_p,
        1, 1, 0,
        doc: /* Mark current buffer as modified or unmodified according to FLAG.
-A non-nil FLAG means mark the buffer modified.  */)
+A non-nil FLAG means mark the buffer modified.
+In addition, this function unconditionally forces redisplay of the
+mode lines of the windows that display the current buffer, and also
+locks or unlocks the file visited by the buffer, depending on whether
+the function's argument is non-nil, but only if both `buffer-file-name'
+and `buffer-file-truename' are non-nil.  */)
   (Lisp_Object flag)
 {
   Frestore_buffer_modified_p (flag);
@@ -1336,12 +1360,14 @@ A non-nil FLAG means mark the buffer modified.  */)
 
 DEFUN ("restore-buffer-modified-p", Frestore_buffer_modified_p,
        Srestore_buffer_modified_p, 1, 1, 0,
-       doc: /* Like `set-buffer-modified-p', with a difference concerning redisplay.
+       doc: /* Like `set-buffer-modified-p', but doesn't redisplay buffer's mode line.
+This function also locks and unlocks the file visited by the buffer,
+if both `buffer-file-truename' and `buffer-file-name' are non-nil.
+
 It is not ensured that mode lines will be updated to show the modified
 state of the current buffer.  Use with care.  */)
   (Lisp_Object flag)
 {
-  Lisp_Object fn;
 
   /* If buffer becoming modified, lock the file.
      If buffer becoming unmodified, unlock the file.  */
@@ -1350,15 +1376,18 @@ state of the current buffer.  Use with care.  */)
     ? current_buffer->base_buffer
     : current_buffer;
 
-  fn = BVAR (b, file_truename);
-  /* Test buffer-file-name so that binding it to nil is effective.  */
-  if (!NILP (fn) && ! NILP (BVAR (b, filename)))
+  if (!inhibit_modification_hooks)
     {
-      bool already = SAVE_MODIFF < MODIFF;
-      if (!already && !NILP (flag))
-	lock_file (fn);
-      else if (already && NILP (flag))
-	unlock_file (fn);
+      Lisp_Object fn = BVAR (b, file_truename);
+      /* Test buffer-file-name so that binding it to nil is effective.  */
+      if (!NILP (fn) && ! NILP (BVAR (b, filename)))
+        {
+          bool already = SAVE_MODIFF < MODIFF;
+          if (!already && !NILP (flag))
+	    lock_file (fn);
+          else if (already && NILP (flag))
+	    unlock_file (fn);
+        }
     }
 
   /* Here we have a problem.  SAVE_MODIFF is used here to encode
@@ -1667,7 +1696,7 @@ cleaning up all windows currently displaying the buffer to be killed. */)
   {
     ptrdiff_t count = SPECPDL_INDEX ();
 
-    record_unwind_protect (save_excursion_restore, save_excursion_save ());
+    record_unwind_protect_excursion ();
     set_buffer_internal (b);
 
     /* First run the query functions; if any query is answered no,
@@ -1852,7 +1881,6 @@ cleaning up all windows currently displaying the buffer to be killed. */)
      won't be protected from GC.  They would be protected
      if they happened to remain cached in their symbols.
      This gets rid of them for certain.  */
-  swap_out_buffer_local_variables (b);
   reset_buffer_local_variables (b, 1);
 
   bset_name (b, Qnil);
@@ -2096,7 +2124,7 @@ void set_buffer_internal_2 (register struct buffer *b)
 	{
 	  Lisp_Object var = XCAR (XCAR (tail));
 	  struct Lisp_Symbol *sym = XSYMBOL (var);
-	  if (sym->redirect == SYMBOL_LOCALIZED /* Just to be sure.  */
+	  if (sym->u.s.redirect == SYMBOL_LOCALIZED /* Just to be sure.  */
 	      && SYMBOL_BLV (sym)->fwd)
 	    /* Just reference the variable
 	       to cause it to become set for this buffer.  */
@@ -2722,11 +2750,6 @@ the normal hook `change-major-mode-hook'.  */)
 {
   run_hook (Qchange_major_mode_hook);
 
-  /* Make sure none of the bindings in local_var_alist
-     remain swapped in, in their symbols.  */
-
-  swap_out_buffer_local_variables (current_buffer);
-
   /* Actually eliminate all local bindings of this buffer.  */
 
   reset_buffer_local_variables (current_buffer, 0);
@@ -2738,31 +2761,6 @@ the normal hook `change-major-mode-hook'.  */)
   return Qnil;
 }
 
-/* Make sure no local variables remain set up with buffer B
-   for their current values.  */
-
-static void
-swap_out_buffer_local_variables (struct buffer *b)
-{
-  Lisp_Object oalist, alist, buffer;
-
-  XSETBUFFER (buffer, b);
-  oalist = BVAR (b, local_var_alist);
-
-  for (alist = oalist; CONSP (alist); alist = XCDR (alist))
-    {
-      Lisp_Object sym = XCAR (XCAR (alist));
-      eassert (XSYMBOL (sym)->redirect == SYMBOL_LOCALIZED);
-      /* Need not do anything if some other buffer's binding is
-	 now cached.  */
-      if (EQ (SYMBOL_BLV (XSYMBOL (sym))->where, buffer))
-	{
-	  /* Symbol is set up for this buffer's old local value:
-	     swap it out!  */
-	  swap_in_global_binding (XSYMBOL (sym));
-	}
-    }
-}
 
 /* Find all the overlays in the current buffer that contain position POS.
    Return the number found, and store them in a vector in *VEC_PTR.
@@ -3616,8 +3614,8 @@ void
 fix_start_end_in_overlays (register ptrdiff_t start, register ptrdiff_t end)
 {
   Lisp_Object overlay;
-  struct Lisp_Overlay *before_list;
-  struct Lisp_Overlay *after_list;
+  struct Lisp_Overlay *before_list UNINIT;
+  struct Lisp_Overlay *after_list UNINIT;
   /* These are either nil, indicating that before_list or after_list
      should be assigned, or the cons cell the cdr of which should be
      assigned.  */
@@ -4178,6 +4176,12 @@ If SORTED is non-nil, then sort them by decreasing priority.  */)
 
   /* Make a list of them all.  */
   result = Flist (noverlays, overlay_vec);
+
+  /* The doc string says the list should be in decreasing order of
+     priority, so we reverse the list, because sort_overlays sorts in
+     the increasing order of priority.  */
+  if (!NILP (sorted))
+    result = Fnreverse (result);
 
   xfree (overlay_vec);
   return result;
@@ -5072,6 +5076,8 @@ init_buffer_once (void)
 {
   int idx;
 
+  /* Items flagged permanent get an explicit permanent-local property
+     added in bindings.el, for clarity.  */
   memset (buffer_permanent_local_flags, 0, sizeof buffer_permanent_local_flags);
 
   /* 0 means not a lisp var, -1 means always local, else mask.  */
@@ -5121,7 +5127,9 @@ init_buffer_once (void)
   XSETFASTINT (BVAR (&buffer_local_flags, selective_display), idx); ++idx;
   XSETFASTINT (BVAR (&buffer_local_flags, selective_display_ellipses), idx); ++idx;
   XSETFASTINT (BVAR (&buffer_local_flags, tab_width), idx); ++idx;
-  XSETFASTINT (BVAR (&buffer_local_flags, truncate_lines), idx); ++idx;
+  XSETFASTINT (BVAR (&buffer_local_flags, truncate_lines), idx);
+  /* Make this one a permanent local.  */
+  buffer_permanent_local_flags[idx++] = 1;
   XSETFASTINT (BVAR (&buffer_local_flags, word_wrap), idx); ++idx;
   XSETFASTINT (BVAR (&buffer_local_flags, ctl_arrow), idx); ++idx;
   XSETFASTINT (BVAR (&buffer_local_flags, fill_column), idx); ++idx;
@@ -5417,8 +5425,8 @@ defvar_per_buffer (struct Lisp_Buffer_Objfwd *bo_fwd, const char *namestring,
   bo_fwd->type = Lisp_Fwd_Buffer_Obj;
   bo_fwd->offset = offset;
   bo_fwd->predicate = predicate;
-  sym->declared_special = 1;
-  sym->redirect = SYMBOL_FORWARDED;
+  sym->u.s.declared_special = true;
+  sym->u.s.redirect = SYMBOL_FORWARDED;
   SET_SYMBOL_FWD (sym, (union Lisp_Fwd *) bo_fwd);
   XSETSYMBOL (PER_BUFFER_SYMBOL (offset), sym);
 
@@ -5607,6 +5615,8 @@ file I/O and the behavior of various editing commands.
 
 This variable is buffer-local but you cannot set it directly;
 use the function `set-buffer-multibyte' to change a buffer's representation.
+To prevent any attempts to set it or make it buffer-local, Emacs will
+signal an error in those cases.
 See also Info node `(elisp)Text Representations'.  */);
   make_symbol_constant (intern_c_string ("enable-multibyte-characters"));
 
@@ -5710,7 +5720,7 @@ word-wrapping, you might want to reduce the value of
 in narrower windows.
 
 Instead of setting this variable directly, most users should use
-Visual Line mode .  Visual Line mode, when enabled, sets `word-wrap'
+Visual Line mode.  Visual Line mode, when enabled, sets `word-wrap'
 to t, and additionally redefines simple editing commands to act on
 visual lines rather than logical lines.  See the documentation of
 `visual-line-mode'.  */);
@@ -6048,7 +6058,7 @@ and is the visited file's modification time, as of that time.  If the
 modification time of the most recent save is different, this entry is
 obsolete.
 
-An entry (t . 0) means means the buffer was previously unmodified but
+An entry (t . 0) means the buffer was previously unmodified but
 its time stamp was unknown because it was not associated with a file.
 An entry (t . -1) is similar, except that it means the buffer's visited
 file did not exist.

@@ -1,6 +1,6 @@
 ;;; hideif.el --- hides selected code within ifdef  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1988, 1994, 2001-2017 Free Software Foundation, Inc.
+;; Copyright (C) 1988, 1994, 2001-2018 Free Software Foundation, Inc.
 
 ;; Author: Brian Marick
 ;;	Daniel LaLiberte <liberte@holonexus.org>
@@ -263,9 +263,6 @@ This backup prevents any accidental clearance of `hide-fidef-env' by
 ;;;###autoload
 (define-minor-mode hide-ifdef-mode
   "Toggle features to hide/show #ifdef blocks (Hide-Ifdef mode).
-With a prefix argument ARG, enable Hide-Ifdef mode if ARG is
-positive, and disable it otherwise.  If called from Lisp, enable
-the mode if ARG is omitted or nil.
 
 Hide-Ifdef mode is a buffer-local minor mode for use with C and
 C-like major modes.  When enabled, code within #ifdef constructs
@@ -1657,8 +1654,8 @@ first arg will be `hif-etc'."
 
 ;; The original version of hideif evaluates the macro early and store the
 ;; final values for the defined macro into the symbol database (aka
-;; `hide-ifdef-env'). The evaluation process is "strings -> tokens -> parsed
-;; tree -> [value]". (The square bracket refers to what's stored in in our
+;; `hide-ifdef-env').  The evaluation process is "strings -> tokens -> parsed
+;; tree -> [value]".  (The square bracket refers to what's stored in our
 ;; `hide-ifdef-env'.)
 ;;
 ;; This forbids the evaluation of an argumented macro since the parameters

@@ -1,6 +1,6 @@
 ;;; ox-org.el --- Org Back-End for Org Export Engine -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2013-2017 Free Software Foundation, Inc.
+;; Copyright (C) 2013-2018 Free Software Foundation, Inc.
 
 ;; Author: Nicolas Goaziou <n.goaziou@gmail.com>
 ;; Keywords: org, wp
@@ -312,7 +312,8 @@ publishing directory.
 Return output file name."
   (org-publish-org-to 'org filename ".org" plist pub-dir)
   (when (plist-get plist :htmlized-source)
-    (require 'htmlize)
+    (or (require 'htmlize nil t)
+	(error "Please install htmlize from https://github.com/hniksic/emacs-htmlize"))
     (require 'ox-html)
     (let* ((org-inhibit-startup t)
 	   (htmlize-output-type 'css)

@@ -1,6 +1,6 @@
 /* Synchronous subprocess invocation for GNU Emacs.
 
-Copyright (C) 1985-1988, 1993-1995, 1999-2017 Free Software Foundation,
+Copyright (C) 1985-1988, 1993-1995, 1999-2018 Free Software Foundation,
 Inc.
 
 This file is part of GNU Emacs.
@@ -599,7 +599,6 @@ call_process (ptrdiff_t nargs, Lisp_Object *args, int filefd,
     Lisp_Object volatile coding_systems_volatile = coding_systems;
     Lisp_Object volatile current_dir_volatile = current_dir;
     bool volatile display_p_volatile = display_p;
-    bool volatile sa_must_free_volatile = sa_must_free;
     int volatile fd_error_volatile = fd_error;
     int volatile filefd_volatile = filefd;
     ptrdiff_t volatile count_volatile = count;
@@ -616,7 +615,6 @@ call_process (ptrdiff_t nargs, Lisp_Object *args, int filefd,
     coding_systems = coding_systems_volatile;
     current_dir = current_dir_volatile;
     display_p = display_p_volatile;
-    sa_must_free = sa_must_free_volatile;
     fd_error = fd_error_volatile;
     filefd = filefd_volatile;
     count = count_volatile;
@@ -634,7 +632,7 @@ call_process (ptrdiff_t nargs, Lisp_Object *args, int filefd,
 #ifdef DARWIN_OS
       /* Work around a macOS bug, where SIGCHLD is apparently
 	 delivered to a vforked child instead of to its parent.  See:
-	 http://lists.gnu.org/archive/html/emacs-devel/2017-05/msg00342.html
+	 https://lists.gnu.org/r/emacs-devel/2017-05/msg00342.html
       */
       signal (SIGCHLD, SIG_DFL);
 #endif
@@ -885,8 +883,7 @@ call_process (ptrdiff_t nargs, Lisp_Object *args, int filefd,
      when exiting.  */
   synch_process_pid = 0;
 
-  SAFE_FREE ();
-  unbind_to (count, Qnil);
+  SAFE_FREE_UNBIND_TO (count, Qnil);
 
   if (!wait_ok)
     return build_unibyte_string ("internal error");

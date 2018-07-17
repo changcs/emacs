@@ -1,6 +1,6 @@
 /* Functions for image support on window system.
 
-Copyright (C) 1989, 1992-2017 Free Software Foundation, Inc.
+Copyright (C) 1989, 1992-2018 Free Software Foundation, Inc.
 
 This file is part of GNU Emacs.
 
@@ -2574,7 +2574,7 @@ xbm_image_p (Lisp_Object object)
 static int
 xbm_scan (char **s, char *end, char *sval, int *ival)
 {
-  unsigned char c;
+  unsigned char c UNINIT;
 
  loop:
 
@@ -4629,6 +4629,8 @@ lookup_rgb_color (struct frame *f, int r, int g, int b)
   return PALETTERGB (r >> 8, g >> 8, b >> 8);
 #elif defined HAVE_NS
   return RGB_TO_ULONG (r >> 8, g >> 8, b >> 8);
+#elif defined USE_CAIRO
+  return (0xffu << 24) | (r << 16) | (g << 8) | b;
 #else
   xsignal1 (Qfile_error,
 	    build_string ("This Emacs mishandles this image file type"));
@@ -5277,6 +5279,25 @@ pbm_scan_number (char **s, char *end)
   return val;
 }
 
+/* Scan an index from *S and return it.  It is a one-byte unsigned
+   index if !TWO_BYTE, and a two-byte big-endian unsigned index if
+   TWO_BYTE.  */
+
+static int
+pbm_scan_index (char **s, bool two_byte)
+{
+  char *p = *s;
+  unsigned char c0 = *p++;
+  int n = c0;
+  if (two_byte)
+    {
+      unsigned char c1 = *p++;
+      n = (n << 8) + c1;
+    }
+  *s = p;
+  return n;
+}
+
 
 /* Load PBM image IMG for use on frame F.  */
 
@@ -5499,7 +5520,8 @@ pbm_load (struct frame *f, struct image *img)
   else
     {
       int expected_size = height * width;
-      if (max_color_idx > 255)
+      bool two_byte = 255 < max_color_idx;
+      if (two_byte)
 	expected_size *= 2;
       if (type == PBM_COLOR)
 	expected_size *= 3;
@@ -5522,24 +5544,14 @@ pbm_load (struct frame *f, struct image *img)
 	    int r, g, b;
 
 	    if (type == PBM_GRAY && raw_p)
-	      {
-		r = g = b = *p++;
-		if (max_color_idx > 255)
-		  r = g = b = r * 256 + *p++;
-	      }
+	      r = g = b = pbm_scan_index (&p, two_byte);
 	    else if (type == PBM_GRAY)
 	      r = g = b = pbm_scan_number (&p, end);
 	    else if (raw_p)
 	      {
-		r = *p++;
-		if (max_color_idx > 255)
-		  r = r * 256 + *p++;
-		g = *p++;
-		if (max_color_idx > 255)
-		  g = g * 256 + *p++;
-		b = *p++;
-		if (max_color_idx > 255)
-		  b = b * 256 + *p++;
+		r = pbm_scan_index (&p, two_byte);
+		g = pbm_scan_index (&p, two_byte);
+		b = pbm_scan_index (&p, two_byte);
 	      }
 	    else
 	      {
@@ -6692,10 +6704,10 @@ jpeg_load_body (struct frame *f, struct image *img,
   FILE *volatile fp = NULL;
   JSAMPARRAY buffer;
   int row_stride, x, y;
-  unsigned long *colors;
   int width, height;
   int i, ir, ig, ib;
 #ifndef USE_CAIRO
+  unsigned long *colors;
   XImagePtr ximg = NULL;
 #endif
 
@@ -6813,7 +6825,7 @@ jpeg_load_body (struct frame *f, struct image *img,
     else
       ir = 0, ig = 0, ib = 0;
 
-#ifndef CAIRO
+#ifndef USE_CAIRO
     /* Use the color table mechanism because it handles colors that
        cannot be allocated nicely.  Such colors will be replaced with
        a default color, and we don't have to care about which colors
@@ -7839,7 +7851,7 @@ gif_load (struct frame *f, struct image *img)
   init_color_table ();
 
 #ifndef USE_CAIRO
-  unsigned long bgcolor;
+  unsigned long bgcolor UNINIT;
   if (STRINGP (specified_bg))
     bgcolor = x_alloc_image_color (f, img, specified_bg,
 				   FRAME_BACKGROUND_PIXEL (f));
@@ -8271,7 +8283,7 @@ extern WandExport void PixelGetMagickColor (const PixelWand *,
 #endif
 
 /* Log ImageMagick error message.
-   Useful when a ImageMagick function returns the status `MagickFalse'.  */
+   Useful when an ImageMagick function returns the status `MagickFalse'.  */
 
 static void
 imagemagick_error (MagickWand *wand)
@@ -8527,7 +8539,9 @@ imagemagick_load_image (struct frame *f, struct image *img,
   int width, height;
   size_t image_width, image_height;
   MagickBooleanType status;
+#ifndef USE_CAIRO
   XImagePtr ximg;
+#endif
   int x, y;
   MagickWand *image_wand;
   PixelIterator *iterator;
@@ -8541,14 +8555,23 @@ imagemagick_load_image (struct frame *f, struct image *img,
   double rotation;
   char hint_buffer[MaxTextExtent];
   char *filename_hint = NULL;
+#ifdef USE_CAIRO
+  void *data = NULL;
+#endif
+
+  /* Initialize the ImageMagick environment.  */
+  static bool imagemagick_initialized;
+  if (!imagemagick_initialized)
+    {
+      imagemagick_initialized = true;
+      MagickWandGenesis ();
+    }
 
   /* Handle image index for image types who can contain more than one image.
      Interface :index is same as for GIF.  First we "ping" the image to see how
      many sub-images it contains.  Pinging is faster than loading the image to
      find out things about it.  */
 
-  /* Initialize the imagemagick environment.  */
-  MagickWandGenesis ();
   image = image_spec_value (img->spec, QCindex, NULL);
   ino = INTEGERP (image) ? XFASTINT (image) : 0;
   image_wand = NewMagickWand ();
@@ -8743,6 +8766,12 @@ imagemagick_load_image (struct frame *f, struct image *img,
       /* Magicexportimage is normally faster than pixelpushing.  This
          method is also well tested.  Some aspects of this method are
          ad-hoc and needs to be more researched. */
+      void *dataptr;
+#ifdef USE_CAIRO
+      data = xmalloc (width * height * 4);
+      const char *exportdepth = "BGRA";
+      dataptr = data;
+#else
       int imagedepth = 24; /*MagickGetImageDepth(image_wand);*/
       const char *exportdepth = imagedepth <= 8 ? "I" : "BGRP"; /*"RGBP";*/
       /* Try to create a x pixmap to hold the imagemagick pixmap.  */
@@ -8755,6 +8784,8 @@ imagemagick_load_image (struct frame *f, struct image *img,
 	  image_error ("Imagemagick X bitmap allocation failure");
 	  goto imagemagick_error;
 	}
+      dataptr = ximg->data;
+#endif /* not USE_CAIRO */
 
       /* Oddly, the below code doesn't seem to work:*/
       /* switch(ximg->bitmap_unit){ */
@@ -8777,14 +8808,17 @@ imagemagick_load_image (struct frame *f, struct image *img,
       */
       int pixelwidth = CharPixel; /*??? TODO figure out*/
       MagickExportImagePixels (image_wand, 0, 0, width, height,
-			       exportdepth, pixelwidth, ximg->data);
+			       exportdepth, pixelwidth, dataptr);
     }
   else
 #endif /* HAVE_MAGICKEXPORTIMAGEPIXELS */
     {
       size_t image_height;
       MagickRealType color_scale = 65535.0 / QuantumRange;
-
+#ifdef USE_CAIRO
+      data = xmalloc (width * height * 4);
+      color_scale /= 256;
+#else
       /* Try to create a x pixmap to hold the imagemagick pixmap.  */
       if (!image_create_x_image_and_pixmap (f, img, width, height, 0,
 					    &ximg, 0))
@@ -8795,6 +8829,7 @@ imagemagick_load_image (struct frame *f, struct image *img,
           image_error ("Imagemagick X bitmap allocation failure");
           goto imagemagick_error;
         }
+#endif
 
       /* Copy imagemagick image to x with primitive yet robust pixel
          pusher loop.  This has been tested a lot with many different
@@ -8807,7 +8842,9 @@ imagemagick_load_image (struct frame *f, struct image *img,
 #ifdef COLOR_TABLE_SUPPORT
 	  free_color_table ();
 #endif
+#ifndef USE_CAIRO
 	  x_destroy_x_image (ximg);
+#endif
           image_error ("Imagemagick pixel iterator creation failed");
           goto imagemagick_error;
         }
@@ -8823,16 +8860,27 @@ imagemagick_load_image (struct frame *f, struct image *img,
 	  for (x = 0; x < xlim; x++)
             {
               PixelGetMagickColor (pixels[x], &pixel);
+#ifdef USE_CAIRO
+	      ((uint32_t *)data)[width * y + x] =
+		lookup_rgb_color (f,
+				  color_scale * pixel.red,
+				  color_scale * pixel.green,
+				  color_scale * pixel.blue);
+#else
               XPutPixel (ximg, x, y,
                          lookup_rgb_color (f,
 					   color_scale * pixel.red,
 					   color_scale * pixel.green,
 					   color_scale * pixel.blue));
+#endif
             }
         }
       DestroyPixelIterator (iterator);
     }
 
+#ifdef USE_CAIRO
+  create_cairo_image_surface (img, data, width, height);
+#else
 #ifdef COLOR_TABLE_SUPPORT
   /* Remember colors allocated for this image.  */
   img->colors = colors_in_color_table (&img->ncolors);
@@ -8844,13 +8892,16 @@ imagemagick_load_image (struct frame *f, struct image *img,
 
   /* Put ximg into the image.  */
   image_put_x_image (f, img, ximg, 0);
+#endif
 
   /* Final cleanup. image_wand should be the only resource left. */
   DestroyMagickWand (image_wand);
   if (bg_wand) DestroyPixelWand (bg_wand);
 
-  /* `MagickWandTerminus' terminates the imagemagick environment.  */
-  MagickWandTerminus ();
+  /* Do not call MagickWandTerminus, to work around ImageMagick bug 825.  See:
+     https://github.com/ImageMagick/ImageMagick/issues/825
+     Although this bug was introduced in ImageMagick 6.9.9-14 and
+     fixed in 6.9.9-18, it's simpler to work around it in all versions.  */
 
   return 1;
 
@@ -8858,7 +8909,6 @@ imagemagick_load_image (struct frame *f, struct image *img,
   DestroyMagickWand (image_wand);
   if (bg_wand) DestroyPixelWand (bg_wand);
 
-  MagickWandTerminus ();
   /* TODO more cleanup.  */
   image_error ("Error parsing IMAGEMAGICK image `%s'", img->spec);
   return 0;
@@ -9252,7 +9302,7 @@ svg_load_image (struct frame *f, struct image *img, char *contents,
 
   /* Set base_uri for properly handling referenced images (via 'href').
      See rsvg bug 596114 - "image refs are relative to curdir, not .svg file"
-     (https://bugzilla.gnome.org/show_bug.cgi?id=596114). */
+     <https://gitlab.gnome.org/GNOME/librsvg/issues/33>. */
   if (filename)
     rsvg_handle_set_base_uri(rsvg_handle, filename);
 

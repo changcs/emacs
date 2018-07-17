@@ -1,6 +1,6 @@
 @c -*- mode: texinfo; coding: utf-8 -*-
 @c This is part of the GNU Emacs Lisp Reference Manual.
-@c Copyright (C) 1990-1995, 1998-1999, 2001-2017 Free Software
+@c Copyright (C) 1990-1995, 1998-1999, 2001-2018 Free Software
 @c Foundation, Inc.
 @c See the file elisp.texi for copying conditions.
 @node Strings and Characters
@@ -121,7 +121,7 @@ character (i.e., an integer), @code{nil} otherwise.
   The following functions create strings, either from scratch, or by
 putting strings together, or by taking them apart.
 
-@defun make-string count character
+@defun make-string count character &optional multibyte
 This function returns a string made up of @var{count} repetitions of
 @var{character}.  If @var{count} is negative, an error is signaled.
 
@@ -131,6 +131,13 @@ This function returns a string made up of @var{count} repetitions of
 (make-string 0 ?x)
      @result{} ""
 @end example
+
+  Normally, if @var{character} is an @acronym{ASCII} character, the
+result is a unibyte string.  But if the optional argument
+@var{multibyte} is non-@code{nil}, the function will produce a
+multibyte string instead.  This is useful when you later need to
+concatenate the result with non-@acronym{ASCII} strings or replace
+some of its characters with non-@acronym{ASCII} characters.
 
   Other functions to compare with this one include @code{make-vector}
 (@pxref{Vectors}) and @code{make-list} (@pxref{Building Lists}).
@@ -666,6 +673,28 @@ of the two strings.  The sign is negative if @var{string1} (or its
 specified portion) is less.
 @end defun
 
+@cindex Levenshtein distance
+@cindex distance between strings
+@cindex edit distance between strings
+@defun string-distance string1 string2 &optional bytecompare
+This function returns the @dfn{Levenshtein distance} between the
+source string @var{string1} and the target string @var{string2}.  The
+Levenshtein distance is the number of single-character
+changes---deletions, insertions, or replacements---required to
+transform the source string into the target string; it is one possible
+definition of the @dfn{edit distance} between strings.
+
+Letter-case of the strings is significant for the computed distance,
+but their text properties are ignored.  If the optional argument
+@var{bytecompare} is non-@code{nil}, the function calculates the
+distance in terms of bytes instead of characters.  The byte-wise
+comparison uses the internal Emacs representation of characters, so it
+will produce inaccurate results for multibyte strings that include raw
+bytes (@pxref{Text Representations}); make the strings unibyte by
+encoding them (@pxref{Explicit Encoding}) if you need accurate results
+with raw bytes.
+@end defun
+
 @defun assoc-string key alist &optional case-fold
 This function works like @code{assoc}, except that @var{key} must be a
 string or symbol, and comparison is done using @code{compare-strings}.
@@ -720,7 +749,7 @@ minus sign if the argument is negative.
      @result{} "-23.5"
 @end example
 
-@cindex int-to-string
+@cindex @code{int-to-string}
 @code{int-to-string} is a semi-obsolete alias for this function.
 
 See also the function @code{format} in @ref{Formatting Strings}.
@@ -812,30 +841,32 @@ formatting feature described here; they differ from @code{format-message} only
 in how they use the result of formatting.
 
 @defun format string &rest objects
-This function returns a new string that is made by copying
-@var{string} and then replacing any format specification
-in the copy with encodings of the corresponding @var{objects}.  The
+This function returns a string equal to @var{string}, replacing any format
+specifications with encodings of the corresponding @var{objects}.  The
 arguments @var{objects} are the computed values to be formatted.
 
 The characters in @var{string}, other than the format specifications,
 are copied directly into the output, including their text properties,
 if any.  Any text properties of the format specifications are copied
 to the produced string representations of the argument @var{objects}.
+
+The output string need not be newly-allocated.  For example, if
+@code{x} is the string @code{"foo"}, the expressions @code{(eq x
+(format x))} and @code{(eq x (format "%s" x))} might both yield
+@code{t}.
 @end defun
 
 @defun format-message string &rest objects
-@cindex curved quotes
-@cindex curly quotes
+@cindex curved quotes, in formatted messages
+@cindex curly quotes, in formatted messages
 This function acts like @code{format}, except it also converts any
 grave accents (@t{`}) and apostrophes (@t{'}) in @var{string} as per the
 value of @code{text-quoting-style}.
 
-A format that quotes with grave accents and apostrophes @t{`like
-this'} typically generates curved quotes @t{‘like this’}.  In
-contrast, a format that quotes with only apostrophes @t{'like this'}
-typically generates two closing curved quotes @t{’like this’}, an
-unusual style in English.  @xref{Keys in Documentation}, for how the
-@code{text-quoting-style} variable affects generated quotes.
+Typically grave accent and apostrophe in the format translate to
+matching curved quotes, e.g., @t{"Missing `%s'"} might result in
+@t{"Missing ‘foo’"}.  @xref{Text Quoting Style}, for how to influence
+or inhibit this translation.
 @end defun
 
 @cindex @samp{%} in format
@@ -891,18 +922,23 @@ Functions}).  Thus, strings are enclosed in @samp{"} characters, and
 @item %o
 @cindex integer to octal
 Replace the specification with the base-eight representation of an
-unsigned integer.
+unsigned integer.  The object can also be a nonnegative floating-point
+number that is formatted as an integer, dropping any fraction, if the
+integer does not exceed machine limits.
 
 @item %d
 Replace the specification with the base-ten representation of a signed
-integer.
+integer.  The object can also be a floating-point number that is
+formatted as an integer, dropping any fraction.
 
 @item %x
 @itemx %X
 @cindex integer to hexadecimal
 Replace the specification with the base-sixteen representation of an
 unsigned integer.  @samp{%x} uses lower case and @samp{%X} uses upper
-case.
+case.  The object can also be a nonnegative floating-point number that
+is formatted as an integer, dropping any fraction, if the integer does
+not exceed machine limits.
 
 @item %c
 Replace the specification with the character which is the value given.
@@ -918,7 +954,7 @@ floating-point number.
 @item %g
 Replace the specification with notation for a floating-point number,
 using either exponential notation or decimal-point notation.  The
-exponential notation is used if the exponent would be less than -4 or
+exponential notation is used if the exponent would be less than @minus{}4 or
 greater than or equal to the precision (default: 6).  By default,
 trailing zeros are removed from the fractional portion of the result
 and a decimal-point character appears only if it is followed by a
@@ -1195,6 +1231,7 @@ a character, functions are unable to perform proper substitution and
 result may differ compared to treating a one-character string.  For
 example:
 
+@ifnottex
 @example
 @group
 (upcase "ﬁ")  ; note: single character, ligature "fi"
@@ -1205,6 +1242,19 @@ example:
      @result{} 64257  ; i.e. ?ﬁ
 @end group
 @end example
+@end ifnottex
+@iftex
+@example
+@group
+(upcase "@r{fi}")  ; note: single character, ligature "fi"
+     @result{} "FI"
+@end group
+@group
+(upcase ?@r{fi})
+     @result{} 64257  ; i.e. ?@r{fi}
+@end group
+@end example
+@end iftex
 
   To avoid this, a character must first be converted into a string,
 using @code{string} function, before being passed to one of the casing

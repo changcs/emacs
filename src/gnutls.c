@@ -1,5 +1,5 @@
 /* GnuTLS glue for GNU Emacs.
-   Copyright (C) 2010-2017 Free Software Foundation, Inc.
+   Copyright (C) 2010-2018 Free Software Foundation, Inc.
 
 This file is part of GNU Emacs.
 
@@ -26,18 +26,32 @@ along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 #include "coding.h"
 #include "buffer.h"
 
-#if 0x030014 <= GNUTLS_VERSION_NUMBER
+#if GNUTLS_VERSION_NUMBER >= 0x030014
 # define HAVE_GNUTLS_X509_SYSTEM_TRUST
 #endif
 
 /* Although AEAD support started in GnuTLS 3.4.0 and works in 3.5.14,
    it was broken through at least GnuTLS 3.4.10; see:
-   https://lists.gnu.org/archive/html/emacs-devel/2017-07/msg00992.html
+   https://lists.gnu.org/r/emacs-devel/2017-07/msg00992.html
    The relevant fix seems to have been made in GnuTLS 3.5.1; see:
    https://gitlab.com/gnutls/gnutls/commit/568935848dd6b82b9315d8b6c529d00e2605e03d
    So, require 3.5.1.  */
-#if 0x030501 <= GNUTLS_VERSION_NUMBER
+#if GNUTLS_VERSION_NUMBER >= 0x030501
 # define HAVE_GNUTLS_AEAD
+#endif
+
+/* gnutls_mac_get_nonce_size was added in GnuTLS 3.2.0, but was
+   exported only since 3.3.0. */
+#if GNUTLS_VERSION_NUMBER >= 0x030300
+# define HAVE_GNUTLS_MAC_GET_NONCE_SIZE
+#endif
+
+#if GNUTLS_VERSION_NUMBER >= 0x030501
+# define HAVE_GNUTLS_EXT_GET_NAME
+#endif
+
+#if GNUTLS_VERSION_NUMBER >= 0x030205
+# define HAVE_GNUTLS_EXT__DUMBFW
 #endif
 
 #ifdef HAVE_GNUTLS
@@ -187,7 +201,9 @@ DEF_DLL_FN (const char *, gnutls_mac_get_name, (gnutls_mac_algorithm_t));
 #  ifdef HAVE_GNUTLS3
 DEF_DLL_FN (int, gnutls_rnd, (gnutls_rnd_level_t, void *, size_t));
 DEF_DLL_FN (const gnutls_mac_algorithm_t *, gnutls_mac_list, (void));
+#   ifdef HAVE_GNUTLS_MAC_GET_NONCE_SIZE
 DEF_DLL_FN (size_t, gnutls_mac_get_nonce_size, (gnutls_mac_algorithm_t));
+#   endif
 DEF_DLL_FN (size_t, gnutls_mac_get_key_size, (gnutls_mac_algorithm_t));
 DEF_DLL_FN (const gnutls_digest_algorithm_t *, gnutls_digest_list, (void));
 DEF_DLL_FN (const char *, gnutls_digest_get_name, (gnutls_digest_algorithm_t));
@@ -229,6 +245,9 @@ DEF_DLL_FN (int, gnutls_hash_get_len, (gnutls_digest_algorithm_t));
 DEF_DLL_FN (int, gnutls_hash, (gnutls_hash_hd_t, const void *, size_t));
 DEF_DLL_FN (void, gnutls_hash_deinit, (gnutls_hash_hd_t, void *));
 DEF_DLL_FN (void, gnutls_hash_output, (gnutls_hash_hd_t, void *));
+#   ifdef HAVE_GNUTLS_EXT_GET_NAME
+DEF_DLL_FN (const char *, gnutls_ext_get_name, (unsigned int));
+#   endif
 #  endif	 /* HAVE_GNUTLS3 */
 
 
@@ -316,7 +335,9 @@ init_gnutls_functions (void)
 #  ifdef HAVE_GNUTLS3
   LOAD_DLL_FN (library, gnutls_rnd);
   LOAD_DLL_FN (library, gnutls_mac_list);
+#   ifdef HAVE_GNUTLS_MAC_GET_NONCE_SIZE
   LOAD_DLL_FN (library, gnutls_mac_get_nonce_size);
+#   endif
   LOAD_DLL_FN (library, gnutls_mac_get_key_size);
   LOAD_DLL_FN (library, gnutls_digest_list);
   LOAD_DLL_FN (library, gnutls_digest_get_name);
@@ -346,6 +367,9 @@ init_gnutls_functions (void)
   LOAD_DLL_FN (library, gnutls_hash);
   LOAD_DLL_FN (library, gnutls_hash_deinit);
   LOAD_DLL_FN (library, gnutls_hash_output);
+#   ifdef HAVE_GNUTLS_EXT_GET_NAME
+  LOAD_DLL_FN (library, gnutls_ext_get_name);
+#   endif
 #  endif	 /* HAVE_GNUTLS3 */
 
   max_log_level = global_gnutls_log_level;
@@ -427,7 +451,9 @@ init_gnutls_functions (void)
 #  ifdef HAVE_GNUTLS3
 #  define gnutls_rnd fn_gnutls_rnd
 #  define gnutls_mac_list fn_gnutls_mac_list
-#  define gnutls_mac_get_nonce_size fn_gnutls_mac_get_nonce_size
+#   ifdef HAVE_GNUTLS_MAC_GET_NONCE_SIZE
+#    define gnutls_mac_get_nonce_size fn_gnutls_mac_get_nonce_size
+#   endif
 #  define gnutls_mac_get_key_size fn_gnutls_mac_get_key_size
 #  define gnutls_digest_list fn_gnutls_digest_list
 #  define gnutls_digest_get_name fn_gnutls_digest_get_name
@@ -442,10 +468,10 @@ init_gnutls_functions (void)
 #  define gnutls_cipher_decrypt2 fn_gnutls_cipher_decrypt2
 #  define gnutls_cipher_deinit fn_gnutls_cipher_deinit
 #   ifdef HAVE_GNUTLS_AEAD
-#  define gnutls_aead_cipher_encrypt fn_gnutls_aead_cipher_encrypt
-#  define gnutls_aead_cipher_decrypt fn_gnutls_aead_cipher_decrypt
-#  define gnutls_aead_cipher_init fn_gnutls_aead_cipher_init
-#  define gnutls_aead_cipher_deinit fn_gnutls_aead_cipher_deinit
+#    define gnutls_aead_cipher_encrypt fn_gnutls_aead_cipher_encrypt
+#    define gnutls_aead_cipher_decrypt fn_gnutls_aead_cipher_decrypt
+#    define gnutls_aead_cipher_init fn_gnutls_aead_cipher_init
+#    define gnutls_aead_cipher_deinit fn_gnutls_aead_cipher_deinit
 #   endif
 #  define gnutls_hmac_init fn_gnutls_hmac_init
 #  define gnutls_hmac_get_len fn_gnutls_hmac_get_len
@@ -457,7 +483,11 @@ init_gnutls_functions (void)
 #  define gnutls_hash fn_gnutls_hash
 #  define gnutls_hash_deinit fn_gnutls_hash_deinit
 #  define gnutls_hash_output fn_gnutls_hash_output
+#   ifdef HAVE_GNUTLS_EXT_GET_NAME
+#    define gnutls_ext_get_name fn_gnutls_ext_get_name
+#   endif
 #  endif	 /* HAVE_GNUTLS3 */
+
 
 /* This wrapper is called from fns.c, which doesn't know about the
    LOAD_DLL_FN stuff above.  */
@@ -789,6 +819,19 @@ gnutls_make_error (int err)
   return make_number (err);
 }
 
+static void
+gnutls_deinit_certificates (struct Lisp_Process *p)
+{
+  if (! p->gnutls_certificates)
+    return;
+
+  for (int i = 0; i < p->gnutls_certificates_length; i++)
+    gnutls_x509_crt_deinit (p->gnutls_certificates[i]);
+
+  xfree (p->gnutls_certificates);
+  p->gnutls_certificates = NULL;
+}
+
 Lisp_Object
 emacs_gnutls_deinit (Lisp_Object proc)
 {
@@ -822,6 +865,9 @@ emacs_gnutls_deinit (Lisp_Object proc)
       if (GNUTLS_INITSTAGE (proc) >= GNUTLS_STAGE_INIT)
 	GNUTLS_INITSTAGE (proc) = GNUTLS_STAGE_INIT - 1;
     }
+
+  if (XPROCESS (proc)->gnutls_certificates)
+    gnutls_deinit_certificates (XPROCESS (proc));
 
   XPROCESS (proc)->gnutls_p = false;
   return Qt;
@@ -1164,9 +1210,17 @@ DEFUN ("gnutls-peer-status-warning-describe", Fgnutls_peer_status_warning_descri
 
 DEFUN ("gnutls-peer-status", Fgnutls_peer_status, Sgnutls_peer_status, 1, 1, 0,
        doc: /* Describe a GnuTLS PROC peer certificate and any warnings about it.
+
 The return value is a property list with top-level keys :warnings and
-:certificate.  The :warnings entry is a list of symbols you can describe with
-`gnutls-peer-status-warning-describe'. */)
+:certificates.
+
+The :warnings entry is a list of symbols you can get a description of
+with `gnutls-peer-status-warning-describe', and :certificates is the
+certificate chain for the connection, with the host certificate
+first, and intermediary certificates (if any) following it.
+
+In addition, for backwards compatibility, the host certificate is also
+returned as the :certificate entry.  */)
   (Lisp_Object proc)
 {
   Lisp_Object warnings = Qnil, result = Qnil;
@@ -1208,9 +1262,9 @@ The return value is a property list with top-level keys :warnings and
 
   /* This could get called in the INIT stage, when the certificate is
      not yet set. */
-  if (XPROCESS (proc)->gnutls_certificate != NULL &&
-      gnutls_x509_crt_check_issuer(XPROCESS (proc)->gnutls_certificate,
-                                   XPROCESS (proc)->gnutls_certificate))
+  if (XPROCESS (proc)->gnutls_certificates != NULL &&
+      gnutls_x509_crt_check_issuer(XPROCESS (proc)->gnutls_certificates[0],
+                                   XPROCESS (proc)->gnutls_certificates[0]))
     warnings = Fcons (intern (":self-signed"), warnings);
 
   if (!NILP (warnings))
@@ -1218,10 +1272,21 @@ The return value is a property list with top-level keys :warnings and
 
   /* This could get called in the INIT stage, when the certificate is
      not yet set. */
-  if (XPROCESS (proc)->gnutls_certificate != NULL)
-    result = nconc2 (result, list2
-                     (intern (":certificate"),
-                      gnutls_certificate_details (XPROCESS (proc)->gnutls_certificate)));
+  if (XPROCESS (proc)->gnutls_certificates != NULL)
+    {
+      Lisp_Object certs = Qnil;
+
+      /* Return all the certificates in a list. */
+      for (int i = 0; i < XPROCESS (proc)->gnutls_certificates_length; i++)
+	certs = nconc2 (certs, list1 (gnutls_certificate_details
+				      (XPROCESS (proc)->gnutls_certificates[i])));
+
+      result = nconc2 (result, list2 (intern (":certificates"), certs));
+
+      /* Return the host certificate in its own element for
+	 compatibility reasons. */
+      result = nconc2 (result, list2 (intern (":certificate"), Fcar (certs)));
+    }
 
   state = XPROCESS (proc)->gnutls_state;
 
@@ -1364,7 +1429,7 @@ gnutls_verify_boot (Lisp_Object proc, Lisp_Object proplist)
   if (ret < GNUTLS_E_SUCCESS)
     return gnutls_make_error (ret);
 
-  XPROCESS (proc)->gnutls_peer_verification = peer_verification;
+  p->gnutls_peer_verification = peer_verification;
 
   warnings = Fplist_get (Fgnutls_peer_status (proc), intern (":warnings"));
   if (!NILP (warnings))
@@ -1401,49 +1466,60 @@ gnutls_verify_boot (Lisp_Object proc, Lisp_Object proplist)
      can be easily extended to work with openpgp keys as well.  */
   if (gnutls_certificate_type_get (state) == GNUTLS_CRT_X509)
     {
-      gnutls_x509_crt_t gnutls_verify_cert;
-      const gnutls_datum_t *gnutls_verify_cert_list;
-      unsigned int gnutls_verify_cert_list_size;
+      const gnutls_datum_t *cert_list;
+      unsigned int cert_list_length;
+      int failed_import = 0;
 
-      ret = gnutls_x509_crt_init (&gnutls_verify_cert);
-      if (ret < GNUTLS_E_SUCCESS)
-	return gnutls_make_error (ret);
+      cert_list = gnutls_certificate_get_peers (state, &cert_list_length);
 
-      gnutls_verify_cert_list
-	= gnutls_certificate_get_peers (state, &gnutls_verify_cert_list_size);
-
-      if (gnutls_verify_cert_list == NULL)
+      if (cert_list == NULL)
 	{
-	  gnutls_x509_crt_deinit (gnutls_verify_cert);
 	  emacs_gnutls_deinit (proc);
 	  boot_error (p, "No x509 certificate was found\n");
 	  return Qnil;
 	}
 
-      /* Check only the first certificate in the given chain.  */
-      ret = gnutls_x509_crt_import (gnutls_verify_cert,
-				    &gnutls_verify_cert_list[0],
-				    GNUTLS_X509_FMT_DER);
+      /* Check only the first certificate in the given chain, but
+	 store them all.  */
+      p->gnutls_certificates =
+	xmalloc (cert_list_length * sizeof (gnutls_x509_crt_t));
+      p->gnutls_certificates_length = cert_list_length;
 
-      if (ret < GNUTLS_E_SUCCESS)
+      for (int i = cert_list_length - 1; i >= 0; i--)
 	{
-	  gnutls_x509_crt_deinit (gnutls_verify_cert);
-	  return gnutls_make_error (ret);
+	  gnutls_x509_crt_t cert;
+
+	  gnutls_x509_crt_init (&cert);
+
+	  if (ret < GNUTLS_E_SUCCESS)
+	    failed_import = ret;
+	  else
+	    {
+	      ret = gnutls_x509_crt_import (cert, &cert_list[i],
+					    GNUTLS_X509_FMT_DER);
+
+	      if (ret < GNUTLS_E_SUCCESS)
+		failed_import = ret;
+	    }
+
+	  p->gnutls_certificates[i] = cert;
 	}
 
-      XPROCESS (proc)->gnutls_certificate = gnutls_verify_cert;
+      if (failed_import != 0)
+	{
+	  gnutls_deinit_certificates (p);
+	  return gnutls_make_error (failed_import);
+	}
 
-      int err = gnutls_x509_crt_check_hostname (gnutls_verify_cert,
+      int err = gnutls_x509_crt_check_hostname (p->gnutls_certificates[0],
 						c_hostname);
       check_memory_full (err);
       if (!err)
 	{
-	  XPROCESS (proc)->gnutls_extra_peer_verification
-	    |= CERTIFICATE_NOT_MATCHING;
+	  p->gnutls_extra_peer_verification |= CERTIFICATE_NOT_MATCHING;
           if (verify_error_all
               || !NILP (Fmember (QChostname, verify_error)))
             {
-	      gnutls_x509_crt_deinit (gnutls_verify_cert);
 	      emacs_gnutls_deinit (proc);
 	      boot_error (p, "The x509 certificate does not match \"%s\"",
 			  c_hostname);
@@ -1456,7 +1532,7 @@ gnutls_verify_boot (Lisp_Object proc, Lisp_Object proplist)
     }
 
   /* Set this flag only if the whole initialization succeeded.  */
-  XPROCESS (proc)->gnutls_p = true;
+  p->gnutls_p = true;
 
   return gnutls_make_error (ret);
 }
@@ -1825,7 +1901,8 @@ This function may also return `gnutls-e-again', or
 
   state = XPROCESS (proc)->gnutls_state;
 
-  gnutls_x509_crt_deinit (XPROCESS (proc)->gnutls_certificate);
+  if (XPROCESS (proc)->gnutls_certificates)
+    gnutls_deinit_certificates (XPROCESS (proc));
 
   ret = gnutls_bye (state, NILP (cont) ? GNUTLS_SHUT_RDWR : GNUTLS_SHUT_WR);
 
@@ -2178,6 +2255,10 @@ name. */)
       /* A symbol representing the GnuTLS MAC algorithm.  */
       Lisp_Object gma_symbol = intern (gnutls_mac_get_name (gma));
 
+      size_t nonce_size = 0;
+#ifdef HAVE_GNUTLS_MAC_GET_NONCE_SIZE
+      nonce_size = gnutls_mac_get_nonce_size (gma);
+#endif
       Lisp_Object mp = listn (CONSTYPE_HEAP, 11, gma_symbol,
 			      QCmac_algorithm_id, make_number (gma),
 			      QCtype, Qgnutls_type_mac_algorithm,
@@ -2189,7 +2270,7 @@ name. */)
                               make_number (gnutls_mac_get_key_size (gma)),
 
                               QCmac_algorithm_noncesize,
-                              make_number (gnutls_mac_get_nonce_size (gma)));
+			      make_number (nonce_size));
       mac_algorithms = Fcons (mp, mac_algorithms);
     }
 
@@ -2399,12 +2480,29 @@ GnuTLS 3 or higher      : the list will contain `gnutls3'.
 GnuTLS MACs             : the list will contain `macs'.
 GnuTLS digests          : the list will contain `digests'.
 GnuTLS symmetric ciphers: the list will contain `ciphers'.
-GnuTLS AEAD ciphers     : the list will contain `AEAD-ciphers'.  */)
+GnuTLS AEAD ciphers     : the list will contain `AEAD-ciphers'.
+%DUMBFW                 : the list will contain `ClientHello\ Padding'.
+Any GnuTLS extension with ID up to 100
+                        : the list will contain its name.  */)
   (void)
 {
   Lisp_Object capabilities = Qnil;
 
 #ifdef HAVE_GNUTLS
+
+# ifdef WINDOWSNT
+  Lisp_Object found = Fassq (Qgnutls, Vlibrary_cache);
+  if (CONSP (found))
+    return XCDR (found);
+
+  /* Load the GnuTLS DLL and find exported functions.  The external
+     library cache is updated after the capabilities have been
+     determined.  */
+  if (!init_gnutls_functions ())
+    return Qnil;
+# endif /* WINDOWSNT */
+
+  capabilities = Fcons (intern("gnutls"), capabilities);
 
 # ifdef HAVE_GNUTLS3
   capabilities = Fcons (intern("gnutls3"), capabilities);
@@ -2416,19 +2514,25 @@ GnuTLS AEAD ciphers     : the list will contain `AEAD-ciphers'.  */)
 #  endif
 
   capabilities = Fcons (intern("macs"), capabilities);
+
+#  ifdef HAVE_GNUTLS_EXT_GET_NAME
+  for (unsigned int ext=0; ext < 100; ext++)
+    {
+      const char* name = gnutls_ext_get_name(ext);
+      if (name != NULL)
+        {
+          capabilities = Fcons (intern(name), capabilities);
+        }
+    }
+#  endif
 # endif	  /* HAVE_GNUTLS3 */
 
+#  ifdef HAVE_GNUTLS_EXT__DUMBFW
+  capabilities = Fcons (intern("ClientHello Padding"), capabilities);
+#  endif
+
 # ifdef WINDOWSNT
-  Lisp_Object found = Fassq (Qgnutls, Vlibrary_cache);
-  if (CONSP (found))
-    return XCDR (found);
-  else
-    {
-      Lisp_Object status;
-      status = init_gnutls_functions () ? capabilities : Qnil;
-      Vlibrary_cache = Fcons (Fcons (Qgnutls, status), Vlibrary_cache);
-      return status;
-    }
+  Vlibrary_cache = Fcons (Fcons (Qgnutls, capabilities), Vlibrary_cache);
 # endif /* WINDOWSNT */
 #endif	/* HAVE_GNUTLS */
 
@@ -2472,7 +2576,6 @@ syms_of_gnutls (void)
   DEFSYM (QCcipher_blocksize, ":cipher-blocksize");
   DEFSYM (QCcipher_keysize, ":cipher-keysize");
   DEFSYM (QCcipher_tagsize, ":cipher-tagsize");
-  DEFSYM (QCcipher_keysize, ":cipher-keysize");
   DEFSYM (QCcipher_ivsize, ":cipher-ivsize");
 
   DEFSYM (QCmac_algorithm_id, ":mac-algorithm-id");

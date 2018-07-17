@@ -1,5 +1,5 @@
 /* Thread definitions
-Copyright (C) 2012-2017 Free Software Foundation, Inc.
+Copyright (C) 2012-2018 Free Software Foundation, Inc.
 
 This file is part of GNU Emacs.
 
@@ -25,13 +25,17 @@ along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 #include <sys/socket.h>
 #endif
 
+#ifdef MSDOS
+#include <signal.h>		/* sigset_t */
+#endif
+
 #include "sysselect.h"		/* FIXME */
 #include "systime.h"		/* FIXME */
 #include "systhread.h"
 
 struct thread_state
 {
-  struct vectorlike_header header;
+  union vectorlike_header header;
 
   /* The buffer in which the last search was performed, or
      Qt if the last search was done in a string;
@@ -133,15 +137,6 @@ struct thread_state
   struct re_registers m_saved_search_regs;
 #define saved_search_regs (current_thread->m_saved_search_regs)
 
-  /* This is the string or buffer in which we
-     are matching.  It is used for looking up syntax properties.
-
-     If the value is a Lisp string object, we are matching text in that
-     string; if it's nil, we are matching text in the current buffer; if
-     it's t, we are matching text in a C string.  */
-  Lisp_Object m_re_match_object;
-#define re_match_object (current_thread->m_re_match_object)
-
   /* This member is different from waiting_for_input.
      It is used to communicate to a lisp process-filter/sentinel (via the
      function Fwaiting_for_user_input_p) whether Emacs was waiting
@@ -157,6 +152,13 @@ struct thread_state
   /* True while doing kbd input.  */
   bool m_waiting_for_input;
 #define waiting_for_input (current_thread->m_waiting_for_input)
+
+  /* For longjmp to where kbd input is being done.  This is per-thread
+     so that if more than one thread calls read_char, they don't
+     clobber each other's getcjmp, which will cause
+     quit_throw_to_read_char crash due to using a wrong stack.  */
+  sys_jmp_buf m_getcjmp;
+#define getcjmp (current_thread->m_getcjmp)
 
   /* The OS identifier for this thread.  */
   sys_thread_t thread_id;
@@ -197,7 +199,7 @@ INLINE struct thread_state *
 XTHREAD (Lisp_Object a)
 {
   eassert (THREADP (a));
-  return XUNTAG (a, Lisp_Vectorlike);
+  return XUNTAG (a, Lisp_Vectorlike, struct thread_state);
 }
 
 /* A mutex in lisp is represented by a system condition variable.
@@ -219,7 +221,7 @@ typedef struct
 /* A mutex as a lisp object.  */
 struct Lisp_Mutex
 {
-  struct vectorlike_header header;
+  union vectorlike_header header;
 
   /* The name of the mutex, or nil.  */
   Lisp_Object name;
@@ -244,13 +246,13 @@ INLINE struct Lisp_Mutex *
 XMUTEX (Lisp_Object a)
 {
   eassert (MUTEXP (a));
-  return XUNTAG (a, Lisp_Vectorlike);
+  return XUNTAG (a, Lisp_Vectorlike, struct Lisp_Mutex);
 }
 
 /* A condition variable as a lisp object.  */
 struct Lisp_CondVar
 {
-  struct vectorlike_header header;
+  union vectorlike_header header;
 
   /* The associated mutex.  */
   Lisp_Object mutex;
@@ -278,7 +280,7 @@ INLINE struct Lisp_CondVar *
 XCONDVAR (Lisp_Object a)
 {
   eassert (CONDVARP (a));
-  return XUNTAG (a, Lisp_Vectorlike);
+  return XUNTAG (a, Lisp_Vectorlike, struct Lisp_CondVar);
 }
 
 extern struct thread_state *current_thread;
@@ -292,6 +294,7 @@ extern void init_threads_once (void);
 extern void init_threads (void);
 extern void syms_of_threads (void);
 extern bool main_thread_p (void *);
+extern bool in_current_thread (void);
 
 typedef int select_func (int, fd_set *, fd_set *, fd_set *,
 			 const struct timespec *, const sigset_t *);

@@ -1,6 +1,6 @@
 ;;; shell.el --- specialized comint.el for running the shell -*- lexical-binding: t -*-
 
-;; Copyright (C) 1988, 1993-1997, 2000-2017 Free Software Foundation,
+;; Copyright (C) 1988, 1993-1997, 2000-2018 Free Software Foundation,
 ;; Inc.
 
 ;; Author: Olin Shivers <shivers@cs.cmu.edu>
@@ -315,6 +315,8 @@ for Shell mode only."
   "List of directories saved by pushd in this buffer's shell.
 Thus, this does not include the shell's current directory.")
 
+(defvaralias 'shell-dirtrack-mode 'shell-dirtrackp)
+
 (defvar shell-dirtrackp t
   "Non-nil in a shell buffer means directory tracking is enabled.")
 
@@ -466,6 +468,8 @@ Shell buffers.  It implements `shell-completion-execonly' for
   (set (make-local-variable 'comint-file-name-chars) shell-file-name-chars)
   (set (make-local-variable 'comint-file-name-quote-list)
        shell-file-name-quote-list)
+  (set (make-local-variable 'comint-file-name-prefix)
+       (or (file-remote-p default-directory) ""))
   (set (make-local-variable 'comint-dynamic-complete-functions)
        shell-dynamic-complete-functions)
   (setq-local comint-unquote-function #'shell--unquote-argument)
@@ -568,8 +572,10 @@ buffer."
   (setq list-buffers-directory (expand-file-name default-directory))
   ;; shell-dependent assignments.
   (when (ring-empty-p comint-input-ring)
-    (let ((shell (file-name-nondirectory (car
-		   (process-command (get-buffer-process (current-buffer))))))
+    (let ((shell (if (get-buffer-process (current-buffer))
+                     (file-name-nondirectory
+                      (car (process-command (get-buffer-process (current-buffer)))))
+                   ""))
 	  (hsize (getenv "HISTSIZE")))
       (and (stringp hsize)
 	   (integerp (setq hsize (string-to-number hsize)))
@@ -727,8 +733,8 @@ Otherwise, one argument `-i' is passed to the shell.
                (null explicit-shell-file-name)
                (null (getenv "ESHELL")))
           (set (make-local-variable 'explicit-shell-file-name)
-               (expand-file-name
-                (file-local-name
+               (file-local-name
+		(expand-file-name
                  (read-file-name
                   "Remote shell path: " default-directory shell-file-name
                   t shell-file-name)))))))
@@ -959,12 +965,8 @@ Environment variables are expanded, see function `substitute-in-file-name'."
   (and (string-match "^\\+[1-9][0-9]*$" str)
        (string-to-number str)))
 
-(defvaralias 'shell-dirtrack-mode 'shell-dirtrackp)
 (define-minor-mode shell-dirtrack-mode
   "Toggle directory tracking in this shell buffer (Shell Dirtrack mode).
-With a prefix argument ARG, enable Shell Dirtrack mode if ARG is
-positive, and disable it otherwise.  If called from Lisp, enable
-the mode if ARG is omitted or nil.
 
 The `dirtrack' package provides an alternative implementation of
 this feature; see the function `dirtrack-mode'."
@@ -1167,9 +1169,12 @@ Returns t if successful."
          (start (if (zerop (length filename)) (point) (match-beginning 0)))
          (end (if (zerop (length filename)) (point) (match-end 0)))
 	 (filenondir (file-name-nondirectory filename))
-	 ; why cdr? see `shell-dynamic-complete-command'
-	 (path-dirs (append (cdr (reverse exec-path))
-	   (if (memq system-type '(windows-nt ms-dos)) '("."))))
+	 (path-dirs
+	  ;; Ignore `exec-directory', the last entry in `exec-path'.
+          (append (cdr (reverse (exec-path)))
+	          (if (and (memq system-type '(windows-nt ms-dos))
+                           (not (file-remote-p default-directory)))
+                      '("."))))
 	 (cwd (file-name-as-directory (expand-file-name default-directory)))
 	 (ignored-extensions
 	  (and comint-completion-fignore

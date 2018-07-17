@@ -1,6 +1,6 @@
 ;;; gnus-html.el --- Render HTML in a buffer.
 
-;; Copyright (C) 2010-2017 Free Software Foundation, Inc.
+;; Copyright (C) 2010-2018 Free Software Foundation, Inc.
 
 ;; Author: Lars Magne Ingebrigtsen <larsi@gnus.org>
 ;; Keywords: html, web
@@ -27,8 +27,6 @@
 ;; external HTML renderer (i.e., w3m).
 
 ;;; Code:
-
-(eval-when-compile (require 'cl))
 
 (require 'gnus-art)
 (eval-when-compile (require 'mm-decode))
@@ -99,11 +97,7 @@ fit these criteria."
          (not (file-exists-p (url-cache-create-filename url))))
         (t (let ((cache-time (url-is-cached url)))
              (if cache-time
-                 (time-less-p
-                  (time-add
-                   cache-time
-                   ttl)
-                  (current-time))
+                 (time-less-p (time-add cache-time ttl) nil)
                t)))))
 
 ;;;###autoload

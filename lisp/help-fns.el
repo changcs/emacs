@@ -1,6 +1,6 @@
 ;;; help-fns.el --- Complex help functions -*- lexical-binding: t -*-
 
-;; Copyright (C) 1985-1986, 1993-1994, 1998-2017 Free Software
+;; Copyright (C) 1985-1986, 1993-1994, 1998-2018 Free Software
 ;; Foundation, Inc.
 
 ;; Maintainer: emacs-devel@gnu.org
@@ -181,8 +181,8 @@ KIND should be `var' for a variable or `subr' for a subroutine."
 	   (expand-file-name internal-doc-file-name doc-directory)))
       (let ((file (catch 'loop
 		    (while t
-		      (let ((pnt (search-forward (concat "" name "\n"))))
-			(re-search-backward "S\\(.*\\)")
+		      (let ((pnt (search-forward (concat "\^_" name "\n"))))
+			(re-search-backward "\^_S\\(.*\\)")
 			(let ((file (match-string 1)))
 			  (if (member file build-files)
 			      (throw 'loop file)
@@ -560,7 +560,9 @@ FILE is the file where FUNCTION was probably defined."
             (setq short rel))))
     short))
 
-(defun help-fns--analyse-function (function)
+(defun help-fns--analyze-function (function)
+  ;; FIXME: Document/explain the differences between FUNCTION,
+  ;; REAL-FUNCTION, DEF, and REAL-DEF.
   "Return information about FUNCTION.
 Returns a list of the form (REAL-FUNCTION DEF ALIASED REAL-DEF)."
   (let* ((advised (and (symbolp function)
@@ -600,7 +602,7 @@ Returns a list of the form (REAL-FUNCTION DEF ALIASED REAL-DEF)."
 (defun help-fns-function-description-header (function)
   "Print a line describing FUNCTION to `standard-output'."
   (pcase-let* ((`(,_real-function ,def ,aliased ,real-def)
-                (help-fns--analyse-function function))
+                (help-fns--analyze-function function))
                (file-name (find-lisp-object-file-name function (if aliased 'defun
                                                                  def)))
                (beg (if (and (or (byte-code-function-p def)
@@ -640,6 +642,8 @@ Returns a list of the form (REAL-FUNCTION DEF ALIASED REAL-DEF)."
 		  (concat beg "Lisp macro"))
 		 ((byte-code-function-p def)
 		  (concat beg "compiled Lisp function"))
+                 ((module-function-p def)
+                  (concat beg "module function"))
 		 ((eq (car-safe def) 'lambda)
 		  (concat beg "Lisp function"))
 		 ((eq (car-safe def) 'closure)
@@ -689,10 +693,15 @@ Returns a list of the form (REAL-FUNCTION DEF ALIASED REAL-DEF)."
                                 (point))))
   (terpri)(terpri)
 
-  (pcase-let ((`(,real-function ,def ,_aliased ,real-def)
-               (help-fns--analyse-function function))
-              (doc-raw (documentation function t))
-              (key-bindings-buffer (current-buffer)))
+  (pcase-let* ((`(,real-function ,def ,_aliased ,real-def)
+                (help-fns--analyze-function function))
+               (doc-raw (condition-case nil
+                            ;; FIXME: Maybe `documentation' should return nil
+                            ;; for invalid functions i.s.o. signaling an error.
+                            (documentation function t)
+                          ;; E.g. an alias for a not yet defined function.
+                          ((invalid-function void-function) nil)))
+               (key-bindings-buffer (current-buffer)))
 
     ;; If the function is autoloaded, and its docstring has
     ;; key substitution constructs, load the library.
@@ -703,12 +712,21 @@ Returns a list of the form (REAL-FUNCTION DEF ALIASED REAL-DEF)."
 
     (help-fns--key-bindings function)
     (with-current-buffer standard-output
-      (let ((doc (help-fns--signature
-                  function doc-raw
-                  (if (subrp def) (indirect-function real-def) real-def)
-                  real-function key-bindings-buffer)))
+      (let ((doc (condition-case nil
+                     ;; FIXME: Maybe `help-fns--signature' should return `doc'
+                     ;; for invalid functions i.s.o. signaling an error.
+                     (help-fns--signature
+                      function doc-raw
+                      (if (subrp def) (indirect-function real-def) real-def)
+                      real-function key-bindings-buffer)
+                   ;; E.g. an alias for a not yet defined function.
+                   ((invalid-function void-function) doc-raw))))
         (run-hook-with-args 'help-fns-describe-function-functions function)
         (insert "\n" (or doc "Not documented.")))
+      (when (or (function-get function 'pure)
+                (function-get function 'side-effect-free))
+        (insert "\nThis function does not change global state, "
+                "including the match data."))
       ;; Avoid asking the user annoying questions if she decides
       ;; to save the help buffer, when her locale's codeset
       ;; isn't UTF-8.
@@ -1275,7 +1293,7 @@ BUFFER should be a buffer or a buffer name."
           ".AU Richard M. Stallman\n")
   (insert-file-contents file)
   (let (notfirst)
-    (while (search-forward "" nil 'move)
+    (while (search-forward "\^_" nil 'move)
       (if (= (following-char) ?S)
           (delete-region (1- (point)) (line-end-position))
         (delete-char -1)
@@ -1308,12 +1326,12 @@ BUFFER should be a buffer or a buffer name."
         (insert "@")
         (forward-char 1))
       (goto-char (point-min))
-      (while (search-forward "" nil t)
+      (while (search-forward "\^_" nil t)
         (when (/= (following-char) ?S)
           (setq type (char-after)
                 name (buffer-substring (1+ (point)) (line-end-position))
                 doc (buffer-substring (line-beginning-position 2)
-                                      (if (search-forward  "" nil 'move)
+                                      (if (search-forward  "\^_" nil 'move)
                                           (1- (point))
                                         (point)))
                 alist (cons (list name type doc) alist))

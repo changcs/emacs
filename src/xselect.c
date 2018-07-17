@@ -1,5 +1,5 @@
 /* X Selection processing for Emacs.
-   Copyright (C) 1993-1997, 2000-2017 Free Software Foundation, Inc.
+   Copyright (C) 1993-1997, 2000-2018 Free Software Foundation, Inc.
 
 This file is part of GNU Emacs.
 
@@ -387,7 +387,7 @@ x_get_local_selection (Lisp_Object selection_symbol, Lisp_Object target_type,
 		       XCAR (XCDR (local_value)));
       else
 	value = Qnil;
-      unbind_to (count, Qnil);
+      value = unbind_to (count, value);
     }
 
   /* Make sure this value is of a type that we could transmit

@@ -1,6 +1,6 @@
 /* conf_post.h --- configure.ac includes this via AH_BOTTOM
 
-Copyright (C) 1988, 1993-1994, 1999-2002, 2004-2017 Free Software
+Copyright (C) 1988, 1993-1994, 1999-2002, 2004-2018 Free Software
 Foundation, Inc.
 
 This file is part of GNU Emacs.
@@ -31,7 +31,7 @@ along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 
 #include <stdbool.h>
 
-#if defined DOS_NT && !defined DEFER_MS_W32_H
+#if defined WINDOWSNT && !defined DEFER_MS_W32_H
 # include <ms-w32.h>
 #endif
 
@@ -67,14 +67,7 @@ typedef bool bool_bf;
 # define __has_attribute_externally_visible GNUC_PREREQ (4, 1, 0)
 # define __has_attribute_no_address_safety_analysis false
 # define __has_attribute_no_sanitize_address GNUC_PREREQ (4, 8, 0)
-#endif
-
-/* Simulate __has_builtin on compilers that lack it.  It is used only
-   on arguments like __builtin_assume_aligned that are handled in this
-   simulation.  */
-#ifndef __has_builtin
-# define __has_builtin(a) __has_builtin_##a
-# define __has_builtin___builtin_assume_aligned GNUC_PREREQ (4, 7, 0)
+# define __has_attribute_no_sanitize_undefined GNUC_PREREQ (4, 9, 0)
 #endif
 
 /* Simulate __has_feature on compilers that lack it.  It is used only
@@ -88,11 +81,6 @@ typedef bool bool_bf;
 # define ADDRESS_SANITIZER true
 #else
 # define ADDRESS_SANITIZER false
-#endif
-
-/* Yield PTR, which must be aligned to ALIGNMENT.  */
-#if ! __has_builtin (__builtin_assume_aligned)
-# define __builtin_assume_aligned(ptr, ...) ((void *) (ptr))
 #endif
 
 #ifdef DARWIN_OS
@@ -255,7 +243,27 @@ extern int emacs_setenv_TZ (char const *);
 #if GNUC_PREREQ (4, 4, 0) && defined __GLIBC_MINOR__
 # define PRINTF_ARCHETYPE __gnu_printf__
 #elif GNUC_PREREQ (4, 4, 0) && defined __MINGW32__
-# define PRINTF_ARCHETYPE __ms_printf__
+# ifdef MINGW_W64
+/* When __USE_MINGW_ANSI_STDIO is non-zero (as set by config.h),
+   MinGW64 replaces printf* with its own versions that are
+   __gnu_printf__ compatible, and emits warnings for MS native %I64d
+   format spec.  */
+#  if __USE_MINGW_ANSI_STDIO
+#   define PRINTF_ARCHETYPE __gnu_printf__
+#  else
+#   define PRINTF_ARCHETYPE __ms_printf__
+#  endif
+# else	/* mingw.org's MinGW */
+/* Starting from runtime v5.0.0, mingw.org's MinGW with GCC 6 and
+   later turns on __USE_MINGW_ANSI_STDIO by default, replaces printf*
+   with its own __mingw_printf__ version, which still recognizes
+   %I64d.  */
+#  if GNUC_PREREQ (6, 0, 0) && __MINGW32_MAJOR_VERSION >= 5
+#   define PRINTF_ARCHETYPE __mingw_printf__
+#  else  /* __MINGW32_MAJOR_VERSION < 5 */
+#   define PRINTF_ARCHETYPE __ms_printf__
+#  endif  /* __MINGW32_MAJOR_VERSION < 5 */
+# endif	 /* MinGW */
 #else
 # define PRINTF_ARCHETYPE __printf__
 #endif
@@ -318,10 +326,26 @@ extern int emacs_setenv_TZ (char const *);
 # define ATTRIBUTE_NO_SANITIZE_ADDRESS
 #endif
 
-/* gcc -fsanitize=address does not work with vfork in Fedora 25 x86-64.
+/* Attribute of functions whose undefined behavior should not be sanitized.  */
+
+#if __has_attribute (no_sanitize_undefined)
+# define ATTRIBUTE_NO_SANITIZE_UNDEFINED __attribute__ ((no_sanitize_undefined))
+#elif __has_attribute (no_sanitize)
+# define ATTRIBUTE_NO_SANITIZE_UNDEFINED \
+    __attribute__ ((no_sanitize ("undefined")))
+#else
+# define ATTRIBUTE_NO_SANITIZE_UNDEFINED
+#endif
+
+/* gcc -fsanitize=address does not work with vfork in Fedora 28 x86-64.  See:
+   https://lists.gnu.org/r/emacs-devel/2017-05/msg00464.html
    For now, assume that this problem occurs on all platforms.  */
 #if ADDRESS_SANITIZER && !defined vfork
 # define vfork fork
+#endif
+
+#if ! (defined __FreeBSD__ || defined GNU_LINUX || defined __MINGW32__)
+# undef PROFILING
 #endif
 
 /* Some versions of GNU/Linux define noinline in their headers.  */

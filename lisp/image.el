@@ -1,6 +1,6 @@
 ;;; image.el --- image API  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1998-2017 Free Software Foundation, Inc.
+;; Copyright (C) 1998-2018 Free Software Foundation, Inc.
 
 ;; Maintainer: emacs-devel@gnu.org
 ;; Keywords: multimedia
@@ -29,13 +29,14 @@
   "Image support."
   :group 'multimedia)
 
+(declare-function image-flush "image.c" (spec &optional frame))
 (defalias 'image-refresh 'image-flush)
 
 (defconst image-type-header-regexps
   `(("\\`/[\t\n\r ]*\\*.*XPM.\\*/" . xpm)
     ("\\`P[1-6]\\(?:\
-\\(?:\\(?:#[^\r\n]*[\r\n]\\)?[[:space:]]\\)+\
-\\(?:\\(?:#[^\r\n]*[\r\n]\\)?[0-9]\\)+\
+\\(?:\\(?:#[^\r\n]*[\r\n]\\)*[[:space:]]\\)+\
+\\(?:\\(?:#[^\r\n]*[\r\n]\\)*[0-9]\\)+\
 \\)\\{2\\}" . pbm)
     ("\\`GIF8[79]a" . gif)
     ("\\`\x89PNG\r\n\x1a\n" . png)
@@ -115,6 +116,9 @@ told that the data would have the associated suffix if saved to a file.")
   (list (file-name-as-directory (expand-file-name "images" data-directory))
         'data-directory 'load-path)
   "List of locations in which to search for image files.
+The images for icons shown in the tool bar are also looked up
+in these locations.
+
 If an element is a string, it defines a directory to search.
 If an element is a variable symbol whose value is a string, that
 value defines a directory to search.
@@ -244,6 +248,7 @@ compatibility with versions of Emacs that lack the variable
 ;; Used to be in image-type-header-regexps, but now not used anywhere
 ;; (since 2009-08-28).
 (defun image-jpeg-p (data)
+  (declare (obsolete "It is unused inside Emacs and will be removed." "27.1"))
   "Value is non-nil if DATA, a string, consists of JFIF image data.
 We accept the tag Exif because that is the same format."
   (setq data (ignore-errors (string-to-unibyte data)))
@@ -970,17 +975,19 @@ default is 20%."
                         0.8)))
 
 (defun image--get-image ()
-  (let ((image (get-text-property (point) 'display)))
+  "Return the image at point."
+  (let ((image (get-char-property (point) 'display)))
     (unless (eq (car-safe image) 'image)
       (error "No image under point"))
     image))
 
 (defun image--get-imagemagick-and-warn ()
-  (unless (fboundp 'imagemagick-types)
-    (error "Can't rescale images without ImageMagick support"))
+  (unless (or (fboundp 'imagemagick-types) (featurep 'ns))
+    (error "Cannot rescale images without ImageMagick support"))
   (let ((image (image--get-image)))
     (image-flush image)
-    (plist-put (cdr image) :type 'imagemagick)
+    (when (fboundp 'imagemagick-types)
+      (plist-put (cdr image) :type 'imagemagick))
     image))
 
 (defun image--change-size (factor)
@@ -999,6 +1006,8 @@ default is 20%."
               (unless (memq key '(:scale :width :height :max-width :max-height))
               (setq new (nconc new (list key val))))))
           new)))
+
+(declare-function image-size "image.c" (spec &optional pixels frame))
 
 (defun image--current-scaling (image new-image)
   ;; The image may be scaled due to many reasons (:scale, :max-width,
@@ -1022,10 +1031,7 @@ default is 20%."
 (defun image-save ()
   "Save the image under point."
   (interactive)
-  (let ((image (get-text-property (point) 'display)))
-    (when (or (not (consp image))
-              (not (eq (car image) 'image)))
-      (error "No image under point"))
+  (let ((image (image--get-image)))
     (with-temp-buffer
       (let ((file (plist-get (cdr image) :file)))
         (if file

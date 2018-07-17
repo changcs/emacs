@@ -1,6 +1,6 @@
 ;;; eldoc.el --- Show function arglist or variable docstring in echo area  -*- lexical-binding:t; -*-
 
-;; Copyright (C) 1996-2017 Free Software Foundation, Inc.
+;; Copyright (C) 1996-2018 Free Software Foundation, Inc.
 
 ;; Author: Noah Friedman <friedman@splode.com>
 ;; Maintainer: friedman@splode.com
@@ -177,9 +177,6 @@ printed after commands contained in this obarray."
 ;;;###autoload
 (define-minor-mode eldoc-mode
   "Toggle echo area display of Lisp objects at point (ElDoc mode).
-With a prefix argument ARG, enable ElDoc mode if ARG is positive,
-and disable it otherwise.  If called from Lisp, enable ElDoc mode
-if ARG is omitted or nil.
 
 ElDoc mode is a buffer-local minor mode.  When enabled, the echo
 area displays information about a function or variable in the
@@ -264,12 +261,13 @@ Otherwise work like `message'."
 	     (or (window-in-direction 'above (minibuffer-window))
 		 (minibuffer-selected-window)
 		 (get-largest-window)))
+    (when mode-line-format
 	  (unless (and (listp mode-line-format)
 		       (assq 'eldoc-mode-line-string mode-line-format))
 	    (setq mode-line-format
 		  (list "" '(eldoc-mode-line-string
 			     (" " eldoc-mode-line-string " "))
-			mode-line-format)))
+			mode-line-format))))
           (setq eldoc-mode-line-string
                 (when (stringp format-string)
                   (apply #'format-message format-string args)))

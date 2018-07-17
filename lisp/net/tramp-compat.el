@@ -1,6 +1,6 @@
 ;;; tramp-compat.el --- Tramp compatibility functions  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2007-2017 Free Software Foundation, Inc.
+;; Copyright (C) 2007-2018 Free Software Foundation, Inc.
 
 ;; Author: Michael Albinus <michael.albinus@gmx.de>
 ;; Keywords: comm, processes
@@ -23,8 +23,9 @@
 
 ;;; Commentary:
 
-;; Tramp's main Emacs version for development is Emacs 26.  This
-;; package provides compatibility functions for Emacs 24 and Emacs 25.
+;; Tramp's main Emacs version for development is Emacs 27.  This
+;; package provides compatibility functions for Emacs 24, Emacs 25 and
+;; Emacs 26.
 
 ;;; Code:
 
@@ -39,7 +40,6 @@
 (require 'timer)
 (require 'ucs-normalize)
 
-(require 'trampver)
 (require 'tramp-loaddefs)
 
 ;; For not existing functions, obsolete functions, or functions with a
@@ -97,12 +97,9 @@ Add the extension of F, if existing."
                                     process-name))))
 	      (setq result t)))))))))
 
-;; `user-error' has appeared in Emacs 24.3.
-(defsubst tramp-compat-user-error (vec-or-proc format &rest args)
-  "Signal a pilot error."
-  (apply
-   'tramp-error vec-or-proc
-   (if (fboundp 'user-error) 'user-error 'error) format args))
+;; `default-toplevel-value' has been declared in Emacs 24.4.
+(unless (fboundp 'default-toplevel-value)
+  (defalias 'default-toplevel-value 'symbol-value))
 
 ;; `file-attribute-*' are introduced in Emacs 25.1.
 
@@ -163,23 +160,27 @@ This is a floating point number if the size is too large for an integer."
 This is a string of ten letters or dashes as in ls -l."
     (nth 8 attributes)))
 
-;; `default-toplevel-value' has been declared in Emacs 24.4.
-(unless (fboundp 'default-toplevel-value)
-  (defalias 'default-toplevel-value 'symbol-value))
-
 ;; `format-message' is new in Emacs 25.1.
 (unless (fboundp 'format-message)
   (defalias 'format-message 'format))
+
+;; `directory-name-p' is new in Emacs 25.1.
+(if (fboundp 'directory-name-p)
+    (defalias 'tramp-compat-directory-name-p 'directory-name-p)
+  (defsubst tramp-compat-directory-name-p (name)
+    "Return non-nil if NAME ends with a directory separator character."
+    (let ((len (length name))
+          (lastc ?.))
+      (if (> len 0)
+          (setq lastc (aref name (1- len))))
+      (or (= lastc ?/)
+          (and (memq system-type '(windows-nt ms-dos))
+               (= lastc ?\\))))))
 
 ;; `file-missing' is introduced in Emacs 26.1.
 (defconst tramp-file-missing
   (if (get 'file-missing 'error-conditions) 'file-missing 'file-error)
   "The error symbol for the `file-missing' error.")
-
-(add-hook 'tramp-unload-hook
-	  (lambda ()
-	    (unload-feature 'tramp-loaddefs 'force)
-	    (unload-feature 'tramp-compat 'force)))
 
 ;; `file-name-quoted-p', `file-name-quote' and `file-name-unquote' are
 ;; introduced in Emacs 26.
@@ -196,8 +197,10 @@ If NAME is a remote file name, check the local part of NAME."
     (defsubst tramp-compat-file-name-quote (name)
       "Add the quotation prefix \"/:\" to file NAME.
 If NAME is a remote file name, the local part of NAME is quoted."
-      (concat
-       (file-remote-p name) "/:" (or (file-remote-p name 'localname) name))))
+      (if (tramp-compat-file-name-quoted-p name)
+	  name
+	(concat
+	 (file-remote-p name) "/:" (or (file-remote-p name 'localname) name)))))
 
   (if (fboundp 'file-name-unquote)
       (defalias 'tramp-compat-file-name-unquote 'file-name-unquote)
@@ -221,12 +224,33 @@ If NAME is a remote file name, the local part of NAME is unquoted."
 	((eq tramp-syntax 'sep) 'separate)
 	(t tramp-syntax)))
 
-;; Older Emacsen keep incompatible autoloaded values of `tramp-syntax'.
-(eval-after-load 'tramp
-  '(unless
-       (memq tramp-syntax (tramp-compat-funcall (quote tramp-syntax-values)))
-     (tramp-compat-funcall
-      (quote tramp-change-syntax) (tramp-compat-tramp-syntax))))
+;; `cl-struct-slot-info' has been introduced with Emacs 25.
+(defmacro tramp-compat-tramp-file-name-slots ()
+  (if (fboundp 'cl-struct-slot-info)
+      `(cdr (mapcar 'car (cl-struct-slot-info 'tramp-file-name)))
+    `(cdr (mapcar 'car (get 'tramp-file-name 'cl-struct-slots)))))
+
+;; The signature of `tramp-make-tramp-file-name' has been changed.
+;; Therefore, we cannot us `url-tramp-convert-url-to-tramp' prior
+;; Emacs 26.1.  We use `temporary-file-directory' as indicator.
+(defconst tramp-compat-use-url-tramp-p (fboundp 'temporary-file-directory)
+  "Whether to use url-tramp.el.")
+
+;; `exec-path' is new in Emacs 27.1.
+(eval-and-compile
+  (if (fboundp 'exec-path)
+      (defalias 'tramp-compat-exec-path 'exec-path)
+    (defun tramp-compat-exec-path ()
+      "List of directories to search programs to run in remote subprocesses."
+      (let ((handler (find-file-name-handler default-directory 'exec-path)))
+	(if handler
+	    (funcall handler 'exec-path)
+	  exec-path)))))
+
+(add-hook 'tramp-unload-hook
+	  (lambda ()
+	    (unload-feature 'tramp-loaddefs 'force)
+	    (unload-feature 'tramp-compat 'force)))
 
 (provide 'tramp-compat)
 

@@ -1,6 +1,6 @@
 @c -*-texinfo-*-
 @c This is part of the GNU Emacs Lisp Reference Manual.
-@c Copyright (C) 1990-1995, 1998-1999, 2001-2017 Free Software
+@c Copyright (C) 1990-1995, 1998-1999, 2001-2018 Free Software
 @c Foundation, Inc.
 @c See the file elisp.texi for copying conditions.
 @node Files
@@ -332,7 +332,9 @@ in the list @code{find-file-hook}.
 that is visiting that file---that is, the contents of the file are
 copied into the buffer and the copy is what you edit.  Changes to the
 buffer do not change the file until you @dfn{save} the buffer, which
-means copying the contents of the buffer into the file.
+means copying the contents of the buffer into the file.  Buffers which
+are not visiting a file can still be ``saved'', in a sense, using
+functions in the buffer-local @code{write-contents-functions} hook.
 
 @deffn Command save-buffer &optional backup-option
 This function saves the contents of the current buffer in its visited
@@ -365,8 +367,8 @@ With an argument of 0, unconditionally do @emph{not} make any backup file.
 @anchor{Definition of save-some-buffers}
 This command saves some modified file-visiting buffers.  Normally it
 asks the user about each buffer.  But if @var{save-silently-p} is
-non-@code{nil}, it saves all the file-visiting buffers without querying
-the user.
+non-@code{nil}, it saves all the file-visiting buffers without
+querying the user.
 
 @vindex save-some-buffers-default-predicate
 The optional @var{pred} argument provides a predicate that controls
@@ -580,8 +582,9 @@ with @code{insert-file-contents}, as long as @var{replace} and
 
 @defun insert-file-contents-literally filename &optional visit beg end replace
 This function works like @code{insert-file-contents} except that it
-does not run @code{find-file-hook}, and does not do format decoding,
-character code conversion, automatic uncompression, and so on.
+does not run @code{after-insert-file-functions}, and does not do
+format decoding, character code conversion, automatic uncompression,
+and so on.
 @end defun
 
 If you want to pass a file name to another process so that another
@@ -709,6 +712,7 @@ with-temp-buffer,, The Current Buffer}.
 @section File Locks
 @cindex file locks
 @cindex lock file
+@cindex .#, lock file names
 
   When two users edit the same file at the same time, they are likely
 to interfere with each other.  Emacs tries to prevent this situation
@@ -717,8 +721,17 @@ modified.
 Emacs can then detect the first attempt to modify a buffer visiting a
 file that is locked by another Emacs job, and ask the user what to do.
 The file lock is really a file, a symbolic link with a special name,
-stored in the same directory as the file you are editing.  (On file
-systems that do not support symbolic links, a regular file is used.)
+stored in the same directory as the file you are editing.  The name is
+constructed by prepending @file{.#} to the filename of the buffer.
+The target of the symbolic link will be of the form
+@code{@var{user}@@@var{host}.@var{pid}:@var{boot}}, where @var{user}
+is replaced with the current username (from @code{user-login-name}),
+@var{host} with the name of the host where Emacs is running (from
+@code{system-name}), @var{pid} with Emacs's process id, and @var{boot}
+with the time since the last reboot.  @code{:@var{boot}} is omitted if
+the boot time is unavailable.  (On file systems that do not support
+symbolic links, a regular file is used instead, with contents of the
+form @code{@var{user}@@@var{host}.@var{pid}:@var{boot}}.)
 
   When you access files using NFS, there may be a small probability that
 you and another user will both lock the same file simultaneously.
@@ -1168,14 +1181,14 @@ Sometimes file names or their parts need to be compared as strings, in
 which case it's important to know whether the underlying filesystem is
 case-insensitive.  This function returns @code{t} if file
 @var{filename} is on a case-insensitive filesystem.  It always returns
-@code{t} on MS-DOS and MS-Windows.  On Cygwin and Mac OS X,
+@code{t} on MS-DOS and MS-Windows.  On Cygwin and macOS,
 filesystems may or may not be case-insensitive, and the function tries
 to determine case-sensitivity by a runtime test.  If the test is
 inconclusive, the function returns @code{t} on Cygwin and @code{nil}
-on Mac OS X.
+on macOS.
 
 Currently this function always returns @code{nil} on platforms other
-than MS-DOS, MS-Windows, Cygwin, and Mac OS X.  It does not detect
+than MS-DOS, MS-Windows, Cygwin, and macOS.  It does not detect
 case-insensitivity of mounted filesystems, such as Samba shares or
 NFS-mounted Windows volumes.  On remote hosts, it assumes @code{t} for
 the @samp{smb} method.  For all other connection methods, runtime
@@ -1295,9 +1308,10 @@ The file's @acronym{GID}, likewise (@code{file-attribute-group-id}).
 The time of last access, as a list of four integers
 @code{(@var{sec-high} @var{sec-low} @var{microsec} @var{picosec})}
 (@code{file-attribute-access-time}).  (This is similar to the value of
-@code{current-time}; see @ref{Time of Day}.)  Note that on some
+@code{current-time}; see @ref{Time of Day}.)  The value is truncated
+to that of the filesystem's timestamp resolution; for example, on some
 FAT-based filesystems, only the date of last access is recorded, so
-this time will always hold the midnight of the day of last access.
+this time will always hold the midnight of the day of the last access.
 
 @cindex modification time of file
 @item
@@ -1538,18 +1552,31 @@ argument.  If @var{predicate} is @code{nil} or omitted,
 @xref{Kinds of Files}, for other useful predicates, e.g.,
 @code{file-executable-p} and @code{file-directory-p}.
 
+This function will normally skip directories, so if you want it to
+find directories, make sure the @var{predicate} function returns
+@code{dir-ok} for them.  For example:
+
+@example
+(locate-file "html" '("/var/www" "/srv") nil
+             (lambda (f) (if (file-directory-p f) 'dir-ok)))
+@end example
+
+
 For compatibility, @var{predicate} can also be one of the symbols
 @code{executable}, @code{readable}, @code{writable}, @code{exists}, or
 a list of one or more of these symbols.
 @end defun
 
-@defun executable-find program
+@defun executable-find program &optional remote
 This function searches for the executable file of the named
 @var{program} and returns the absolute file name of the executable,
 including its file-name extensions, if any.  It returns @code{nil} if
-the file is not found.  The functions searches in all the directories
+the file is not found.  The function searches in all the directories
 in @code{exec-path}, and tries all the file-name extensions in
 @code{exec-suffixes} (@pxref{Subprocess Creation}).
+
+If @var{remote} is non-@code{nil}, and @code{default-directory} is a
+remote directory, @var{program} is searched on the respective remote host.
 @end defun
 
 @node Changing Files
@@ -1819,7 +1846,9 @@ has these permissions, or a subset of them (@code{write-region} will
 not grant execute permissions even if the default file permissions
 allow execution).  On GNU and other POSIX-like systems, the default
 permissions are given by the bitwise complement of the @samp{umask}
-value.
+value, i.e.@: each bit that is set in the argument @var{mode} will be
+@emph{reset} in the default permissions with which Emacs creates
+files.
 
 The argument @var{mode} should be an integer which specifies the
 permissions, similar to @code{set-file-modes} above.  Only the lowest
@@ -1879,8 +1908,7 @@ all.
 This function sets the access and modification times of @var{filename}
 to @var{time}.  The return value is @code{t} if the times are successfully
 set, otherwise it is @code{nil}.  @var{time} defaults to the current
-time and must be in the format returned by @code{current-time}
-(@pxref{Time of Day}).
+time and must be a time value (@pxref{Time of Day}).
 @end defun
 
 @defun set-file-extended-attributes filename attribute-alist
@@ -2106,7 +2134,7 @@ Note that the @samp{.~3~} in the two last examples is the backup part,
 not an extension.
 @end defun
 
-@defun file-name-base &optional filename
+@defun file-name-base filename
 This function is the composition of @code{file-name-sans-extension}
 and @code{file-name-nondirectory}.  For example,
 
@@ -2114,8 +2142,6 @@ and @code{file-name-nondirectory}.  For example,
 (file-name-base "/my/home/foo.c")
     @result{} "foo"
 @end example
-
-The @var{filename} argument defaults to @code{buffer-file-name}.
 @end defun
 
 @node Relative File Names
@@ -2280,7 +2306,8 @@ because this is not portable.  Always use
 @code{file-name-as-directory}.
 
   To avoid the issues mentioned above, or if the @var{dirname} value
-might be nil (for example, from an element of @code{load-path}), use:
+might be @code{nil} (for example, from an element of @code{load-path}),
+use:
 
 @example
 (expand-file-name @var{relfile} @var{dirname})
@@ -2547,10 +2574,10 @@ This function creates a temporary file and returns its name.  Emacs
 creates the temporary file's name by adding to @var{prefix} some
 random characters that are different in each Emacs job.  The result is
 guaranteed to be a newly created file, containing @var{text} if that's
-given as a string and empty otherwise. On MS-DOS, this function
-can truncate the @var{string} prefix to fit into the 8+3 file-name
-limits.  If @var{prefix} is a relative file name, it is expanded
-against @code{temporary-file-directory}.
+given as a string and empty otherwise. On MS-DOS, this function can
+truncate @var{prefix} to fit into the 8+3 file-name limits.  If
+@var{prefix} is a relative file name, it is expanded against
+@code{temporary-file-directory}.
 
 @example
 @group
@@ -2901,8 +2928,8 @@ are included.
 This is similar to @code{directory-files} in deciding which files
 to report on and how to report their names.  However, instead
 of returning a list of file names, it returns for each file a
-list @code{(@var{filename} . @var{attributes})}, where @var{attributes}
-is what @code{file-attributes} would return for that file.
+list @code{(@var{filename} @var{attributes})}, where @var{attributes}
+is what @code{file-attributes} returns for that file.
 The optional argument @var{id-format} has the same meaning as the
 corresponding argument to @code{file-attributes} (@pxref{Definition
 of file-attributes}).
@@ -3113,8 +3140,8 @@ first, before handlers for jobs such as remote file access.
 @code{directory-file-name},
 @code{directory-files},
 @code{directory-files-and-attributes},
-@code{dired-compress-file}, @code{dired-uncache},@*
-@code{expand-file-name},
+@code{dired-compress-file}, @code{dired-uncache},
+@code{exec-path}, @code{expand-file-name},@*
 @code{file-accessible-directory-p},
 @code{file-acl},
 @code{file-attributes},
@@ -3135,7 +3162,8 @@ first, before handlers for jobs such as remote file access.
 @code{file-ownership-preserved-p},
 @code{file-readable-p}, @code{file-regular-p},
 @code{file-remote-p}, @code{file-selinux-context},
-@code{file-symlink-p}, @code{file-truename}, @code{file-writable-p},
+@code{file-symlink-p}, @code{file-system-info},
+@code{file-truename}, @code{file-writable-p},
 @code{find-backup-file-name},@*
 @code{get-file-buffer},
 @code{insert-directory},
@@ -3170,7 +3198,7 @@ first, before handlers for jobs such as remote file access.
 @code{directory-files},
 @code{directory-files-and-at@discretionary{}{}{}tributes},
 @code{dired-compress-file}, @code{dired-uncache},
-@code{expand-file-name},
+@code{exec-path}, @code{expand-file-name},
 @code{file-accessible-direc@discretionary{}{}{}tory-p},
 @code{file-acl},
 @code{file-attributes},
@@ -3191,7 +3219,8 @@ first, before handlers for jobs such as remote file access.
 @code{file-ownership-pre@discretionary{}{}{}served-p},
 @code{file-readable-p}, @code{file-regular-p},
 @code{file-remote-p}, @code{file-selinux-context},
-@code{file-symlink-p}, @code{file-truename}, @code{file-writable-p},
+@code{file-symlink-p}, @code{file-system-info},
+@code{file-truename}, @code{file-writable-p},
 @code{find-backup-file-name},
 @code{get-file-buffer},
 @code{insert-directory},
@@ -3252,7 +3281,7 @@ shown above; the details are crucial for proper behavior in the case of
 multiple handlers, and for operations that have two file names that may
 each have handlers.
 
-@kindex safe-magic (@r{property})
+@kindex safe-magic @r{(property)}
   Handlers that don't really do anything special for actual access to the
 file---such as the ones that implement completion of host names for
 remote file names---should have a non-@code{nil} @code{safe-magic}
@@ -3262,7 +3291,7 @@ file names, by prefixing them with @samp{/:}.  But if the handler that
 would be used for them has a non-@code{nil} @code{safe-magic}
 property, the @samp{/:} is not added.
 
-@kindex operations (@r{property})
+@kindex operations @r{(property)}
   A file name handler can have an @code{operations} property to
 declare which operations it handles in a nontrivial way.  If this
 property has a non-@code{nil} value, it should be a list of

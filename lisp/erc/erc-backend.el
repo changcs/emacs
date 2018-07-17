@@ -1,6 +1,6 @@
 ;;; erc-backend.el --- Backend network communication for ERC  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2004-2017 Free Software Foundation, Inc.
+;; Copyright (C) 2004-2018 Free Software Foundation, Inc.
 
 ;; Filename: erc-backend.el
 ;; Author: Lawrence Mitchell <wence@gmx.li>
@@ -466,14 +466,18 @@ If this is set to nil, never try to reconnect."
 The length is specified in `erc-split-line-length'.
 
 Currently this is called by `erc-send-input'."
-  (if (< (length longline)
-         erc-split-line-length)
-      (list longline)
+  (let ((charset (car (erc-coding-system-for-target nil))))
     (with-temp-buffer
       (insert longline)
+      ;; The line lengths are in octets, not characters (because these
+      ;; are server protocol limits), so we have to first make the
+      ;; text into bytes, then fold the bytes on "word" boundaries,
+      ;; and then make the bytes into text again.
+      (encode-coding-region (point-min) (point-max) charset)
       (let ((fill-column erc-split-line-length))
         (fill-region (point-min) (point-max)
                      nil t))
+      (decode-coding-region (point-min) (point-max) charset)
       (split-string (buffer-string) "\n"))))
 
 (defun erc-forward-word ()
@@ -644,22 +648,24 @@ Make sure you are in an ERC buffer when running this."
             (erc-log-irc-protocol line nil)
             (erc-parse-server-response process line)))))))
 
-(defsubst erc-server-reconnect-p (event)
+(define-inline erc-server-reconnect-p (event)
   "Return non-nil if ERC should attempt to reconnect automatically.
 EVENT is the message received from the closed connection process."
-  (or erc-server-reconnecting
-      (and erc-server-auto-reconnect
-           (not erc-server-banned)
-           ;; make sure we don't infinitely try to reconnect, unless the
-           ;; user wants that
-           (or (eq erc-server-reconnect-attempts t)
-               (and (integerp erc-server-reconnect-attempts)
-                    (< erc-server-reconnect-count
-                       erc-server-reconnect-attempts)))
-           (or erc-server-timed-out
-               (not (string-match "^deleted" event)))
-           ;; open-network-stream-nowait error for connection refused
-           (if (string-match "^failed with code 111" event) 'nonblocking t))))
+  (inline-letevals (event)
+    (inline-quote
+     (or erc-server-reconnecting
+         (and erc-server-auto-reconnect
+              (not erc-server-banned)
+              ;; make sure we don't infinitely try to reconnect, unless the
+              ;; user wants that
+              (or (eq erc-server-reconnect-attempts t)
+                  (and (integerp erc-server-reconnect-attempts)
+                       (< erc-server-reconnect-count
+                          erc-server-reconnect-attempts)))
+              (or erc-server-timed-out
+                  (not (string-match "^deleted" ,event)))
+              ;; open-network-stream-nowait error for connection refused
+              (if (string-match "^failed with code 111" ,event) 'nonblocking t))))))
 
 (defun erc-process-sentinel-2 (event buffer)
   "Called when `erc-process-sentinel-1' has detected an unexpected disconnect."

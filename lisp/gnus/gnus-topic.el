@@ -1,6 +1,6 @@
 ;;; gnus-topic.el --- a folding minor mode for Gnus group buffers
 
-;; Copyright (C) 1995-2017 Free Software Foundation, Inc.
+;; Copyright (C) 1995-2018 Free Software Foundation, Inc.
 
 ;; Author: Ilja Weis <kult@uni-paderborn.de>
 ;;	Lars Magne Ingebrigtsen <larsi@gnus.org>
@@ -25,7 +25,7 @@
 
 ;;; Code:
 
-(eval-when-compile (require 'cl))
+(eval-when-compile (require 'cl-lib))
 
 (require 'gnus)
 (require 'gnus-group)
@@ -128,7 +128,7 @@ See Info node `(gnus)Formatting Variables'."
 	number)
     (while entries
       (when (numberp (setq number (car (pop entries))))
-	(incf total number)))
+	(cl-incf total number)))
     total))
 
 (defun gnus-group-topic (group)
@@ -220,6 +220,8 @@ If RECURSIVE is t, return groups in its subtopics too."
 	   ;; Check for permanent visibility.
 	   (and gnus-permanently-visible-groups
 		(string-match gnus-permanently-visible-groups group))
+	   ;; Marked groups are always visible.
+	   (member group gnus-group-marked)
 	   (memq 'visible params)
 	   (cdr (assq 'visible params)))
        ;; Add this group to the list of visible groups.
@@ -302,7 +304,7 @@ If RECURSIVE is t, return groups in its subtopics too."
     (while (and (not (zerop num))
 		(setq topic (funcall way topic)))
       (when (gnus-topic-goto-topic topic)
-	(decf num)))
+	(cl-decf num)))
     (unless (zerop num)
       (goto-char (point-max)))
     num))
@@ -458,7 +460,7 @@ If LOWEST is non-nil, list all newsgroups of level LOWEST or higher."
 	(unless gnus-killed-hashtb
 	  (gnus-make-hashtable-from-killed))
 	(gnus-group-prepare-flat-list-dead
-	 (gnus-remove-if (lambda (group)
+	 (seq-remove (lambda (group)
 			   (or (gnus-group-entry group)
 			       (gnus-gethash group gnus-killed-hashtb)))
 			 not-in-list)
@@ -508,7 +510,7 @@ articles in the topic and its subtopics."
 	 info entry end active tick)
     ;; Insert any sub-topics.
     (while topicl
-      (incf unread
+      (cl-incf unread
 	    (gnus-topic-prepare-topic
 	     (pop topicl) (1+ level) list-level predicate
 	     (not visiblep) lowest regexp)))
@@ -562,7 +564,7 @@ articles in the topic and its subtopics."
 	       (car entry) (gnus-info-method info)))))
 	(when (and (listp entry)
 		   (numberp (car entry)))
-	  (incf unread (car entry)))
+	  (cl-incf unread (car entry)))
 	(when (listp entry)
 	  (setq tick t))))
     (goto-char beg)
@@ -728,10 +730,10 @@ articles in the topic and its subtopics."
 		   (cdr gnus-group-list-mode)))
 	entry)
     (while children
-      (incf unread (gnus-topic-unread (caar (pop children)))))
+      (cl-incf unread (gnus-topic-unread (caar (pop children)))))
     (while (setq entry (pop entries))
       (when (numberp (car entry))
-	(incf unread (car entry))))
+	(cl-incf unread (car entry))))
     (gnus-topic-insert-topic-line
      topic t t (car (gnus-topic-find-topology topic)) nil unread)))
 
@@ -772,10 +774,10 @@ articles in the topic and its subtopics."
       (if reads
 	  (setq unread (- (gnus-group-topic-unread) reads))
 	(while children
-	  (incf unread (gnus-topic-unread (caar (pop children)))))
+	  (cl-incf unread (gnus-topic-unread (caar (pop children)))))
 	(while (setq entry (pop entries))
 	  (when (numberp (car entry))
-	    (incf unread (car entry)))))
+	    (cl-incf unread (car entry)))))
       (setq old-unread (gnus-group-topic-unread))
       ;; Insert the topic line.
       (gnus-topic-insert-topic-line

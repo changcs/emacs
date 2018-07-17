@@ -1,6 +1,6 @@
 ;;; python-tests.el --- Test suite for python.el
 
-;; Copyright (C) 2013-2017 Free Software Foundation, Inc.
+;; Copyright (C) 2013-2018 Free Software Foundation, Inc.
 
 ;; This file is part of GNU Emacs.
 
@@ -1109,6 +1109,37 @@ def fn(a, b, c=True):
    (should (eq (car (python-indent-context)) :inside-string))
    (should (= (python-indent-calculate-indentation) 4))))
 
+(ert-deftest python-indent-electric-comma-inside-multiline-string ()
+  "Test indentation ...."
+  (python-tests-with-temp-buffer
+   "
+a = (
+    '''\
+- foo,
+- bar
+'''
+"
+   (python-tests-look-at "- bar")
+   (should (eq (car (python-indent-context)) :inside-string))
+   (goto-char (line-end-position))
+   (python-tests-self-insert ",")
+   (should (= (current-indentation) 0))))
+
+(ert-deftest python-indent-electric-comma-after-multiline-string ()
+  "Test indentation ...."
+  (python-tests-with-temp-buffer
+   "
+a = (
+    '''\
+- foo,
+- bar'''
+"
+   (python-tests-look-at "- bar'''")
+   (should (eq (car (python-indent-context)) :inside-string))
+   (goto-char (line-end-position))
+   (python-tests-self-insert ",")
+   (should (= (current-indentation) 0))))
+
 (ert-deftest python-indent-electric-colon-1 ()
   "Test indentation case from Bug#18228."
   (python-tests-with-temp-buffer
@@ -1972,6 +2003,12 @@ string
                 (goto-char (point-max))
                 (python-util-forward-comment -1)
                 (point))))))
+
+(ert-deftest python-nav-end-of-statement-2 ()
+  "Test the string overlap assertion (Bug#30964)."
+  (python-tests-with-temp-buffer
+   "'\n''\n"
+   (python-nav-end-of-statement)))
 
 (ert-deftest python-nav-forward-statement-1 ()
   (python-tests-with-temp-buffer
@@ -5321,6 +5358,15 @@ buffer with overlapping strings."
                     (python-nav-end-of-statement)))
     (should (eolp))))
 
+;; After call `run-python' the buffer running the python process is current.
+(ert-deftest python-tests--bug31398 ()
+  "Test for https://debbugs.gnu.org/31398 ."
+  (skip-unless (executable-find python-tests-shell-interpreter))
+  (let ((buffer (process-buffer (run-python nil nil 'show))))
+    (should (eq buffer (current-buffer)))
+    (pop-to-buffer (other-buffer))
+    (run-python nil nil 'show)
+    (should (eq buffer (current-buffer)))))
 
 (provide 'python-tests)
 

@@ -1,6 +1,6 @@
 ;;; composite.el --- support character composition
 
-;; Copyright (C) 2001-2017 Free Software Foundation, Inc.
+;; Copyright (C) 2001-2018 Free Software Foundation, Inc.
 
 ;; Copyright (C) 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007,
 ;;   2008, 2009, 2010, 2011
@@ -337,8 +337,9 @@ When Automatic Composition mode is on, this function also finds a
 chunk of text that is automatically composed.  If such a chunk is
 found closer to POS than the position that has `composition'
 property, the value is a list of FROM, TO, and a glyph-string
-that specifies how the chunk is to be composed.  See the function
-`composition-get-gstring' for the format of the glyph-string."
+that specifies how the chunk is to be composed; DETAIL-P is
+ignored in this case.  See the function `composition-get-gstring'
+for the format of the glyph-string."
   (let ((result (find-composition-internal pos limit string detail-p)))
     (if (and detail-p (> (length result) 3) (nth 2 result) (not (nth 3 result)))
 	;; This is a valid rule-base composition.
@@ -442,8 +443,10 @@ after a sequence of character events."
 (defsubst lglyph-set-adjustment (glyph &optional xoff yoff wadjust)
   (aset glyph 9 (vector (or xoff 0) (or yoff 0) (or wadjust 0))))
 
+;; Return the shallow Copy of GLYPH.
 (defsubst lglyph-copy (glyph) (copy-sequence glyph))
 
+;; Insert GLYPH at the index IDX of GSTRING.
 (defun lgstring-insert-glyph (gstring idx glyph)
   (let ((nglyphs (lgstring-glyph-len gstring))
 	(i idx))
@@ -458,6 +461,18 @@ after a sequence of character events."
       (setq i (1- i)))
     (lgstring-set-glyph gstring i glyph)
     gstring))
+
+;; Remove glyph at IDX from GSTRING.
+(defun lgstring-remove-glyph (gstring idx)
+  (setq gstring (copy-sequence gstring))
+  (lgstring-set-id gstring nil)
+  (let ((len (length gstring)))
+    (setq idx (+ idx 3))
+    (while (< idx len)
+      (aset gstring (1- idx) (aref gstring idx))
+      (setq idx (1+ idx)))
+    (aset gstring (1- len) nil))
+  gstring)
 
 (defun compose-glyph-string (gstring from to)
   (let ((glyph (lgstring-glyph gstring from))
@@ -814,9 +829,6 @@ This function is the default value of `auto-composition-function' (which see)."
 ;;;###autoload
 (define-minor-mode auto-composition-mode
   "Toggle Auto Composition mode.
-With a prefix argument ARG, enable Auto Composition mode if ARG
-is positive, and disable it otherwise.  If called from Lisp,
-enable the mode if ARG is omitted or nil.
 
 When Auto Composition mode is enabled, text characters are
 automatically composed by functions registered in
@@ -832,9 +844,6 @@ Auto Composition mode in all buffers (this is the default)."
 ;;;###autoload
 (define-minor-mode global-auto-composition-mode
   "Toggle Auto Composition mode in all buffers.
-With a prefix argument ARG, enable it if ARG is positive, and
-disable it otherwise.  If called from Lisp, enable it if ARG is
-omitted or nil.
 
 For more information on Auto Composition mode, see
 `auto-composition-mode' ."

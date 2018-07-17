@@ -1,6 +1,6 @@
 ;;; electric.el --- window maker and Command loop for `electric' modes
 
-;; Copyright (C) 1985-1986, 1995, 2001-2017 Free Software Foundation,
+;; Copyright (C) 1985-1986, 1995, 2001-2018 Free Software Foundation,
 ;; Inc.
 
 ;; Author: K. Shane Hartman
@@ -227,7 +227,7 @@ Python does not lend itself to fully automatic indentation.")
     haskell-indentation-indent-line haskell-indent-cycle haskell-simple-indent
     yaml-indent-line)
   "List of indent functions that can't reindent.
-If `line-indent-function' is one of those, then `electric-indent-mode' will
+If `indent-line-function' is one of those, then `electric-indent-mode' will
 not try to reindent lines.  It is normally better to make the major
 mode set `electric-indent-inhibit', but this can be used as a workaround.")
 
@@ -260,32 +260,43 @@ or comment."
                 (or (memq act '(nil no-indent))
                     ;; In a string or comment.
                     (unless (eq act 'do-indent) (nth 8 (syntax-ppss))))))))
-      ;; For newline, we want to reindent both lines and basically behave like
-      ;; reindent-then-newline-and-indent (whose code we hence copied).
-      (let ((at-newline (<= pos (line-beginning-position))))
-        (when at-newline
-          (let ((before (copy-marker (1- pos) t)))
-            (save-excursion
-              (unless (or (memq indent-line-function
-                                electric-indent-functions-without-reindent)
-                          electric-indent-inhibit)
-                ;; Don't reindent the previous line if the indentation function
-                ;; is not a real one.
+      ;; If we error during indent, silently give up since this is an
+      ;; automatic action that the user didn't explicitly request.
+      ;; But we don't want to suppress errors from elsewhere in *this*
+      ;; function, hence the `condition-case' and `throw' (Bug#18764).
+      (catch 'indent-error
+        ;; For newline, we want to reindent both lines and basically
+        ;; behave like reindent-then-newline-and-indent (whose code we
+        ;; hence copied).
+        (let ((at-newline (<= pos (line-beginning-position))))
+          (when at-newline
+            (let ((before (copy-marker (1- pos) t)))
+              (save-excursion
+                (unless (or (memq indent-line-function
+                                  electric-indent-functions-without-reindent)
+                            electric-indent-inhibit)
+                  ;; Don't reindent the previous line if the
+                  ;; indentation function is not a real one.
+                  (goto-char before)
+                  (condition-case-unless-debug ()
+                      (indent-according-to-mode)
+                    (error (throw 'indent-error nil))))
+                ;; We are at EOL before the call to
+                ;; `indent-according-to-mode', and after it we usually
+                ;; are as well, but not always.  We tried to address
+                ;; it with `save-excursion' but that uses a normal
+                ;; marker whereas we need `move after insertion', so
+                ;; we do the save/restore by hand.
                 (goto-char before)
-                (indent-according-to-mode))
-              ;; We are at EOL before the call to indent-according-to-mode, and
-              ;; after it we usually are as well, but not always.  We tried to
-              ;; address it with `save-excursion' but that uses a normal marker
-              ;; whereas we need `move after insertion', so we do the
-              ;; save/restore by hand.
-              (goto-char before)
-              (when (eolp)
-                ;; Remove the trailing whitespace after indentation because
-                ;; indentation may (re)introduce the whitespace.
-                (delete-horizontal-space t)))))
-        (unless (and electric-indent-inhibit
-                     (not at-newline))
-          (indent-according-to-mode))))))
+                (when (eolp)
+                  ;; Remove the trailing whitespace after indentation because
+                  ;; indentation may (re)introduce the whitespace.
+                  (delete-horizontal-space t)))))
+          (unless (and electric-indent-inhibit
+                       (not at-newline))
+            (condition-case-unless-debug ()
+                (indent-according-to-mode)
+              (error (throw 'indent-error nil)))))))))
 
 (put 'electric-indent-post-self-insert-function 'priority  60)
 
@@ -314,9 +325,6 @@ column specified by the function `current-left-margin'."
 ;;;###autoload
 (define-minor-mode electric-indent-mode
   "Toggle on-the-fly reindentation (Electric Indent mode).
-With a prefix argument ARG, enable Electric Indent mode if ARG is
-positive, and disable it otherwise.  If called from Lisp, enable
-the mode if ARG is omitted or nil.
 
 When enabled, this reindents whenever the hook `electric-indent-functions'
 returns non-nil, or if you insert a character from `electric-indent-chars'.
@@ -400,9 +408,7 @@ newline after CHAR but stay in the same place.")
 ;;;###autoload
 (define-minor-mode electric-layout-mode
   "Automatically insert newlines around some chars.
-With a prefix argument ARG, enable Electric Layout mode if ARG is
-positive, and disable it otherwise.  If called from Lisp, enable
-the mode if ARG is omitted or nil.
+
 The variable `electric-layout-rules' says when and how to insert newlines."
   :global t :group 'electricity
   (cond (electric-layout-mode
@@ -451,6 +457,14 @@ whitespace, opening parenthesis, or quote and leaves \\=` alone."
   :version "26.1"
   :type 'boolean :safe #'booleanp :group 'electricity)
 
+(defcustom electric-quote-replace-double nil
+  "Non-nil means to replace \" with an electric double quote.
+Emacs replaces \" with an opening double quote after a line
+break, whitespace, opening parenthesis, or quote, and with a
+closing double quote otherwise."
+  :version "26.1"
+  :type 'boolean :safe #'booleanp :group 'electricity)
+
 (defvar electric-quote-inhibit-functions ()
   "List of functions that should inhibit electric quoting.
 When the variable `electric-quote-mode' is non-nil, Emacs will
@@ -461,13 +475,17 @@ substitution is inhibited.  The functions are called after the
 after the inserted character.  The functions in this hook should
 not move point or change the current buffer.")
 
+(defvar electric-pair-text-pairs)
+
 (defun electric-quote-post-self-insert-function ()
   "Function that `electric-quote-mode' adds to `post-self-insert-hook'.
 This requotes when a quoting key is typed."
   (when (and electric-quote-mode
              (or (eq last-command-event ?\')
                  (and (not electric-quote-context-sensitive)
-                      (eq last-command-event ?\`)))
+                      (eq last-command-event ?\`))
+                 (and electric-quote-replace-double
+                      (eq last-command-event ?\")))
              (not (run-hook-with-args-until-success
                    'electric-quote-inhibit-functions))
              (if (derived-mode-p 'text-mode)
@@ -488,9 +506,12 @@ This requotes when a quoting key is typed."
        (save-excursion
          (let ((backtick ?\`))
            (if (or (eq last-command-event ?\`)
-                   (and electric-quote-context-sensitive
+                   (and (or electric-quote-context-sensitive
+                            (and electric-quote-replace-double
+                                 (eq last-command-event ?\")))
                         (save-excursion
                           (backward-char)
+                          (skip-syntax-backward "\\")
                           (or (bobp) (bolp)
                               (memq (char-before) (list q< q<<))
                               (memq (char-syntax (char-before))
@@ -506,22 +527,25 @@ This requotes when a quoting key is typed."
                       (setq last-command-event q<<))
                      ((search-backward (string backtick) (1- (point)) t)
                       (replace-match (string q<))
-                      (setq last-command-event q<)))
+                      (setq last-command-event q<))
+                     ((search-backward "\"" (1- (point)) t)
+                      (replace-match (string q<<))
+                      (setq last-command-event q<<)))
              (cond ((search-backward (string q> ?') (- (point) 2) t)
                     (replace-match (string q>>))
                     (setq last-command-event q>>))
                    ((search-backward "'" (1- (point)) t)
                     (replace-match (string q>))
-                    (setq last-command-event q>))))))))))
+                    (setq last-command-event q>))
+                   ((search-backward "\"" (1- (point)) t)
+                    (replace-match (string q>>))
+                    (setq last-command-event q>>))))))))))
 
 (put 'electric-quote-post-self-insert-function 'priority 10)
 
 ;;;###autoload
 (define-minor-mode electric-quote-mode
   "Toggle on-the-fly requoting (Electric Quote mode).
-With a prefix argument ARG, enable Electric Quote mode if
-ARG is positive, and disable it otherwise.  If called from Lisp,
-enable the mode if ARG is omitted or nil.
 
 When enabled, as you type this replaces \\=` with ‘, \\=' with ’,
 \\=`\\=` with “, and \\='\\=' with ”.  This occurs only in comments, strings,

@@ -1,6 +1,6 @@
 ;;; type-break.el --- encourage rests from typing at appropriate intervals  -*- lexical-binding: t -*-
 
-;; Copyright (C) 1994-1995, 1997, 2000-2017 Free Software Foundation,
+;; Copyright (C) 1994-1995, 1997, 2000-2018 Free Software Foundation,
 ;; Inc.
 
 ;; Author: Noah Friedman
@@ -287,9 +287,6 @@ again in a short period of time.  The idea is to give the user enough time
 to find a good breaking point in his or her work, but be sufficiently
 annoying to discourage putting typing breaks off indefinitely.
 
-A negative prefix argument disables this mode.
-No argument or any non-negative argument enables it.
-
 The user may enable or disable this mode by setting the variable of the
 same name, though setting it in that way doesn't reschedule a break or
 reset the keystroke counter.
@@ -376,7 +373,7 @@ problems."
        (if (and type-break-time-last-break
                 (< (setq diff (type-break-time-difference
                                type-break-time-last-break
-                               (current-time)))
+                               nil))
                    type-break-interval))
            ;; Use the file's value.
            (progn
@@ -406,9 +403,6 @@ problems."
 
 (define-minor-mode type-break-mode-line-message-mode
   "Toggle warnings about typing breaks in the mode line.
-With a prefix argument ARG, enable these warnings if ARG is
-positive, and disable them otherwise.  If called from Lisp,
-enable them if ARG is omitted or nil.
 
 The user may also enable or disable this mode simply by setting
 the variable of the same name.
@@ -423,9 +417,6 @@ Variables controlling the display of messages in the mode line include:
 
 (define-minor-mode type-break-query-mode
   "Toggle typing break queries.
-With a prefix argument ARG, enable these queries if ARG is
-positive, and disable them otherwise.  If called from Lisp,
-enable them if ARG is omitted or nil.
 
 The user may also enable or disable this mode simply by setting
 the variable of the same name."
@@ -563,7 +554,7 @@ as per the function `type-break-schedule'."
         (cond
          (good-interval
           (let ((break-secs (type-break-time-difference
-                             start-time (current-time))))
+                             start-time nil)))
             (cond
              ((>= break-secs good-interval)
               (setq continue nil))
@@ -624,7 +615,7 @@ INTERVAL is the full length of an interval (defaults to TIME)."
                type-break-time-warning-intervals))
 
     (or time
-        (setq time (type-break-time-difference (current-time)
+        (setq time (type-break-time-difference nil
                                                type-break-time-next-break)))
 
     (while (and type-break-current-time-warning-interval
@@ -685,7 +676,7 @@ keystroke threshold has been exceeded."
     (and type-break-good-rest-interval
          (progn
            (and (> (type-break-time-difference
-                    type-break-time-last-command (current-time))
+                    type-break-time-last-command nil)
                    type-break-good-rest-interval)
                 (progn
                   (type-break-keystroke-reset)

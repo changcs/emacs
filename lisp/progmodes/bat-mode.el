@@ -1,6 +1,6 @@
 ;;; bat-mode.el --- Major mode for editing DOS/Windows scripts
 
-;; Copyright (C) 2003, 2008-2017 Free Software Foundation, Inc.
+;; Copyright (C) 2003, 2008-2018 Free Software Foundation, Inc.
 
 ;; Author: Arni Magnusson <arnima@hafro.is>
 ;; Keywords: languages
@@ -84,11 +84,13 @@
          . 'bat-label-face)
         ("\\_<\\(defined\\|set\\)\\_>[ \t]*\\(\\(\\sw\\|\\s_\\)+\\)"
          (2 font-lock-variable-name-face))
-        ("%\\(\\(\\sw\\|\\s_\\)+\\)%"
+        ("%~\\([0-9]\\)"
          (1 font-lock-variable-name-face))
-        ("!\\(\\(\\sw\\|\\s_\\)+\\)!"  ; delayed-expansion !variable!
+        ("%\\([^%~ \n]+\\)%?"
          (1 font-lock-variable-name-face))
-        ("%%\\(?:~[adfnpstxz]*\\(?:\\$\\(\\(?:\\sw\\|\\s_\\)+\\):\\)?\\)?\\([]!#$&-:?-[_-{}~]\\)"
+        ("!\\([^!%~ \n]+\\)!?"  ; delayed-expansion !variable!
+         (1 font-lock-variable-name-face))
+        ("%%\\(?:~[adfnpstxz]*\\(?:\\$\\(\\(?:\\sw\\|\\s_\\|_\\)+\\):\\)?\\)?\\([]!#$&-:?-[_-{}~]\\)"
          (1 font-lock-variable-name-face nil t) ; PATH expansion
          (2 font-lock-variable-name-face)) ; iteration variable or positional parameter
         ("[ =][-/]+\\(\\w+\\)"
