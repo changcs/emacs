@@ -1,6 +1,6 @@
 ;;; nndoc.el --- single file access for Gnus
 
-;; Copyright (C) 1995-2018 Free Software Foundation, Inc.
+;; Copyright (C) 1995-2019 Free Software Foundation, Inc.
 
 ;; Author: Lars Magne Ingebrigtsen <larsi@gnus.org>
 ;;	Masanobu UMEDA <umerin@flab.flab.fujitsu.junet>
@@ -769,9 +769,9 @@ from the document.")
 
 (defun nndoc-read-little-endian ()
   (+ (prog1 (char-after) (forward-char 1))
-     (lsh (prog1 (char-after) (forward-char 1)) 8)
-     (lsh (prog1 (char-after) (forward-char 1)) 16)
-     (lsh (prog1 (char-after) (forward-char 1)) 24)))
+     (ash (prog1 (char-after) (forward-char 1)) 8)
+     (ash (prog1 (char-after) (forward-char 1)) 16)
+     (ash (prog1 (char-after) (forward-char 1)) 24)))
 
 (defun nndoc-oe-dbx-decode-block ()
   (list

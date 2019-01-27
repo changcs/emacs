@@ -1,6 +1,6 @@
 ;;; dired-x.el --- extra Dired functionality  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1993-1994, 1997, 2001-2018 Free Software Foundation,
+;; Copyright (C) 1993-1994, 1997, 2001-2019 Free Software Foundation,
 ;; Inc.
 
 ;; Author: Sebastian Kremer <sk@thp.uni-koeln.de>
@@ -445,6 +445,7 @@ See variables `dired-texinfo-unclean-extensions',
                                 dired-tex-unclean-extensions
                                 (list ".dvi"))))
 
+(defvar archive-superior-buffer)
 (defvar tar-superior-buffer)
 ;;; JUMP.
 
@@ -461,8 +462,12 @@ Interactively with prefix argument, read FILE-NAME."
   (interactive
    (list nil (and current-prefix-arg
                   (read-file-name "Jump to Dired file: "))))
-  (if (bound-and-true-p tar-subfile-mode)
-      (switch-to-buffer tar-superior-buffer)
+  (cond
+   ((bound-and-true-p archive-subfile-mode)
+    (switch-to-buffer archive-superior-buffer))
+   ((bound-and-true-p tar-subfile-mode)
+    (switch-to-buffer tar-superior-buffer))
+   (t
     ;; Expand file-name before `dired-goto-file' call:
     ;; `dired-goto-file' requires its argument to be an absolute
     ;; file name; the result of `read-file-name' could be
@@ -490,7 +495,7 @@ Interactively with prefix argument, read FILE-NAME."
                 ;; Toggle omitting, if it is on, and try again.
                 (when dired-omit-mode
                   (dired-omit-mode)
-                  (dired-goto-file file))))))))
+                  (dired-goto-file file)))))))))
 
 ;;;###autoload
 (defun dired-jump-other-window (&optional file-name)

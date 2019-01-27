@@ -4,7 +4,7 @@ dnl	autoconf
 dnl in the directory containing this script.
 dnl If you changed any AC_DEFINES, also run autoheader.
 dnl
-dnl Copyright (C) 1994-1996, 1999-2018 Free Software Foundation, Inc.
+dnl Copyright (C) 1994-1996, 1999-2019 Free Software Foundation, Inc.
 dnl
 dnl  This file is part of GNU Emacs.
 dnl
@@ -311,6 +311,87 @@ this option's value should be 'yes', 'no', 'alsa', 'oss', or 'bsd-ossaudio'.])
   ],
   [with_sound=$with_features])
 
+AC_ARG_WITH([pdumper],
+  AS_HELP_STRING(
+    [--with-pdumper=VALUE],
+    [enable pdumper support unconditionally
+      ('yes', 'no', or 'auto': default 'auto')]),
+    [ case "${withval}" in
+        yes|no|auto) val=$withval ;;
+        *) AC_MSG_ERROR(
+           ['--with-pdumper=$withval' is invalid;
+this option's value should be 'yes' or 'no'.]) ;;
+      esac
+      with_pdumper=$val
+    ],
+    [with_pdumper=auto])
+
+AC_ARG_WITH([unexec],
+  AS_HELP_STRING(
+    [--with-unexec=VALUE],
+    [enable unexec support unconditionally
+      ('yes', 'no', or 'auto': default 'auto')]),
+    [ case "${withval}" in
+        yes|no|auto) val=$withval ;;
+        *) AC_MSG_ERROR(
+           ['--with-unexec=$withval' is invalid;
+this option's value should be 'yes' or 'no'.]) ;;
+      esac
+      with_unexec=$val
+    ],
+    [with_unexec=auto])
+
+AC_ARG_WITH([dumping],[AS_HELP_STRING([--with-dumping=VALUE],
+    [kind of dumping to use for initial Emacs build
+(VALUE one of: pdumper, unexec, none; default pdumper)])],
+    [ case "${withval}" in
+        pdumper|unexec|none) val=$withval ;;
+        *) AC_MSG_ERROR(['--with-dumping=$withval is invalid;
+this option's value should be 'pdumper', 'unexec', or 'none'.])
+        ;;
+      esac
+      with_dumping=$val
+    ],
+    [with_dumping=pdumper])
+
+if test "$with_pdumper" = "auto"; then
+  if test "$with_dumping" = "pdumper"; then
+    with_pdumper=yes
+  else
+    with_pdumper=no
+  fi
+fi
+
+if test "$with_unexec" = "auto"; then
+  if test "$with_dumping" = "unexec"; then
+    with_unexec=yes
+  else
+    with_unexec=no
+  fi
+fi
+
+if test "$with_dumping" = "pdumper" && test "$with_pdumper" = "no"; then
+  AC_MSG_ERROR(['--with-dumping=pdumper' requires pdumper support])
+fi
+
+if test "$with_dumping" = "unexec" && test "$with_unexec" = "no"; then
+  AC_MSG_ERROR(['--with-dumping=unexec' requires unexec support])
+fi
+
+if test "$with_pdumper" = "yes"; then
+    AC_DEFINE(HAVE_PDUMPER, 1, [Define to build with portable dumper support])
+fi
+
+if test "$with_unexec" = "yes"; then
+  CANNOT_DUMP=no
+else
+  CANNOT_DUMP=yes
+fi
+
+DUMPING=$with_dumping
+AC_SUBST(DUMPING)
+AC_SUBST(CANNOT_DUMP)
+
 dnl FIXME currently it is not the last.
 dnl This should be the last --with option, because --with-x is
 dnl added later on when we find the file name of X, and it's best to
@@ -361,9 +442,9 @@ OPTION_DEFAULT_ON([xft],[don't use XFT for anti aliased fonts])
 OPTION_DEFAULT_ON([libotf],[don't use libotf for OpenType font support])
 OPTION_DEFAULT_ON([m17n-flt],[don't use m17n-flt for text shaping])
 
-OPTION_DEFAULT_ON([toolkit-scroll-bars],[don't use Motif or Xaw3d scroll bars])
+OPTION_DEFAULT_ON([toolkit-scroll-bars],[don't use Motif/Xaw3d/GTK toolkit scroll bars])
 OPTION_DEFAULT_ON([xaw3d],[don't use Xaw3d])
-OPTION_DEFAULT_ON([xim],[don't use X11 XIM])
+OPTION_DEFAULT_ON([xim],[at runtime, default X11 XIM to off])
 AC_ARG_WITH([ns],[AS_HELP_STRING([--with-ns],
 [use Nextstep (macOS Cocoa or GNUstep) windowing system.
 On by default on macOS.])],[],[with_ns=maybe])
@@ -966,6 +1047,7 @@ AS_IF([test $gl_gcc_warnings = no],
   nw="$nw -Wsync-nand"              # irrelevant here, and provokes ObjC warning
   nw="$nw -Wunsafe-loop-optimizations" # OK to suppress unsafe optimizations
   nw="$nw -Wbad-function-cast"      # These casts are no worse than others.
+  nw="$nw -Wabi"                    # Not useful, perceived as noise
 
   # Emacs doesn't care about shadowing; see
   # <https://lists.gnu.org/r/emacs-diffs/2011-11/msg00265.html>.
@@ -1018,9 +1100,10 @@ AS_IF([test $gl_gcc_warnings = no],
   gl_WARN_ADD([-Wno-unused-parameter]) # Too many warnings for now
   gl_WARN_ADD([-Wno-format-nonliteral])
 
-  # clang is unduly picky about braces.
+  # clang is unduly picky about some things.
   if test "$emacs_cv_clang" = yes; then
     gl_WARN_ADD([-Wno-missing-braces])
+    gl_WARN_ADD([-Wno-null-pointer-arithmetic])
   fi
 
   # This causes too much noise in the MinGW build
@@ -1213,6 +1296,10 @@ AC_PATH_PROG(GZIP_PROG, gzip)
 test $with_compress_install != yes && test -n "$GZIP_PROG" && \
    GZIP_PROG=" # $GZIP_PROG # (disabled by configure --without-compress-install)"
 
+if test "$with_dumping" = "unexec" && test "$opsys" = "nacl"; then
+  AC_MSG_ERROR([nacl is not compatible with --with-dumping=unexec])
+fi
+
 AC_CACHE_CHECK([for 'find' args to delete a file],
   [emacs_cv_find_delete],
   [if touch conftest.tmp && find conftest.tmp -delete 2>/dev/null &&
@@ -1225,25 +1312,21 @@ AC_SUBST([FIND_DELETE])
 
 PAXCTL_dumped=
 PAXCTL_notdumped=
-if test "$CANNOT_DUMP" != yes; then
-  if test $opsys = gnu-linux; then
-    if test "${SETFATTR+set}" != set; then
-      AC_CACHE_CHECK([for setfattr],
-	[emacs_cv_prog_setfattr],
-	[touch conftest.tmp
-	 if (setfattr -n user.pax.flags conftest.tmp) >/dev/null 2>&1; then
-	   emacs_cv_prog_setfattr=yes
-	 else
-	   emacs_cv_prog_setfattr=no
-	 fi])
-      if test "$emacs_cv_prog_setfattr" = yes; then
-	PAXCTL_notdumped='$(SETFATTR) -n user.pax.flags -v er'
-	SETFATTR=setfattr
-      else
-	SETFATTR=
-      fi
-      rm -f conftest.tmp
-      AC_SUBST([SETFATTR])
+if test "$CANNOT_DUMP" = "no" && test $opsys = gnu-linux; then
+  if test "${SETFATTR+set}" != set; then
+    AC_CACHE_CHECK([for setfattr],
+      [emacs_cv_prog_setfattr],
+      [touch conftest.tmp
+       if (setfattr -n user.pax.flags conftest.tmp) >/dev/null 2>&1; then
+	 emacs_cv_prog_setfattr=yes
+       else
+	 emacs_cv_prog_setfattr=no
+       fi])
+    if test "$emacs_cv_prog_setfattr" = yes; then
+      PAXCTL_notdumped='$(SETFATTR) -n user.pax.flags -v er'
+      SETFATTR=setfattr
+    else
+      SETFATTR=
     fi
   fi
   case $opsys,$PAXCTL_notdumped,$emacs_uname_r in
@@ -1334,6 +1417,37 @@ else
     ac_link="$ac_link $NON_GCC_LINK_TEST_OPTIONS"
 fi
 
+dnl On some platforms using GNU ld, linking temacs needs -znocombreloc.
+dnl Although this has something to do with dumping, the details are unknown.
+dnl If the flag is used but not needed,
+dnl Emacs should still work (albeit a bit more slowly),
+dnl so use the flag everywhere that it is supported.
+dnl When testing whether the flag works, treat GCC specially
+dnl since it just gives a non-fatal 'unrecognized option'
+dnl if not built to support GNU ld.
+if test "$GCC" = yes; then
+  LDFLAGS_NOCOMBRELOC="-Wl,-znocombreloc"
+else
+  LDFLAGS_NOCOMBRELOC="-znocombreloc"
+fi
+
+AC_CACHE_CHECK([for -znocombreloc], [emacs_cv_znocombreloc],
+  [if test "$CANNOT_DUMP" = "yes"; then
+     emacs_cv_znocombreloc='not needed'
+   else
+     save_LDFLAGS=$LDFLAGS
+     LDFLAGS="$LDFLAGS $LDFLAGS_NOCOMBRELOC"
+     AC_LINK_IFELSE([AC_LANG_PROGRAM([], [])],
+       [emacs_cv_znocombreloc=yes], [emacs_cv_znocombreloc=no])
+     LDFLAGS=$save_LDFLAGS
+   fi])
+
+case $emacs_cv_znocombreloc in
+  no*)
+    LDFLAGS_NOCOMBRELOC= ;;
+esac
+
+
 AC_CACHE_CHECK([whether addresses are sanitized],
   [emacs_cv_sanitize_address],
   [AC_COMPILE_IFELSE(
@@ -1349,21 +1463,11 @@ AC_CACHE_CHECK([whether addresses are sanitized],
      [emacs_cv_sanitize_address=yes],
      [emacs_cv_sanitize_address=no])])
 
-dnl The function dump-emacs will not be defined and temacs will do
-dnl (load "loadup") automatically unless told otherwise.
-test "x$CANNOT_DUMP" = "x" && CANNOT_DUMP=no
-case "$opsys" in
-  nacl) CANNOT_DUMP=yes ;;
-esac
-
 if test "$CANNOT_DUMP" = "yes"; then
-  AC_DEFINE(CANNOT_DUMP, 1, [Define if Emacs cannot be dumped on your system.])
+  AC_DEFINE(CANNOT_DUMP, 1, [Define if Emacs should not support unexec.])
 elif test "$emacs_cv_sanitize_address" = yes; then
   AC_MSG_WARN([[Addresses are sanitized; suggest CANNOT_DUMP=yes]])
 fi
-
-AC_SUBST(CANNOT_DUMP)
-
 
 UNEXEC_OBJ=unexelf.o
 case "$opsys" in
@@ -1443,8 +1547,9 @@ case "$opsys" in
    LD_SWITCH_SYSTEM="\$(LD_SWITCH_X_SITE_RPATH) $LD_SWITCH_SYSTEM" ;;
 esac
 
-
 C_SWITCH_MACHINE=
+
+test "$CANNOT_DUMP" = yes ||
 case $canonical in
  alpha*)
   AC_CHECK_DECL([__ELF__])
@@ -1556,7 +1661,6 @@ case $opsys in
     LIB_MATH=
     SYSTEM_TYPE=windows-nt
     ;;
-  dnl NB this may be adjusted below.
   netbsd | openbsd )
     SYSTEM_TYPE=berkeley-unix
     ;;
@@ -2515,11 +2619,14 @@ if test "${HAVE_X11}" = "yes" || test "${HAVE_NS}" = "yes" || test "${HAVE_W32}"
       export PKG_CONFIG_PATH="$PKG_CONFIG_PATH$PATH_SEPARATOR`$BREW --prefix imagemagick@6 2>/dev/null`/lib/pkgconfig"
     fi
 
-    ## 6.3.5 is the earliest version known to work; see Bug#17339.
-    ## 6.8.2 makes Emacs crash; see Bug#13867.
-    ## 7 and later have not been ported to; See Bug#25967.
-    IMAGEMAGICK_MODULE="Wand >= 6.3.5 Wand != 6.8.2 Wand < 7"
-    EMACS_CHECK_MODULES([IMAGEMAGICK], [$IMAGEMAGICK_MODULE])
+    EMACS_CHECK_MODULES([IMAGEMAGICK], [MagickWand >= 7])
+    if test $HAVE_IMAGEMAGICK = yes; then
+       AC_DEFINE([HAVE_IMAGEMAGICK7], 1, [Define to 1 if using ImageMagick7.])
+    else
+       ## 6.3.5 is the earliest version known to work; see Bug#17339.
+       ## 6.8.2 makes Emacs crash; see Bug#13867.
+       EMACS_CHECK_MODULES([IMAGEMAGICK], [Wand >= 6.3.5 Wand != 6.8.2])
+    fi
 
     if test $HAVE_IMAGEMAGICK = yes; then
       OLD_CFLAGS=$CFLAGS
@@ -3163,11 +3270,12 @@ AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
 	 AC_DEFINE(HAVE_XIM, 1, [Define to 1 if XIM is available])],
 	 HAVE_XIM=no)
 
-dnl '--with-xim' now controls only the initial value of use_xim at run time.
-
+dnl Note this is non-standard.  --with-xim does not control whether
+dnl XIM support is compiled in, it only affects the runtime default of
+dnl use_xim in xterm.c.
 if test "${with_xim}" != "no"; then
   AC_DEFINE(USE_XIM, 1,
-	    [Define to 1 if we should use XIM, if it is available.])
+	    [Define to 1 to default runtime use of XIM to on.])
 fi
 
 
@@ -3205,6 +3313,17 @@ either XPointer or XPointer*.])dnl
   CFLAGS=$late_CFLAGS
 fi
 
+# Check for XRender
+HAVE_XRENDER=no
+if test "${HAVE_X11}" = "yes"; then
+  AC_CHECK_LIB(Xrender, XRenderQueryExtension, HAVE_XRENDER=yes)
+  if test $HAVE_XRENDER = yes; then
+    XRENDER_LIBS="-lXrender"
+    AC_SUBST(XRENDER_LIBS)
+    AC_DEFINE([HAVE_XRENDER], 1, [Define to 1 if XRender is available.])
+  fi
+fi
+
 ### Start of font-backend (under any platform) section.
 # (nothing here yet -- this is a placeholder)
 ### End of font-backend (under any platform) section.
@@ -3227,15 +3346,12 @@ if test "${HAVE_X11}" = "yes"; then
       EMACS_CHECK_MODULES([XFT], [xft >= 0.13.0], [], [HAVE_XFT=no])
       ## Because xterm.c uses XRenderQueryExtension when XFT is
       ## enabled, we also need to link to -lXrender.
-      HAVE_XRENDER=no
-      AC_CHECK_LIB(Xrender, XRenderQueryExtension, HAVE_XRENDER=yes)
       if test "$HAVE_XFT" != no && test "$HAVE_XRENDER" != no; then
 	OLD_CPPFLAGS="$CPPFLAGS"
 	OLD_CFLAGS="$CFLAGS"
 	OLD_LIBS="$LIBS"
 	CPPFLAGS="$CPPFLAGS $XFT_CFLAGS"
 	CFLAGS="$CFLAGS $XFT_CFLAGS"
-	XFT_LIBS="-lXrender $XFT_LIBS"
 	LIBS="$XFT_LIBS $LIBS"
 	AC_CHECK_HEADER(X11/Xft/Xft.h,
 	  AC_CHECK_LIB(Xft, XftFontOpen, HAVE_XFT=yes, , $XFT_LIBS) , ,
@@ -4020,6 +4136,9 @@ dnl No need to check for posix_memalign if aligned_alloc works.
 AC_CHECK_FUNCS([aligned_alloc posix_memalign], [break])
 AC_CHECK_DECLS([aligned_alloc], [], [], [[#include <stdlib.h>]])
 
+# Dump loading
+AC_CHECK_FUNCS([posix_madvise])
+
 dnl Cannot use AC_CHECK_FUNCS
 AC_CACHE_CHECK([for __builtin_frame_address],
   [emacs_cv_func___builtin_frame_address],
@@ -4075,7 +4194,8 @@ AC_CACHE_CHECK([for library containing tputs], [emacs_cv_tputs_lib],
   emacs_cv_tputs_lib='none required'
 else
   # curses precedes termcap because of AIX (Bug#9736#35) and OpenIndiana.
-  for tputs_library in '' tinfo ncurses terminfo curses termcap; do
+  tputs_libraries='tinfo ncurses terminfo curses termcap tinfow ncursesw'
+  for tputs_library in '' $tputs_libraries; do
     OLIBS=$LIBS
     if test -z "$tputs_library"; then
       emacs_cv_tputs_lib='none required'
@@ -4302,25 +4422,37 @@ AC_SUBST(KRB5LIB)
 AC_SUBST(DESLIB)
 AC_SUBST(KRB4LIB)
 
+AC_ARG_WITH([libgmp],
+  [AS_HELP_STRING([--without-libgmp],
+		  [don't use the GNU Multiple Precision (GMP) library;
+		   this is the default on systems lacking libgmp.])])
+GMP_LIB=
+GMP_OBJ=mini-gmp-emacs.o
+HAVE_GMP=no
+case $with_libgmp in
+  no) ;;
+  yes) HAVE_GMP=yes GMP_LIB=-lgmp;;
+  *) AC_CHECK_HEADERS([gmp.h],
+       [OLIBS=$LIBS
+	AC_SEARCH_LIBS([__gmpz_roinit_n], [gmp])
+	LIBS=$OLIBS
+	case $ac_cv_search___gmpz_roinit_n in
+	  'none needed') HAVE_GMP=yes;;
+	  -*) HAVE_GMP=yes GMP_LIB=$ac_cv_search___gmpz_roinit_n;;
+	esac]);;
+esac
+if test "$HAVE_GMP" = yes; then
+  GMP_OBJ=
+  AC_DEFINE([HAVE_GMP], 1, [Define to 1 if you have recent-enough GMP.])
+fi
+AC_SUBST([GMP_LIB])
+AC_SUBST([GMP_OBJ])
+
 AC_CHECK_HEADERS(valgrind/valgrind.h)
 
 AC_CHECK_MEMBERS([struct unipair.unicode], [], [], [[#include <linux/kd.h>]])
 
 AC_CHECK_FUNCS_ONCE([sbrk])
-
-ok_so_far=yes
-AC_CHECK_FUNC(socket, , ok_so_far=no)
-if test $ok_so_far = yes; then
-  AC_CHECK_HEADER(netinet/in.h, , ok_so_far=no)
-fi
-if test $ok_so_far = yes; then
-  AC_CHECK_HEADER(arpa/inet.h, , ok_so_far=no)
-fi
-if test $ok_so_far = yes; then
-dnl Fixme: Not used.  Should this be HAVE_SOCKETS?
-  AC_DEFINE(HAVE_INET_SOCKETS, 1,
-	    [Define to 1 if you have inet sockets.])
-fi
 
 AC_FUNC_FORK
 
@@ -4399,7 +4531,6 @@ fi
 
 dnl Everybody supports this, except MS-DOS.
 dnl Seems like the kind of thing we should be testing for, though.
-dnl Compare with HAVE_INET_SOCKETS (which is unused...) above.
 AC_DEFINE(HAVE_SOCKETS, 1, [Define if the system supports
   4.2-compatible sockets.])
 
@@ -4991,7 +5122,7 @@ fi
 
 version=$PACKAGE_VERSION
 
-copyright="Copyright (C) 2018 Free Software Foundation, Inc."
+copyright="Copyright (C) 2019 Free Software Foundation, Inc."
 AC_DEFINE_UNQUOTED(COPYRIGHT, ["$copyright"],
   [Short copyright string for this version of Emacs.])
 AC_SUBST(copyright)
@@ -5144,6 +5275,22 @@ else
   AUTODEPEND_PARENTS="$AUTODEPEND_PARENTS lwlib"
 fi
 AC_SUBST(LIBXMENU)
+
+AC_CACHE_CHECK([for struct alignment],
+  [emacs_cv_struct_alignment],
+  [AC_COMPILE_IFELSE(
+     [AC_LANG_PROGRAM([[#include <stddef.h>
+			struct s { char c; } __attribute__ ((aligned (8)));
+			struct t { char c; struct s s; };
+			char verify[offsetof (struct t, s) == 8 ? 1 : -1];
+		      ]])],
+     [emacs_cv_struct_alignment=yes],
+     [emacs_cv_struct_alignment=no])])
+if test "$emacs_cv_struct_alignment" = yes; then
+  AC_DEFINE([HAVE_STRUCT_ATTRIBUTE_ALIGNED], 1,
+    [Define to 1 if 'struct __attribute__ ((aligned (N)))' aligns the
+     structure to an N-byte boundary.])
+fi
 
 if test "${GNU_MALLOC}" = "yes" ; then
   AC_DEFINE(GNU_MALLOC, 1,
@@ -5315,6 +5462,8 @@ if test x$ac_enable_profiling != x ; then
   esac
 fi
 
+LD_SWITCH_SYSTEM_TEMACS="$LDFLAGS_NOCOMBRELOC $LD_SWITCH_SYSTEM_TEMACS"
+
 AC_SUBST(LD_SWITCH_SYSTEM_TEMACS)
 
 ## Common for all window systems
@@ -5328,7 +5477,7 @@ AC_SUBST(WINDOW_SYSTEM_OBJ)
 
 AH_TOP([/* GNU Emacs site configuration template file.
 
-Copyright (C) 1988, 1993-1994, 1999-2002, 2004-2018
+Copyright (C) 1988, 1993-1994, 1999-2002, 2004-2019
   Free Software Foundation, Inc.
 
 This file is part of GNU Emacs.
@@ -5396,12 +5545,13 @@ Configured for '${canonical}'.
 optsep=
 emacs_config_features=
 for opt in XAW3D XPM JPEG TIFF GIF PNG RSVG CAIRO IMAGEMAGICK SOUND GPM DBUS \
-  GCONF GSETTINGS NOTIFY ACL LIBSELINUX GNUTLS LIBXML2 FREETYPE M17N_FLT \
-  LIBOTF XFT ZLIB TOOLKIT_SCROLL_BARS X_TOOLKIT OLDXMENU X11 NS MODULES \
-  THREADS XWIDGETS LIBSYSTEMD JSON CANNOT_DUMP LCMS2; do
+  GCONF GSETTINGS GLIB NOTIFY ACL LIBSELINUX GNUTLS LIBXML2 FREETYPE M17N_FLT \
+  LIBOTF XFT ZLIB TOOLKIT_SCROLL_BARS X_TOOLKIT OLDXMENU X11 XDBE XIM \
+  NS MODULES THREADS XWIDGETS LIBSYSTEMD JSON CANNOT_DUMP LCMS2 GMP; do
 
     case $opt in
       CANNOT_DUMP) eval val=\${$opt} ;;
+      GLIB) val=${emacs_cv_links_glib} ;;
       NOTIFY|ACL) eval val=\${${opt}_SUMMARY} ;;
       TOOLKIT_SCROLL_BARS|X_TOOLKIT) eval val=\${USE_$opt} ;;
       THREADS) val=${threads_enabled} ;;
@@ -5415,6 +5565,15 @@ for opt in XAW3D XPM JPEG TIFF GIF PNG RSVG CAIRO IMAGEMAGICK SOUND GPM DBUS \
         case $val in
           GTK*|LUCID|MOTIF) opt=$val ;;
           *) continue ;;
+        esac
+      ;;
+      NOTIFY)
+        case $val in
+          *lkqueue*) opt="$opt LIBKQUEUE" ;;
+          *kqueue*) opt="$opt KQUEUE" ;;
+          *inotify*) opt="$opt INOTIFY" ;;
+          *gfile*) opt="$opt GFILENOTIFY" ;;
+          *w32*) opt="$opt W32NOTIFY" ;;
         esac
       ;;
     esac
@@ -5433,7 +5592,7 @@ AS_ECHO(["  Does Emacs use -lXaw3d?                                 ${HAVE_XAW3D
   Does Emacs use -lrsvg-2?                                ${HAVE_RSVG}
   Does Emacs use cairo?                                   ${HAVE_CAIRO}
   Does Emacs use -llcms2?                                 ${HAVE_LCMS2}
-  Does Emacs use imagemagick (version 6)?                 ${HAVE_IMAGEMAGICK}
+  Does Emacs use imagemagick?                             ${HAVE_IMAGEMAGICK}
   Does Emacs support sound?                               ${HAVE_SOUND}
   Does Emacs use -lgpm?                                   ${HAVE_GPM}
   Does Emacs use -ldbus?                                  ${HAVE_DBUS}
@@ -5450,11 +5609,15 @@ AS_ECHO(["  Does Emacs use -lXaw3d?                                 ${HAVE_XAW3D
   Does Emacs use -lxft?                                   ${HAVE_XFT}
   Does Emacs use -lsystemd?                               ${HAVE_LIBSYSTEMD}
   Does Emacs use -ljansson?                               ${HAVE_JSON}
+  Does Emacs use -lgmp?                                   ${HAVE_GMP}
   Does Emacs directly use zlib?                           ${HAVE_ZLIB}
   Does Emacs have dynamic modules support?                ${HAVE_MODULES}
   Does Emacs use toolkit scroll bars?                     ${USE_TOOLKIT_SCROLL_BARS}
   Does Emacs support Xwidgets (requires gtk3)?            ${HAVE_XWIDGETS}
   Does Emacs have threading support in lisp?              ${threads_enabled}
+  Does Emacs support the portable dumper?                 ${with_pdumper}
+  Does Emacs support legacy unexec dumping?               ${with_unexec}
+  Which dumping strategy does Emacs use?                  ${with_dumping}
 "])
 
 if test -n "${EMACSDATA}"; then

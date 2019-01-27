@@ -1,6 +1,6 @@
 ;;; bytecomp.el --- compilation of Lisp code into byte code -*- lexical-binding: t -*-
 
-;; Copyright (C) 1985-1987, 1992, 1994, 1998, 2000-2018 Free Software
+;; Copyright (C) 1985-1987, 1992, 1994, 1998, 2000-2019 Free Software
 ;; Foundation, Inc.
 
 ;; Author: Jamie Zawinski <jwz@lucid.com>
@@ -124,6 +124,7 @@
 (require 'backquote)
 (require 'macroexp)
 (require 'cconv)
+(eval-when-compile (require 'compile))
 ;; Refrain from using cl-lib at run-time here, since it otherwise prevents
 ;; us from emitting warnings when compiling files which use cl-lib without
 ;; requiring it! (bug#30635)
@@ -835,7 +836,7 @@ all the arguments.
 (defmacro byte-compile-push-bytecode-const2 (opcode const2 bytes pc)
   "Push OPCODE and the two-byte constant CONST2 onto BYTES, and add 3 to PC.
 CONST2 may be evaluated multiple times."
-  `(byte-compile-push-bytecodes ,opcode (logand ,const2 255) (lsh ,const2 -8)
+  `(byte-compile-push-bytecodes ,opcode (logand ,const2 255) (ash ,const2 -8)
 				,bytes ,pc))
 
 (defun byte-compile-lapcode (lap)
@@ -925,9 +926,9 @@ CONST2 may be evaluated multiple times."
       ;; Splits PC's value into 2 bytes. The jump address is
       ;; "reconstructed" by the `FETCH2' macro in `bytecode.c'.
       (setcar (cdr bytes-tail) (logand pc 255))
-      (setcar bytes-tail (lsh pc -8))
+      (setcar bytes-tail (ash pc -8))
       ;; FIXME: Replace this by some workaround.
-      (if (> (car bytes-tail) 255) (error "Bytecode overflow")))
+      (or (<= 0 (car bytes-tail) 255) (error "Bytecode overflow")))
 
     ;; Similarly, replace TAGs in all jump tables with the correct PC index.
     (dolist (hash-table byte-compile-jump-tables)
@@ -1005,6 +1006,24 @@ Each function's symbol gets added to `byte-compile-noruntime-functions'."
 	  (setq tem (cdr tem)))))))
 
 ;;; byte compiler messages
+
+(defun emacs-lisp-compilation-file-name-or-buffer (str)
+  "Return file name or buffer given by STR.
+If STR is a \"normal\" filename, just return it.
+If STR is something like \"Buffer foo.el\", return #<buffer foo.el>
+\(if it is still live) or the string \"foo.el\" otherwise."
+  (if (string-match "Buffer \\(.*\\)\\'" str)
+      (or (get-buffer (match-string-no-properties 1 str))
+          (match-string-no-properties 1 str))
+    str))
+
+(defconst emacs-lisp-compilation-parse-errors-filename-function
+  'emacs-lisp-compilation-file-name-or-buffer
+  "The value for `compilation-parse-errors-filename-function' for when
+we go into emacs-lisp-compilation-mode.")
+
+(define-compilation-mode emacs-lisp-compilation-mode "elisp-compile"
+  "The variant of `compilation-mode' used for emacs-lisp error buffers")
 
 (defvar byte-compile-current-form nil)
 (defvar byte-compile-dest-file nil)
@@ -1165,7 +1184,7 @@ Each function's symbol gets added to `byte-compile-noruntime-functions'."
        (with-current-buffer (get-buffer-create byte-compile-log-buffer)
 	 (goto-char (point-max))
 	 (let* ((inhibit-read-only t)
-		(dir (and byte-compile-current-file
+		(dir (and (stringp byte-compile-current-file)
 			  (file-name-directory byte-compile-current-file)))
 		(was-same (equal default-directory dir))
 		pt)
@@ -1180,10 +1199,10 @@ Each function's symbol gets added to `byte-compile-noruntime-functions'."
 	       (insert "\f\nCompiling "
 		       (if (stringp byte-compile-current-file)
 			   (concat "file " byte-compile-current-file)
-			 (concat "buffer "
+			 (concat "in buffer "
                                  (buffer-name byte-compile-current-file)))
 		       " at " (current-time-string) "\n")
-	     (insert "\f\nCompiling no file at " (current-time-string) "\n"))
+	     (insert "\f\nCompiling internal form(s) at " (current-time-string) "\n"))
 	   (when dir
 	     (setq default-directory dir)
 	     (unless was-same
@@ -1192,7 +1211,8 @@ Each function's symbol gets added to `byte-compile-noruntime-functions'."
 	   (setq byte-compile-last-logged-file byte-compile-current-file
 		 byte-compile-last-warned-form nil)
 	   ;; Do this after setting default-directory.
-	   (unless (derived-mode-p 'compilation-mode) (compilation-mode))
+	   (unless (derived-mode-p 'compilation-mode)
+             (emacs-lisp-compilation-mode))
 	   (compilation-forget-errors)
 	   pt))))
 
@@ -1730,8 +1750,8 @@ that already has a `.elc' file."
                                            (file-name-nondirectory source))))
                    (progn (cl-incf
                            (pcase (byte-recompile-file source force arg)
-                             (`no-byte-compile skip-count)
-                             (`t file-count)
+                             ('no-byte-compile skip-count)
+                             ('t file-count)
                              (_ fail-count)))
                           (or noninteractive
                               (message "Checking %s..." directory))
@@ -1981,7 +2001,7 @@ With argument ARG, insert value in current buffer after the form."
   (save-excursion
     (end-of-defun)
     (beginning-of-defun)
-    (let* ((byte-compile-current-file nil)
+    (let* ((byte-compile-current-file (current-buffer))
 	   (byte-compile-current-buffer (current-buffer))
 	   (byte-compile-read-position (point))
 	   (byte-compile-last-position byte-compile-read-position)
@@ -2793,8 +2813,8 @@ If FORM is a lambda or a macro, byte-compile it as a function."
     (if (> mandatory 127)
         (byte-compile-report-error "Too many (>127) mandatory arguments")
       (logior mandatory
-              (lsh nonrest 8)
-              (lsh rest 7)))))
+              (ash nonrest 8)
+              (ash rest 7)))))
 
 
 (defun byte-compile-lambda (fun &optional add-lambda reserved-csts)
@@ -3258,7 +3278,7 @@ for symbols generated by the byte compiler itself."
          (fun (car form))
          (fargs (aref fun 0))
          (start-depth byte-compile-depth)
-         (fmax2 (if (numberp fargs) (lsh fargs -7)))     ;2*max+rest.
+         (fmax2 (if (numberp fargs) (ash fargs -7)))     ;2*max+rest.
          ;; (fmin (if (numberp fargs) (logand fargs 127)))
          (alen (length (cdr form)))
          (dynbinds ())
@@ -3277,8 +3297,8 @@ for symbols generated by the byte compiler itself."
         (cl-assert (listp fargs))
         (while fargs
           (pcase (car fargs)
-            (`&optional (setq fargs (cdr fargs)))
-            (`&rest (setq fmax2 (+ (* 2 (length dynbinds)) 1))
+            ('&optional (setq fargs (cdr fargs)))
+            ('&rest (setq fmax2 (+ (* 2 (length dynbinds)) 1))
                     (push (cadr fargs) dynbinds)
                     (setq fargs nil))
             (_ (push (pop fargs) dynbinds))))
@@ -3325,8 +3345,8 @@ for symbols generated by the byte compiler itself."
                 (not (memq var byte-compile-not-obsolete-vars))
                 (not (memq var byte-compile-global-not-obsolete-vars))
                 (or (pcase (nth 1 od)
-                      (`set (not (eq access-type 'reference)))
-                      (`get (eq access-type 'reference))
+                      ('set (not (eq access-type 'reference)))
+                      ('get (eq access-type 'reference))
                       (_ t)))))
 	 (byte-compile-warn-obsolete var))))
 
@@ -3514,7 +3534,7 @@ If it is nil, then the handler is \"byte-compile-SYMBOL.\""
 (byte-defop-compiler (>= byte-geq)	2-and)
 (byte-defop-compiler get		2)
 (byte-defop-compiler nth		2)
-(byte-defop-compiler substring		2-3)
+(byte-defop-compiler substring		1-3)
 (byte-defop-compiler (move-marker byte-set-marker) 2-3)
 (byte-defop-compiler set-marker	2-3)
 (byte-defop-compiler match-beginning	1)
@@ -4731,7 +4751,7 @@ binding slots have been popped."
              arg)
             ;; `lam' is the lambda expression in `fun' (or nil if not
             ;; recognized).
-            ((or `(,(or `quote `function) ,lam) (let lam nil))
+            ((or `(,(or 'quote 'function) ,lam) (let lam nil))
              fun)
             ;; `arglist' is the list of arguments (or t if not recognized).
             ;; `body' is the body of `lam' (or t if not recognized).
@@ -4918,18 +4938,18 @@ invoked interactively."
 	(setq byte-compile-call-tree
 	      (sort byte-compile-call-tree
 		    (pcase byte-compile-call-tree-sort
-                      (`callers
+                      ('callers
                        (lambda (x y) (< (length (nth 1 x))
-                                   (length (nth 1 y)))))
-                      (`calls
+                                        (length (nth 1 y)))))
+                      ('calls
                        (lambda (x y) (< (length (nth 2 x))
-                                   (length (nth 2 y)))))
-                      (`calls+callers
+                                        (length (nth 2 y)))))
+                      ('calls+callers
                        (lambda (x y) (< (+ (length (nth 1 x))
-                                      (length (nth 2 x)))
-                                   (+ (length (nth 1 y))
-                                      (length (nth 2 y))))))
-                      (`name
+                                           (length (nth 2 x)))
+                                        (+ (length (nth 1 y))
+                                           (length (nth 2 y))))))
+                      ('name
                        (lambda (x y) (string< (car x) (car y))))
                       (_ (error "`byte-compile-call-tree-sort': `%s' - unknown sort mode"
                                 byte-compile-call-tree-sort))))))

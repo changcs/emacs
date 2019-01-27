@@ -1,6 +1,6 @@
 ;; erc.el --- An Emacs Internet Relay Chat client  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1997-2018 Free Software Foundation, Inc.
+;; Copyright (C) 1997-2019 Free Software Foundation, Inc.
 
 ;; Author: Alexander L. Belikoff (alexander@belikoff.net)
 ;; Contributors: Sergey Berezin (sergey.berezin@cs.cmu.edu),
@@ -75,7 +75,7 @@
 (require 'thingatpt)
 (require 'auth-source)
 (require 'erc-compat)
-(require 'subr-x)
+(eval-when-compile (require 'subr-x))
 
 (defvar erc-official-location
   "https://www.emacswiki.org/emacs/ERC (mailing list: erc-discuss@gnu.org)"
@@ -1943,15 +1943,15 @@ removed from the list will be disabled."
 (defun erc-setup-buffer (buffer)
   "Consults `erc-join-buffer' to find out how to display `BUFFER'."
   (pcase erc-join-buffer
-    (`window
+    ('window
      (if (active-minibuffer-window)
          (display-buffer buffer)
        (switch-to-buffer-other-window buffer)))
-    (`window-noselect
+    ('window-noselect
      (display-buffer buffer))
-    (`bury
+    ('bury
      nil)
-    (`frame
+    ('frame
      (when (or (not erc-reuse-frames)
                (not (get-buffer-window buffer t)))
        (let ((frame (make-frame (or erc-frame-alist
@@ -6040,8 +6040,7 @@ non-nil value is found.
 ;; time routines
 
 (defun erc-string-to-emacs-time (string)
-  "Convert the long number represented by STRING into an Emacs format.
-Returns a list of the form (HIGH LOW), compatible with Emacs time format."
+  "Convert the long number represented by STRING into an Emacs timestamp."
   (let* ((n (string-to-number (concat string ".0"))))
     (list (truncate (/ n 65536))
           (truncate (mod n 65536)))))

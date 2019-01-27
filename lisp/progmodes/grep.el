@@ -1,6 +1,6 @@
 ;;; grep.el --- run `grep' and display the results  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1985-1987, 1993-1999, 2001-2018 Free Software
+;; Copyright (C) 1985-1987, 1993-1999, 2001-2019 Free Software
 ;; Foundation, Inc.
 
 ;; Author: Roland McGrath <roland@gnu.org>
@@ -704,7 +704,7 @@ This function is called from `compilation-filter-hook'."
 		  'exec-plus)
 		 ((and
 		   (grep-probe find-program `(nil nil nil ,null-device "-print0"))
-		   (grep-probe xargs-program `(nil nil nil "-0" "echo")))
+		   (grep-probe xargs-program '(nil nil nil "-0" "echo")))
 		  'gnu)
 		 (t
 		  'exec))))

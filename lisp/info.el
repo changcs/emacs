@@ -1,6 +1,6 @@
 ;; info.el --- Info package for Emacs  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1985-1986, 1992-2018 Free Software Foundation, Inc.
+;; Copyright (C) 1985-1986, 1992-2019 Free Software Foundation, Inc.
 
 ;; Maintainer: emacs-devel@gnu.org
 ;; Keywords: help
@@ -654,9 +654,11 @@ Do the right thing if the file has been compressed or zipped."
 
     ;; Clear the caches of modified Info files.
     (let* ((attribs-old (cdr (assoc fullname Info-file-attributes)))
-	   (modtime-old (and attribs-old (nth 5 attribs-old)))
+	   (modtime-old (and attribs-old
+			     (file-attribute-modification-time attribs-old)))
 	   (attribs-new (and (stringp fullname) (file-attributes fullname)))
-	   (modtime-new (and attribs-new (nth 5 attribs-new))))
+	   (modtime-new (and attribs-new
+			     (file-attribute-modification-time attribs-new))))
       (when (and modtime-old modtime-new
 		 (time-less-p modtime-old modtime-new))
 	(setq Info-index-nodes (remove (assoc (or Info-current-file filename)
@@ -2732,7 +2734,7 @@ Because of ambiguities, this should be concatenated with something like
           (user-error "No menu in this node"))
         (cond
          ((eq (car-safe action) 'boundaries) nil)
-         ((eq action 'metadata) `(metadata (category . info-menu)))
+         ((eq action 'metadata) '(metadata (category . info-menu)))
          ((eq action 'lambda)
           (re-search-forward
            (concat "\n\\* +" (regexp-quote string) ":") nil t))

@@ -1,6 +1,6 @@
 ;;; rmail.el --- main code of "RMAIL" mail reader for Emacs  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1985-1988, 1993-1998, 2000-2018 Free Software
+;; Copyright (C) 1985-1988, 1993-1998, 2000-2019 Free Software
 ;; Foundation, Inc.
 
 ;; Maintainer: emacs-devel@gnu.org
@@ -2028,10 +2028,10 @@ Value is the size of the newly read mail after conversion."
 			  "the remote server"
 			proto)))
 	    ((and (file-exists-p tofile)
-		  (/= 0 (nth 7 (file-attributes tofile))))
+		  (/= 0 (file-attribute-size (file-attributes tofile))))
 	     (message "Getting mail from %s..." tofile))
 	    ((and (file-exists-p file)
-		  (/= 0 (nth 7 (file-attributes file))))
+		  (/= 0 (file-attribute-size (file-attributes file))))
 	     (message "Getting mail from %s..." file)))
       ;; Set TOFILE if have not already done so, and
       ;; rename or copy the file FILE to TOFILE if and as appropriate.
@@ -4515,7 +4515,7 @@ encoded string (and the same mask) will decode the string."
      (if (= curmask 0)
 	 (setq curmask mask))
      (setq charmask (% curmask 256))
-     (setq curmask (lsh curmask -8))
+     (setq curmask (ash curmask -8))
      (aset string-vector i (logxor charmask (aref string-vector i)))
      (setq i (1+ i)))
    (concat string-vector)))

@@ -1,6 +1,6 @@
 ;;; org-element.el --- Parser for Org Syntax         -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2012-2018 Free Software Foundation, Inc.
+;; Copyright (C) 2012-2019 Free Software Foundation, Inc.
 
 ;; Author: Nicolas Goaziou <n.goaziou at gmail dot com>
 ;; Keywords: outlines, hypermedia, calendar, wp
@@ -4856,7 +4856,7 @@ table is cleared once the synchronization is complete."
 (defun org-element--cache-generate-key (lower upper)
   "Generate a key between LOWER and UPPER.
 
-LOWER and UPPER are integers or lists, possibly empty.
+LOWER and UPPER are fixnums or lists of same, possibly empty.
 
 If LOWER and UPPER are equals, return LOWER.  Otherwise, return
 a unique key, as an integer or a list of integers, according to

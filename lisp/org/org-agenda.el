@@ -1,6 +1,6 @@
 ;;; org-agenda.el --- Dynamic task and appointment lists for Org
 
-;; Copyright (C) 2004-2018 Free Software Foundation, Inc.
+;; Copyright (C) 2004-2019 Free Software Foundation, Inc.
 
 ;; Author: Carsten Dominik <carsten at orgmode dot org>
 ;; Keywords: outlines, hypermedia, calendar, wp
@@ -7009,15 +7009,15 @@ When TYPE is \"scheduled\", \"deadline\", \"timestamp\" or
 \"timestamp_ia\", compare within each of these type.  When TYPE
 is the empty string, compare all timestamps without respect of
 their type."
-  (let* ((def (if org-sort-agenda-notime-is-late most-positive-fixnum -1))
+  (let* ((def (and (not org-sort-agenda-notime-is-late) -1))
 	 (ta (or (and (string-match type (or (get-text-property 1 'type a) ""))
 		      (get-text-property 1 'ts-date a))
 		 def))
 	 (tb (or (and (string-match type (or (get-text-property 1 'type b) ""))
 		      (get-text-property 1 'ts-date b))
 		 def)))
-    (cond ((< ta tb) -1)
-	  ((< tb ta) +1))))
+    (cond ((if ta (and tb (< ta tb)) tb) -1)
+	  ((if tb (and ta (< tb ta)) ta) +1))))
 
 (defsubst org-cmp-habit-p (a b)
   "Compare the todo states of strings A and B."

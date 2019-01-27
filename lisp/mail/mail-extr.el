@@ -1,6 +1,6 @@
 ;;; mail-extr.el --- extract full name and address from RFC 822 mail header
 
-;; Copyright (C) 1991-1994, 1997, 2001-2018 Free Software Foundation,
+;; Copyright (C) 1991-1994, 1997, 2001-2019 Free Software Foundation,
 ;; Inc.
 
 ;; Author: Joe Wells <jbw@cs.bu.edu>
@@ -652,7 +652,7 @@ Unless NO-REPLACE is true, at each of the positions in LIST-SYMBOL
 		   (< ch ,beg-symbol))
 	   ,@(if no-replace
 		   nil
-		 `((mail-extr-nuke-char-at ch)))
+	       '((mail-extr-nuke-char-at ch)))
 	   (setcar temp nil))
 	 (setq temp (cdr temp)))
        (setq ,list-symbol (delq nil ,list-symbol))))

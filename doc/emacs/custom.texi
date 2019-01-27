@@ -1,6 +1,6 @@
 @c -*- coding: utf-8 -*-
 @c This is part of the Emacs manual.
-@c Copyright (C) 1985-1987, 1993-1995, 1997, 2000-2018 Free Software
+@c Copyright (C) 1985-1987, 1993-1995, 1997, 2000-2019 Free Software
 @c Foundation, Inc.
 @c See file emacs.texi for copying conditions.
 @node Customization
@@ -1059,6 +1059,10 @@ local variable specifications; it automatically makes these variables
 local to the buffer, and sets them to the values specified in the
 file.
 
+  File local variables override directory local variables
+(@pxref{Directory Variables}), if any are specified for a file's
+directory.
+
 @menu
 * Specifying File Variables:: Specifying file local variables.
 * Safe File Variables::       Making sure file local variables are safe.
@@ -1309,7 +1313,12 @@ confirmation about processing @code{eval} variables.
   Sometimes, you may wish to define the same set of local variables to
 all the files in a certain directory and its subdirectories, such as
 the directory tree of a large software project.  This can be
-accomplished with @dfn{directory-local variables}.
+accomplished with @dfn{directory-local variables}.  File local
+variables override directory local variables, so if some of the files
+in a directory need specialized settings, you can specify the settings
+for the majority of the directory's files in directory variables, and
+then define file local variables in a few files which need the general
+settings overridden.
 
 @cindex @file{.dir-locals.el} file
   The usual way to define directory-local variables is to put a file
@@ -2548,10 +2557,9 @@ library.  @xref{Hooks}.
 @node Find Init
 @subsection How Emacs Finds Your Init File
 
-  Normally Emacs uses the environment variable @env{HOME}
-(@pxref{General Variables, HOME}) to find @file{.emacs}; that's what
-@samp{~} means in a file name.  If @file{.emacs} is not found inside
-@file{~/} (nor @file{.emacs.el}), Emacs looks for
+  Normally Emacs uses your home directory to find @file{~/.emacs};
+that's what @samp{~} means in a file name.  @xref{General Variables, HOME}.
+If neither @file{~/.emacs} nor @file{~/.emacs.el} is found, Emacs looks for
 @file{~/.emacs.d/init.el} (which, like @file{~/.emacs.el}, can be
 byte-compiled).
 

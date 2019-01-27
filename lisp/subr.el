@@ -1,6 +1,6 @@
 ;;; subr.el --- basic lisp subroutines for Emacs  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1985-1986, 1992, 1994-1995, 1999-2018 Free Software
+;; Copyright (C) 1985-1986, 1992, 1994-1995, 1999-2019 Free Software
 ;; Foundation, Inc.
 
 ;; Maintainer: emacs-devel@gnu.org
@@ -93,12 +93,13 @@ Info node `(elisp)Specification List' for details."
   `(put (quote ,symbol) 'edebug-form-spec (quote ,spec)))
 
 (defmacro lambda (&rest cdr)
-  "Return a lambda expression.
-A call of the form (lambda ARGS DOCSTRING INTERACTIVE BODY) is
-self-quoting; the result of evaluating the lambda expression is the
-expression itself.  The lambda expression may then be treated as a
-function, i.e., stored as the function value of a symbol, passed to
-`funcall' or `mapcar', etc.
+  "Return an anonymous function.
+Under dynamic binding, a call of the form (lambda ARGS DOCSTRING
+INTERACTIVE BODY) is self-quoting; the result of evaluating the
+lambda expression is the expression itself.  Under lexical
+binding, the result is a closure.  Regardless, the result is a
+function, i.e., it may be stored as the function value of a
+symbol, passed to `funcall' or `mapcar', etc.
 
 ARGS should take the same form as an argument list for a `defun'.
 DOCSTRING is an optional documentation string.
@@ -366,6 +367,27 @@ was called."
   (declare (compiler-macro (lambda (_) `(= 0 ,number))))
   (= 0 number))
 
+(defun fixnump (object)
+  "Return t if OBJECT is a fixnum."
+  (and (integerp object)
+       (<= most-negative-fixnum object most-positive-fixnum)))
+
+(defun bignump (object)
+  "Return t if OBJECT is a bignum."
+  (and (integerp object) (not (fixnump object))))
+
+(defun lsh (value count)
+  "Return VALUE with its bits shifted left by COUNT.
+If COUNT is negative, shifting is actually to the right.
+In this case, if VALUE is a negative fixnum treat it as unsigned,
+i.e., subtract 2 * most-negative-fixnum from VALUE before shifting it."
+  (when (and (< value 0) (< count 0))
+    (when (< value most-negative-fixnum)
+      (signal 'args-out-of-range (list value count)))
+    (setq value (logand (ash value -1) most-positive-fixnum))
+    (setq count (1+ count)))
+  (ash value count))
+
 
 ;;;; List functions.
 
@@ -554,12 +576,6 @@ If N is omitted or nil, remove the last element."
 	 (progn
 	   (if (> n 0) (setcdr (nthcdr (- (1- m) n) list) nil))
 	   list))))
-
-(defun proper-list-p (object)
-  "Return OBJECT's length if it is a proper list, nil otherwise.
-A proper list is neither circular nor dotted (i.e., its last cdr
-is nil)."
-  (and (listp object) (ignore-errors (length object))))
 
 (defun delete-dups (list)
   "Destructively remove `equal' duplicates from LIST.
@@ -1273,6 +1289,12 @@ See `event-start' for a description of the value returned."
 The return value is a positive integer."
   (if (and (consp event) (integerp (nth 2 event))) (nth 2 event) 1))
 
+(defvar input-event-functions nil
+  ;; BEWARE: If it looks like this is not run anywhere, it's normal:
+  ;; this is run in keyboard.c.
+  "Special hook run each time a user-input event is read.
+Each function is called with one argument: the event.")
+
 (defsubst event-line-count (event)
   "Return the line count of EVENT, a mousewheel event.
 The return value is a positive integer."
@@ -1903,11 +1925,15 @@ Only affects hooks run in the current buffer."
 ;; PUBLIC: find if the current mode derives from another.
 
 (defun provided-mode-derived-p (mode &rest modes)
-  "Non-nil if MODE is derived from one of MODES.
+  "Non-nil if MODE is derived from one of MODES or their aliases.
 Uses the `derived-mode-parent' property of the symbol to trace backwards.
 If you just want to check `major-mode', use `derived-mode-p'."
-  (while (and (not (memq mode modes))
-              (setq mode (get mode 'derived-mode-parent))))
+  (while
+      (and
+       (not (memq mode modes))
+       (let* ((parent (get mode 'derived-mode-parent))
+              (parentfn (symbol-function parent)))
+         (setq mode (if (and parentfn (symbolp parentfn)) parentfn parent)))))
   mode)
 
 (defun derived-mode-p (&rest modes)
@@ -2305,7 +2331,7 @@ some sort of escape sequence, the ambiguity is resolved via `read-key-delay'."
 If optional CONFIRM is non-nil, read the password twice to make sure.
 Optional DEFAULT is a default password to use instead of empty input.
 
-This function echoes `.' for each character that the user types.
+This function echoes `*' for each character that the user types.
 You could let-bind `read-hide-char' to another hiding character, though.
 
 Once the caller uses the password, it can erase the password
@@ -2331,7 +2357,7 @@ by doing (clear-string STRING)."
                                      beg)))
              (dotimes (i (- end beg))
                (put-text-property (+ i beg) (+ 1 i beg)
-                                  'display (string (or read-hide-char ?.))))))
+                                  'display (string (or read-hide-char ?*))))))
           minibuf)
       (minibuffer-with-setup-hook
           (lambda ()
@@ -2346,7 +2372,7 @@ by doing (clear-string STRING)."
             (add-hook 'after-change-functions hide-chars-fun nil 'local))
         (unwind-protect
             (let ((enable-recursive-minibuffers t)
-		  (read-hide-char (or read-hide-char ?.)))
+		  (read-hide-char (or read-hide-char ?*)))
               (read-string prompt nil t default)) ; t = "no history"
           (when (buffer-live-p minibuf)
             (with-current-buffer minibuf
@@ -3551,7 +3577,7 @@ is allowed once again.  (Immediately, if `inhibit-quit' is nil.)"
 ;; Don't throw `throw-on-input' on those events by default.
 (setq while-no-input-ignore-events
       '(focus-in focus-out help-echo iconify-frame
-        make-frame-visible selection-request))
+        make-frame-visible selection-request buffer-switch))
 
 (defmacro while-no-input (&rest body)
   "Execute BODY only as long as there's no pending input.
@@ -4693,25 +4719,6 @@ The properties used on SYMBOL are `composefunc', `sendfunc',
   (put symbol 'hookvar (or hookvar 'mail-send-hook)))
 
 
-(defun backtrace--print-frame (evald func args flags)
-  "Print a trace of a single stack frame to `standard-output'.
-EVALD, FUNC, ARGS, FLAGS are as in `mapbacktrace'."
-  (princ (if (plist-get flags :debug-on-exit) "* " "  "))
-  (cond
-   ((and evald (not debugger-stack-frame-as-list))
-    (cl-prin1 func)
-    (if args (cl-prin1 args) (princ "()")))
-   (t
-    (cl-prin1 (cons func args))))
-  (princ "\n"))
-
-(defun backtrace ()
-  "Print a trace of Lisp function calls currently active.
-Output stream used is value of `standard-output'."
-  (let ((print-level (or print-level 8))
-        (print-escape-control-characters t))
-    (mapbacktrace #'backtrace--print-frame 'backtrace)))
-
 (defun backtrace-frames (&optional base)
   "Collect all frames of current backtrace into a list.
 If non-nil, BASE should be a function, and frames before its
@@ -4814,8 +4821,8 @@ command is called from a keyboard macro?"
                           'called-interactively-p-functions
                           i frame nextframe)))
                (pcase skip
-                 (`nil nil)
-                 (`0 t)
+                 ('nil nil)
+                 (0 t)
                  (_ (setq i (+ i skip -1)) (funcall get-next-frame)))))))
       ;; Now `frame' should be "the function from which we were called".
       (pcase (cons frame nextframe)
@@ -5447,5 +5454,26 @@ This function is called from lisp/Makefile and leim/Makefile."
     (setq file (concat (substring file 1 2) ":" (substring file 2))))
   file)
 
+(defun flatten-tree (tree)
+  "Return a \"flattened\" copy of TREE.
+In other words, return a list of the non-nil terminal nodes, or
+leaves, of the tree of cons cells rooted at TREE.  Leaves in the
+returned list are in the same order as in TREE.
+
+\(flatten-tree \\='(1 (2 . 3) nil (4 5 (6)) 7))
+=> (1 2 3 4 5 6 7)"
+  (let (elems)
+    (while (consp tree)
+      (let ((elem (pop tree)))
+        (while (consp elem)
+          (push (cdr elem) tree)
+          (setq elem (car elem)))
+        (if elem (push elem elems))))
+    (if tree (push tree elems))
+    (nreverse elems)))
+
+;; Technically, `flatten-list' is a misnomer, but we provide it here
+;; for discoverability:
+(defalias 'flatten-list 'flatten-tree)
 
 ;;; subr.el ends here

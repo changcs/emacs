@@ -1,6 +1,6 @@
 ;;; imenu.el --- framework for mode-specific buffer indexes  -*- lexical-binding: t -*-
 
-;; Copyright (C) 1994-1998, 2001-2018 Free Software Foundation, Inc.
+;; Copyright (C) 1994-1998, 2001-2019 Free Software Foundation, Inc.
 
 ;; Author: Ake Stenhoff <etxaksf@aom.ericsson.se>
 ;;         Lars Lindberg <lli@sypro.cap.se>
@@ -96,11 +96,11 @@ This might not yet be honored by all index-building functions."
   :type 'boolean
   :group 'imenu)
 
-(defcustom imenu-auto-rescan-maxout 60000
-  "Imenu auto-rescan is disabled in buffers larger than this size (in bytes).
-This variable is buffer-local."
+(defcustom imenu-auto-rescan-maxout 600000
+  "Imenu auto-rescan is disabled in buffers larger than this size (in bytes)."
   :type 'integer
-  :group 'imenu)
+  :group 'imenu
+  :version "26.2")
 
 (defcustom imenu-use-popup-menu 'on-mouse
   "Use a popup menu rather than a minibuffer prompt.
@@ -832,15 +832,14 @@ depending on PATTERNS."
     (dolist (item index-alist)
       (when (listp item)
 	(setcdr item (sort (cdr item) 'imenu--sort-by-position))))
-    (let ((main-element (assq nil index-alist)))
-      (nconc (delq main-element (delq 'dummy index-alist))
-             (cdr main-element)))
     ;; Remove any empty menus.  That can happen because of skipping
     ;; things inside comments or strings.
-    (when (consp (car index-alist))
-      (setq index-alist  (cl-delete-if-not
-                          (lambda (it) (cdr it))
-                          index-alist)))))
+    (setq index-alist (cl-delete-if
+                       (lambda (it) (and (consp it) (null (cdr it))))
+                       index-alist))
+    (let ((main-element (assq nil index-alist)))
+      (nconc (delq main-element (delq 'dummy index-alist))
+             (cdr main-element)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;

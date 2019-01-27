@@ -1,6 +1,6 @@
 ;;; mule-cmds.el --- commands for multilingual environment  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1997-2018 Free Software Foundation, Inc.
+;; Copyright (C) 1997-2019 Free Software Foundation, Inc.
 ;; Copyright (C) 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004,
 ;;   2005, 2006, 2007, 2008, 2009, 2010, 2011
 ;;   National Institute of Advanced Industrial Science and Technology (AIST)
@@ -300,8 +300,7 @@ wrong, use this command again to toggle back to the right mode."
 	 (cmd (key-binding keyseq))
 	 prefix)
     ;; read-key-sequence ignores quit, so make an explicit check.
-    ;; Like many places, this assumes quit == C-g, but it need not be.
-    (if (equal last-input-event ?\C-g)
+    (if (equal last-input-event (nth 3 (current-input-mode)))
 	(keyboard-quit))
     (when (memq cmd '(universal-argument digit-argument))
       (call-interactively cmd)
@@ -314,16 +313,16 @@ wrong, use this command again to toggle back to the right mode."
 	(let ((current-prefix-arg prefix-arg)
 	      ;; Have to bind `last-command-event' here so that
 	      ;; `digit-argument', for instance, can compute the
-	      ;; prefix arg.
+	      ;; `prefix-arg'.
 	      (last-command-event (aref keyseq 0)))
 	  (call-interactively cmd)))
 
       ;; This is the final call to `universal-argument-other-key', which
-      ;; set's the final `prefix-arg.
+      ;; sets the final `prefix-arg'.
       (let ((current-prefix-arg prefix-arg))
 	(call-interactively cmd))
 
-      ;; Read the command to execute with the given prefix arg.
+      ;; Read the command to execute with the given `prefix-arg'.
       (setq prefix prefix-arg
 	    keyseq (read-key-sequence nil t)
 	    cmd (key-binding keyseq)))
@@ -452,8 +451,8 @@ non-nil, it is used to sort CODINGS instead."
 		      ;; E: 1 if not XXX-with-esc
 		      ;; II: if iso-2022 based, 0..3, else 1.
 		      (logior
-		       (lsh (if (eq base most-preferred) 1 0) 7)
-		       (lsh
+		       (ash (if (eq base most-preferred) 1 0) 7)
+		       (ash
 			(let ((mime (coding-system-get base :mime-charset)))
 			   ;; Prefer coding systems corresponding to a
 			   ;; MIME charset.
@@ -469,9 +468,9 @@ non-nil, it is used to sort CODINGS instead."
 				     (t 3))
 			     0))
 			5)
-		       (lsh (if (memq base lang-preferred) 1 0) 4)
-		       (lsh (if (memq base from-priority) 1 0) 3)
-		       (lsh (if (string-match-p "-with-esc\\'"
+		       (ash (if (memq base lang-preferred) 1 0) 4)
+		       (ash (if (memq base from-priority) 1 0) 3)
+		       (ash (if (string-match-p "-with-esc\\'"
 						(symbol-name base))
 				0 1) 2)
 		       (if (eq (coding-system-type base) 'iso-2022)
@@ -1331,7 +1330,7 @@ This is the input method activated automatically by the command
 `toggle-input-method' (\\[toggle-input-method])."
   :link  '(custom-manual "(emacs)Input Methods")
   :group 'mule
-  :type `(choice (const nil)
+  :type '(choice (const nil)
                  mule-input-method-string)
   :set-after '(current-language-environment))
 
@@ -1944,7 +1943,7 @@ See `set-language-info-alist' for use in programs."
 	     (set-language-info-alist (car elt) (cdr elt)))
 	   ;; re-set the environment in case its parameters changed
 	   (set-language-environment current-language-environment)))
-  :type `(alist
+  :type '(alist
 	  :key-type (string :tag "Language environment"
 			    :completions
                             (lambda (string pred action)
@@ -2214,7 +2213,7 @@ See `set-language-info-alist' for use in programs."
     ("bg" "Bulgarian" cp1251) ; Bulgarian
     ; bh Bihari
     ; bi Bislama
-    ("bn" . "UTF-8") ; Bengali, Bangla
+    ("bn" "Bengali" utf-8) ; Bengali, Bangla
     ("bo" . "Tibetan")
     ("br" . "Latin-1") ; Breton
     ("bs" . "Latin-2") ; Bosnian
@@ -2227,6 +2226,7 @@ See `set-language-info-alist' for use in programs."
     ("de" "German" iso-8859-1)
     ; dv Divehi
     ; dz Bhutani
+    ("ee" . "Latin-4") ; Ewe
     ("el" "Greek" iso-8859-7)
     ;; Users who specify "en" explicitly typically want Latin-1, not ASCII.
     ;; That's actually what the GNU locales define, modulo things like
@@ -2235,10 +2235,10 @@ See `set-language-info-alist' for use in programs."
     ("en" "English" iso-8859-1) ; English
     ("eo" . "Esperanto") ; Esperanto
     ("es" "Spanish" iso-8859-1)
-    ("et" . "Latin-1") ; Estonian
+    ("et" . "Latin-9") ; Estonian
     ("eu" . "Latin-1") ; Basque
-    ("fa" . "UTF-8") ; Persian
-    ("fi" . "Latin-1") ; Finnish
+    ("fa" "Persian" utf-8) ; Persian
+    ("fi" . "Latin-9") ; Finnish
     ("fj" . "Latin-1") ; Fiji
     ("fo" . "Latin-1") ; Faroese
     ("fr" "French" iso-8859-1) ; French
@@ -2248,11 +2248,12 @@ See `set-language-info-alist' for use in programs."
     ("gez" "Ethiopic" utf-8) ; Geez
     ("gl" . "Latin-1") ; Gallegan; Galician
     ; gn Guarani
-    ("gu" . "UTF-8") ; Gujarati
+    ("gu" "Gujarati" utf-8) ; Gujarati
     ("gv" . "Latin-1") ; Manx Gaelic
     ; ha Hausa
     ("he" "Hebrew" iso-8859-8)
     ("hi" "Devanagari" utf-8) ; Hindi
+    ("hni_IN" . "UTF-8") ; Chhattisgarhi
     ("hr" "Croatian" iso-8859-2) ; Croatian
     ("hu" . "Latin-2") ; Hungarian
     ; hy Armenian
@@ -2269,20 +2270,20 @@ See `set-language-info-alist' for use in programs."
     ("ka" "Georgian" georgian-ps) ; Georgian
     ; kk Kazakh
     ("kl" . "Latin-1") ; Greenlandic
-    ; km Cambodian
+    ("km" "Khmer" utf-8) ; Cambodian, Khmer
     ("kn" "Kannada" utf-8)
     ("ko" "Korean" euc-kr)
-    ; ks Kashmiri
+    ("ks" . "UTF-8") ; Kashmiri
     ; ku Kurdish
     ("kw" . "Latin-1") ; Cornish
-    ; ky Kirghiz
+    ("ky" . "UTF-8") ; Kirghiz
     ("la" . "Latin-1") ; Latin
     ("lb" . "Latin-1") ; Luxemburgish
-    ("lg" . "Laint-6") ; Ganda
+    ("lg" . "Latin-6") ; Ganda, a.k.a. Luganda
     ; ln Lingala
     ("lo" "Lao" utf-8) ; Laothian
     ("lt" "Lithuanian" iso-8859-13)
-    ("lv" . "Latvian") ; Latvian, Lettish
+    ("lv" "Latvian" iso-8859-13) ; Latvian, Lettish
     ; mg Malagasy
     ("mi" . "Latin-7") ; Maori
     ("mk" "Cyrillic-ISO" iso-8859-5) ; Macedonian
@@ -2292,24 +2293,29 @@ See `set-language-info-alist' for use in programs."
     ("mr" "Devanagari" utf-8) ; Marathi
     ("ms" . "Latin-1") ; Malay
     ("mt" . "Latin-3") ; Maltese
-    ; my Burmese
+    ("my" "Burmese" utf-8) ; Burmese
     ; na Nauru
     ("nb" . "Latin-1") ; Norwegian
     ("ne" "Devanagari" utf-8) ; Nepali
     ("nl" "Dutch" iso-8859-1)
+    ("nn" . "Latin-1") ; Norwegian Nynorsk
     ("no" . "Latin-1") ; Norwegian
+    ("nr_ZA" . "UTF-8") ; South Ndebele
+    ("nso_ZA" . "UTF-8") ; Pedi
     ("oc" . "Latin-1") ; Occitan
     ("om_ET" . "UTF-8") ; (Afan) Oromo
     ("om" . "Latin-1") ; (Afan) Oromo
-    ; or Oriya
-    ("pa" . "UTF-8") ; Punjabi
-    ("pl" . "Latin-2") ; Polish
+    ("or" "Oriya" utf-8)
+    ("pa" "Punjabi" utf-8) ; Punjabi
+    ("pl" "Polish" iso-8859-2) ; Polish
     ; ps Pashto, Pushto
+    ("pt_BR" "Brazilian Portuguese" iso-8859-1) ; Brazilian Portuguese
     ("pt" . "Latin-1") ; Portuguese
     ; qu Quechua
     ("rm" . "Latin-1") ; Rhaeto-Romanic
     ; rn Kirundi
     ("ro" "Romanian" iso-8859-2)
+    ("ru_RU.koi8r" "Cyrillic-KOI8" koi8-r)
     ("ru_RU" "Russian" iso-8859-5)
     ("ru_UA" "Russian" koi8-u)
     ; rw Kinyarwanda
@@ -2318,7 +2324,7 @@ See `set-language-info-alist' for use in programs."
     ("se" . "UTF-8") ; Northern Sami
     ; sg Sangho
     ("sh" . "Latin-2") ; Serbo-Croatian
-    ; si Sinhalese
+    ("si" "Sinhala" utf-8) ; Sinhalese
     ("sid" . "UTF-8") ; Sidamo
     ("sk" "Slovak" iso-8859-2)
     ("sl" "Slovenian" iso-8859-2)
@@ -2326,7 +2332,7 @@ See `set-language-info-alist' for use in programs."
     ; sn Shona
     ("so_ET" "UTF-8") ; Somali
     ("so" "Latin-1") ; Somali
-    ("sq" . "Latin-1") ; Albanian
+    ("sq" . "Latin-2") ; Albanian
     ("sr" . "Latin-2") ; Serbian (Latin alphabet)
     ; ss Siswati
     ("st" . "Latin-1") ;  Sesotho
@@ -2334,17 +2340,20 @@ See `set-language-info-alist' for use in programs."
     ("sv" "Swedish" iso-8859-1)		; Swedish
     ("sw" . "Latin-1") ; Swahili
     ("ta" "Tamil" utf-8)
-    ("te" . "UTF-8") ; Telugu
+    ("te" "Telugu" utf-8) ; Telugu
     ("tg" "Tajik" koi8-t)
-    ("th" "Thai" tis-620)
+    ("th_TH.tis620" "Thai" tis-620)
+    ("th_TH.TIS-620" "Thai" tis-620)
+    ("th_TH" "Thai" iso-8859-11)
+    ("th" "Thai" iso-8859-11)
     ("ti" "Ethiopic" utf-8) ; Tigrinya
     ("tig_ER" . "UTF-8") ; Tigre
     ; tk Turkmen
     ("tl" . "Latin-1") ; Tagalog
-    ; tn Setswana
+    ("tn" . "Latin-9") ; Setswana, Tswana
     ; to Tonga
     ("tr" "Turkish" iso-8859-9)
-    ; ts Tsonga
+    ("ts" . "Latin-1") ; Tsonga
     ("tt" . "UTF-8") ; Tatar
     ; tw Twi
     ; ug Uighur
@@ -2352,6 +2361,7 @@ See `set-language-info-alist' for use in programs."
     ("ur" . "UTF-8") ; Urdu
     ("uz_UZ@cyrillic" . "UTF-8"); Uzbek
     ("uz" . "Latin-1") ; Uzbek
+    ("ve" . "UTF-8") ; Venda
     ("vi" "Vietnamese" utf-8)
     ; vo Volapuk
     ("wa" . "Latin-1") ; Walloon
@@ -2381,7 +2391,6 @@ See `set-language-info-alist' for use in programs."
 
     ;; Nonstandard or obsolete language codes
     ("cz" . "Czech") ; e.g. Solaris 2.6
-    ("ee" . "Latin-4") ; Estonian, e.g. X11R6.4
     ("iw" . "Hebrew") ; e.g. X11R6.4
     ("sp" . "Cyrillic-ISO") ; Serbian (Cyrillic alphabet), e.g. X11R6.4
     ("su" . "Latin-1") ; Finnish, e.g. Solaris 2.6

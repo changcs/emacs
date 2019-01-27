@@ -1,6 +1,6 @@
 ;;; files-x.el --- extended file handling commands
 
-;; Copyright (C) 2009-2018 Free Software Foundation, Inc.
+;; Copyright (C) 2009-2019 Free Software Foundation, Inc.
 
 ;; Author: Juri Linkov <juri@jurta.org>
 ;; Maintainer: emacs-devel@gnu.org
@@ -29,6 +29,8 @@
 ;; to not make the dumped image bigger.
 
 ;;; Code:
+
+(eval-when-compile (require 'subr-x)) ; for string-trim-right
 
 
 ;;; Commands to add/delete file-local/directory-local variables.
@@ -377,7 +379,9 @@ from the -*- line ignoring the input argument VALUE."
 	   ((eq variable 'mode) (goto-char beg))
 	   ((null replaced-pos) (goto-char end))
 	   (replaced-pos (goto-char replaced-pos)))
-	  (if (and (not (eq (char-before) ?\;))
+          (if (and (save-excursion
+                     (skip-chars-backward " \t")
+                     (not (eq (char-before) ?\;)))
 		   (not (equal (point) (marker-position beg)))
 		   ;; When existing `-*- -*-' is empty, beg > end.
 		   (not (> (marker-position beg) (marker-position end))))
@@ -482,7 +486,7 @@ from the MODE alist ignoring the input argument VALUE."
 				 (if (memq variable '(mode eval))
 				     (cdr mode-assoc)
 				   (assq-delete-all variable (cdr mode-assoc))))))
-			(assq-delete-all mode variables)))
+			(assoc-delete-all mode variables)))
 	  (setq variables
 		(cons `(,mode . ((,variable . ,value)))
 		      variables))))
@@ -490,15 +494,34 @@ from the MODE alist ignoring the input argument VALUE."
       ;; Insert modified alist of directory-local variables.
       (insert ";;; Directory Local Variables\n")
       (insert ";;; For more information see (info \"(emacs) Directory Variables\")\n\n")
-      (pp (sort variables
-		(lambda (a b)
-		  (cond
-		   ((null (car a)) t)
-		   ((null (car b)) nil)
-		   ((and (symbolp (car a)) (stringp (car b))) t)
-		   ((and (symbolp (car b)) (stringp (car a))) nil)
-		   (t (string< (car a) (car b))))))
-	  (current-buffer)))))
+      (princ (dir-locals-to-string
+              (sort variables
+		    (lambda (a b)
+		      (cond
+		       ((null (car a)) t)
+		       ((null (car b)) nil)
+		       ((and (symbolp (car a)) (stringp (car b))) t)
+		       ((and (symbolp (car b)) (stringp (car a))) nil)
+		       (t (string< (car a) (car b)))))))
+             (current-buffer))
+      (goto-char (point-min))
+      (indent-sexp))))
+
+(defun dir-locals-to-string (variables)
+  "Output alists of VARIABLES to string in dotted pair notation syntax."
+  (format "(%s)" (mapconcat
+                  (lambda (mode-variables)
+                    (format "(%S . %s)"
+                            (car mode-variables)
+                            (format "(%s)" (mapconcat
+                                            (lambda (variable-value)
+                                              (format "(%S . %s)"
+                                                      (car variable-value)
+                                                      (string-trim-right
+                                                       (pp-to-string
+                                                        (cdr variable-value)))))
+                                            (cdr mode-variables) "\n"))))
+                  variables "\n")))
 
 ;;;###autoload
 (defun add-dir-local-variable (mode variable value)

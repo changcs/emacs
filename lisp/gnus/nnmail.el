@@ -1,6 +1,6 @@
 ;;; nnmail.el --- mail support functions for the Gnus mail backends
 
-;; Copyright (C) 1995-2018 Free Software Foundation, Inc.
+;; Copyright (C) 1995-2019 Free Software Foundation, Inc.
 
 ;; Author: Lars Magne Ingebrigtsen <larsi@gnus.org>
 ;; Keywords: news, mail
@@ -1534,7 +1534,8 @@ See the documentation for the variable `nnmail-split-fancy' for details."
 	    (and (setq file (ignore-errors
 			      (symbol-value (intern (format "%s-active-file"
 							    backend)))))
-		 (setq file-time (nth 5 (file-attributes file)))
+		 (setq file-time (file-attribute-modification-time
+				  (file-attributes file)))
 		 (or (not
 		      (setq timestamp
 			    (condition-case ()

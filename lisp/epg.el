@@ -1,5 +1,5 @@
 ;;; epg.el --- the EasyPG Library -*- lexical-binding: t -*-
-;; Copyright (C) 1999-2000, 2002-2018 Free Software Foundation, Inc.
+;; Copyright (C) 1999-2000, 2002-2019 Free Software Foundation, Inc.
 
 ;; Author: Daiki Ueno <ueno@unixuser.org>
 ;; Keywords: PGP, GnuPG
@@ -608,7 +608,9 @@ callback data (if any)."
     ;; for more details.
     (when (and agent-info (string-match "\\(.*\\):[0-9]+:[0-9]+" agent-info))
       (setq agent-file (match-string 1 agent-info)
-	    agent-mtime (or (nth 5 (file-attributes agent-file)) '(0 0 0 0))))
+	    agent-mtime (or (file-attribute-modification-time
+			     (file-attributes agent-file))
+			    '(0 0 0 0))))
     (if epg-debug
 	(save-excursion
 	  (unless epg-debug-buffer
@@ -653,7 +655,7 @@ callback data (if any)."
 				  :command (cons (epg-context-program context)
 						 args)
 				  :connection-type 'pipe
-				  :coding '(binary . binary)
+				  :coding 'raw-text
 				  :filter #'epg--process-filter
 				  :stderr error-process
 				  :noquery t)))
@@ -735,7 +737,9 @@ callback data (if any)."
   (if (with-current-buffer (process-buffer (epg-context-process context))
 	(and epg-agent-file
 	     (time-less-p epg-agent-mtime
-			  (or (nth 5 (file-attributes epg-agent-file)) 0))))
+			  (or (file-attribute-modification-time
+			       (file-attributes epg-agent-file))
+			      0))))
       (redraw-frame))
   (epg-context-set-result-for
    context 'error
@@ -942,10 +946,7 @@ callback data (if any)."
    (cons (cons 'no-seckey string)
 	 (epg-context-result-for context 'error))))
 
-(defun epg--time-from-seconds (seconds)
-  (let ((number-seconds (string-to-number (concat seconds ".0"))))
-    (cons (floor (/ number-seconds 65536))
-	  (floor (mod number-seconds 65536)))))
+(defalias 'epg--time-from-seconds #'string-to-number)
 
 (defun epg--status-ERRSIG (context string)
   (if (string-match "\\`\\([^ ]+\\) \\([0-9]+\\) \\([0-9]+\\) \

@@ -1,6 +1,6 @@
 ;;; smerge-mode.el --- Minor mode to resolve diff3 conflicts -*- lexical-binding: t -*-
 
-;; Copyright (C) 1999-2018 Free Software Foundation, Inc.
+;; Copyright (C) 1999-2019 Free Software Foundation, Inc.
 
 ;; Author: Stefan Monnier <monnier@iro.umontreal.ca>
 ;; Keywords: vc, tools, revision control, merge, diff3, cvs, conflict
@@ -363,9 +363,9 @@ function should only apply safe heuristics) and with the match data set
 according to `smerge-match-conflict'.")
 
 (defvar smerge-text-properties
-  `(help-echo "merge conflict: mouse-3 shows a menu"
-    ;; mouse-face highlight
-    keymap (keymap (down-mouse-3 . smerge-popup-context-menu))))
+  '(help-echo "merge conflict: mouse-3 shows a menu"
+              ;; mouse-face highlight
+              keymap (keymap (down-mouse-3 . smerge-popup-context-menu))))
 
 (defun smerge-remove-props (beg end)
   (remove-overlays beg end 'smerge 'refine)

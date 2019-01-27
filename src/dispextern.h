@@ -1,6 +1,6 @@
 /* Interface definitions for display code.
 
-Copyright (C) 1985, 1993-1994, 1997-2018 Free Software Foundation, Inc.
+Copyright (C) 1985, 1993-1994, 1997-2019 Free Software Foundation, Inc.
 
 This file is part of GNU Emacs.
 
@@ -31,6 +31,9 @@ along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 #include <X11/Intrinsic.h>
 #endif /* USE_X_TOOLKIT */
 
+#ifdef HAVE_XRENDER
+# include <X11/extensions/Xrender.h>
+#endif
 #else /* !HAVE_X_WINDOWS */
 
 /* X-related stuff used by non-X gui code.  */
@@ -74,10 +77,13 @@ typedef HDC XImagePtr_or_DC;
 
 #ifdef HAVE_NS
 #include "nsgui.h"
+#define FACE_COLOR_TO_PIXEL(face_color, frame) ns_color_index_to_rgba(face_color, frame)
 /* Following typedef needed to accommodate the MSDOS port, believe it or not.  */
 typedef struct ns_display_info Display_Info;
 typedef Pixmap XImagePtr;
 typedef XImagePtr XImagePtr_or_DC;
+#else
+#define FACE_COLOR_TO_PIXEL(face_color, frame) face_color
 #endif
 
 #ifdef HAVE_WINDOW_SYSTEM
@@ -306,24 +312,24 @@ INLINE int
 GLYPH_CODE_CHAR (Lisp_Object gc)
 {
   return (CONSP (gc)
-	  ? XINT (XCAR (gc))
-	  : XINT (gc) & MAX_CHAR);
+	  ? XFIXNUM (XCAR (gc))
+	  : XFIXNUM (gc) & MAX_CHAR);
 }
 
 INLINE int
 GLYPH_CODE_FACE (Lisp_Object gc)
 {
-  return CONSP (gc) ? XINT (XCDR (gc)) : XINT (gc) >> CHARACTERBITS;
+  return CONSP (gc) ? XFIXNUM (XCDR (gc)) : XFIXNUM (gc) >> CHARACTERBITS;
 }
 
 #define SET_GLYPH_FROM_GLYPH_CODE(glyph, gc)				\
   do									\
     {									\
       if (CONSP (gc))							\
-	SET_GLYPH (glyph, XINT (XCAR (gc)), XINT (XCDR (gc)));		\
+	SET_GLYPH (glyph, XFIXNUM (XCAR (gc)), XFIXNUM (XCDR (gc)));		\
       else								\
-	SET_GLYPH (glyph, (XINT (gc) & ((1 << CHARACTERBITS)-1)),	\
-		   (XINT (gc) >> CHARACTERBITS));			\
+	SET_GLYPH (glyph, (XFIXNUM (gc) & ((1 << CHARACTERBITS)-1)),	\
+		   (XFIXNUM (gc) >> CHARACTERBITS));			\
     }									\
   while (false)
 
@@ -1837,8 +1843,8 @@ GLYPH_CODE_P (Lisp_Object gc)
 {
   return (CONSP (gc)
 	  ? (CHARACTERP (XCAR (gc))
-	     && RANGED_INTEGERP (0, XCDR (gc), MAX_FACE_ID))
-	  : (RANGED_INTEGERP
+	     && RANGED_FIXNUMP (0, XCDR (gc), MAX_FACE_ID))
+	  : (RANGED_FIXNUMP
 	     (0, gc,
 	      (MAX_FACE_ID < TYPE_MAXIMUM (EMACS_INT) >> CHARACTERBITS
 	       ? ((EMACS_INT) MAX_FACE_ID << CHARACTERBITS) | MAX_CHAR
@@ -2482,7 +2488,7 @@ struct it
 
      If `what' is anything else, these two are undefined (will
      probably hold values for the last IT_CHARACTER or IT_COMPOSITION
-     traversed by the iterator.
+     traversed by the iterator).
 
      The values are updated by get_next_display_element, so they are
      out of sync with the value returned by IT_CHARPOS between the
@@ -2932,33 +2938,9 @@ struct redisplay_interface
 
 #ifdef HAVE_WINDOW_SYSTEM
 
-/* Each image format (JPEG, TIFF, ...) supported is described by
-   a structure of the type below.  */
-
-struct image_type
-{
-  /* Index of a symbol uniquely identifying the image type, e.g., 'jpeg'.  */
-  int type;
-
-  /* Check that SPEC is a valid image specification for the given
-     image type.  Value is true if SPEC is valid.  */
-  bool (* valid_p) (Lisp_Object spec);
-
-  /* Load IMG which is used on frame F from information contained in
-     IMG->spec.  Value is true if successful.  */
-  bool (* load) (struct frame *f, struct image *img);
-
-  /* Free resources of image IMG which is used on frame F.  */
-  void (* free) (struct frame *f, struct image *img);
-
-  /* Initialization function (used for dynamic loading of image
-     libraries on Windows), or NULL if none.  */
-  bool (* init) (void);
-
-  /* Next in list of all supported image types.  */
-  struct image_type *next;
-};
-
+# if defined HAVE_XRENDER || defined HAVE_NS || defined HAVE_NTGUI
+#  define HAVE_NATIVE_SCALING
+# endif
 
 /* Structure describing an image.  Specific image formats like XBM are
    converted into this form, so that display only has to deal with
@@ -2983,6 +2965,11 @@ struct image
      and the latter is outdated.  NULL means the X image has been
      synchronized to Pixmap.  */
   XImagePtr ximg, mask_img;
+
+# ifdef HAVE_NATIVE_SCALING
+  /* Picture versions of pixmap and mask for compositing.  */
+  Picture picture, mask_picture;
+# endif
 #endif
 
   /* Colors allocated for this image, if any.  Allocated via xmalloc.  */
@@ -3569,6 +3556,10 @@ extern void create_tty_output (struct frame *);
 extern struct terminal *init_tty (const char *, const char *, bool);
 extern void tty_append_glyph (struct it *);
 
+/* All scrolling costs measured in characters.
+   So no cost can exceed the area of a frame, measured in characters.
+   Let's hope this is never more than 1000000 characters.  */
+enum { SCROLL_INFINITY = 1000000 };
 
 /* Defined in scroll.c */
 

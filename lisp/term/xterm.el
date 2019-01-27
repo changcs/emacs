@@ -1,6 +1,6 @@
 ;;; xterm.el --- define function key sequences and standard colors for xterm  -*- lexical-binding: t -*-
 
-;; Copyright (C) 1995, 2001-2018 Free Software Foundation, Inc.
+;; Copyright (C) 1995, 2001-2019 Free Software Foundation, Inc.
 
 ;; Author: FSF
 ;; Keywords: terminals
@@ -1009,7 +1009,7 @@ hitting screen's max DCS length."
 
 (defun xterm-rgb-convert-to-16bit (prim)
   "Convert an 8-bit primary color value PRIM to a corresponding 16-bit value."
-  (logior prim (lsh prim 8)))
+  (logior prim (ash prim 8)))
 
 (defun xterm-register-default-colors (colors)
   "Register the default set of colors for xterm or compatible emulator.

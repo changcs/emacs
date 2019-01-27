@@ -1,6 +1,6 @@
 ;;; gnus-art.el --- article mode commands for Gnus
 
-;; Copyright (C) 1996-2018 Free Software Foundation, Inc.
+;; Copyright (C) 1996-2019 Free Software Foundation, Inc.
 
 ;; Author: Lars Magne Ingebrigtsen <larsi@gnus.org>
 ;; Keywords: news
@@ -278,7 +278,7 @@ This can also be a list of the above values."
   "String or function to be executed to display an X-Face header.
 If it is a string, the command will be executed in a sub-shell
 asynchronously.  The compressed face will be piped to this command."
-  :type `(choice string
+  :type '(choice string
 		 (function-item gnus-display-x-face-in-from)
 		 function)
   :version "21.1"
@@ -1626,6 +1626,12 @@ resources when reading email groups (and therefore stops
 tracking), but allows loading external resources when reading
 from NNTP newsgroups and the like.
 
+People controlling these external resources won't be able to tell
+that any one person in particular has read the message (since
+it's in a public venue, many people will end up loading that
+resource), but they'll be able to tell that somebody from your IP
+address has accessed the resource.
+
 This can also be a function to be evaluated.  If so, it will be
 called with the group name as the parameter, and should return a
 regexp."
@@ -2237,9 +2243,7 @@ This only works if the article in question is HTML."
 		     start end)))))))
 
 (defun gnus-article-treat-fold-newsgroups ()
-  "Unfold folded message headers.
-Only the headers that fit into the current window width will be
-unfolded."
+  "Fold the Newsgroups and Followup-To message headers."
   (interactive)
   (gnus-with-article-headers
     (while (gnus-article-goto-header "newsgroups\\|followup-to")
@@ -4384,8 +4388,6 @@ If variable `gnus-use-long-file-name' is non-nil, it is
 ;;; Gnus article mode
 ;;;
 
-(put 'gnus-article-mode 'mode-class 'special)
-
 (set-keymap-parent gnus-article-mode-map widget-keymap)
 
 (gnus-define-keys gnus-article-mode-map
@@ -4463,9 +4465,8 @@ If variable `gnus-use-long-file-name' is non-nil, it is
 (defvar bookmark-make-record-function)
 (defvar shr-put-image-function)
 
-(define-derived-mode gnus-article-mode fundamental-mode "Article"
+(define-derived-mode gnus-article-mode gnus-mode "Article"
   "Major mode for displaying an article.
-
 All normal editing commands are switched off.
 
 The following commands are available in addition to all summary mode
@@ -4506,8 +4507,7 @@ commands:
     (setq cursor-in-non-selected-windows nil))
   (gnus-set-default-directory)
   (buffer-disable-undo)
-  (setq buffer-read-only t
-	show-trailing-whitespace nil)
+  (setq show-trailing-whitespace nil)
   (mm-enable-multibyte))
 
 (defun gnus-article-setup-buffer ()
@@ -5155,7 +5155,7 @@ Deleting parts may malfunction or destroy the article; continue? "))
 	    "`----\n"))
 	  (setcdr data
 		  (cdr (mm-make-handle
-			nil `("text/plain" (charset . gnus-decoded)) nil nil
+			nil '("text/plain" (charset . gnus-decoded)) nil nil
 			(list "attachment")
 			(format "Deleted attachment (%s bytes)" bsize))))))
       ;; (set-buffer gnus-summary-buffer)

@@ -1,6 +1,6 @@
 ;;; message.el --- composing mail and news messages -*- lexical-binding: t -*-
 
-;; Copyright (C) 1996-2018 Free Software Foundation, Inc.
+;; Copyright (C) 1996-2019 Free Software Foundation, Inc.
 
 ;; Author: Lars Magne Ingebrigtsen <larsi@gnus.org>
 ;; Keywords: mail, news
@@ -1853,7 +1853,7 @@ You must have the \"hashcash\" binary installed, see `hashcash-path'."
   "Alist of header names/filler functions.")
 
 (defvar message-header-format-alist
-  `((From)
+  '((From)
     (Newsgroups)
     (To)
     (Cc)
@@ -2716,7 +2716,7 @@ systematically send encrypted emails when possible."
 
 (easy-menu-define
   message-mode-menu message-mode-map "Message Menu."
-  `("Message"
+  '("Message"
     ["Yank Original" message-yank-original message-reply-buffer]
     ["Fill Yanked Message" message-fill-yanked-message t]
     ["Insert Signature" message-insert-signature t]
@@ -2750,7 +2750,7 @@ systematically send encrypted emails when possible."
 
 (easy-menu-define
   message-mode-field-menu message-mode-map ""
-  `("Field"
+  '("Field"
     ["To" message-goto-to t]
     ["From" message-goto-from t]
     ["Subject" message-goto-subject t]
@@ -5400,6 +5400,17 @@ Otherwise, generate and save a value for `canlock-password' first."
 	     (message "Denied posting -- only quoted text.")
 	     nil)))))))
 
+(defun message--rotate-fixnum-left (n)
+  "Rotate the fixnum N left by one bit in a fixnum word.
+The result is a fixnum."
+  (logior (if (natnump n) 0 1)
+	  (ash (cond ((< (ash most-positive-fixnum -1) n)
+		      (logior n most-negative-fixnum))
+		     ((< n (ash most-negative-fixnum -1))
+		      (logand n most-positive-fixnum))
+		     (n))
+	       1)))
+
 (defun message-checksum ()
   "Return a \"checksum\" for the current buffer."
   (let ((sum 0))
@@ -5409,7 +5420,7 @@ Otherwise, generate and save a value for `canlock-password' first."
        (concat "^" (regexp-quote mail-header-separator) "$"))
       (while (not (eobp))
 	(when (not (looking-at "[ \t\n]"))
-	  (setq sum (logxor (ash sum 1) (if (natnump sum) 0 1)
+	  (setq sum (logxor (message--rotate-fixnum-left sum)
 			    (char-after))))
 	(forward-char 1)))
     sum))
@@ -5564,7 +5575,7 @@ In posting styles use `(\"Expires\" (make-expires-date 30))'."
   ;; Instead we use this randomly inited counter.
   (setq message-unique-id-char
 	(% (1+ (or message-unique-id-char
-		   (logand (random most-positive-fixnum) (1- (lsh 1 20)))))
+		   (random (ash 1 20))))
 	   ;; (current-time) returns 16-bit ints,
 	   ;; and 2^16*25 just fits into 4 digits i base 36.
 	   (* 25 25)))
@@ -5579,9 +5590,9 @@ In posting styles use `(\"Expires\" (make-expires-date 30))'."
 	   user)
        (message-number-base36 (user-uid) -1))
      (message-number-base36 (+ (car tm)
-			       (lsh (% message-unique-id-char 25) 16)) 4)
+			       (ash (% message-unique-id-char 25) 16)) 4)
      (message-number-base36 (+ (nth 1 tm)
-			       (lsh (/ message-unique-id-char 25) 16)) 4)
+			       (ash (/ message-unique-id-char 25) 16)) 4)
      ;; Append a given name, because while the generated ID is unique
      ;; to this newsreader, other newsreaders might otherwise generate
      ;; the same ID via another algorithm.
@@ -7459,7 +7470,7 @@ Optional DIGEST will use digest to forward."
     ;; Consider there is no illegible text.
     (add-text-properties
      b (point)
-     `(no-illegible-text t rear-nonsticky t start-open t))))
+     '(no-illegible-text t rear-nonsticky t start-open t))))
 
 (defun message-forward-make-body-mml (forward-buffer)
   (insert "\n\n<#mml type=message/rfc822 disposition=inline>\n")
@@ -8051,7 +8062,7 @@ regular text mode tabbing command."
 If SHOW is non-nil, the arguments TEXT... are displayed in a temp buffer.
 The following arguments may contain lists of values."
   (if (and show
-	   (setq text (message-flatten-list text)))
+	   (setq text (flatten-tree text)))
       (save-window-excursion
         (with-output-to-temp-buffer " *MESSAGE information message*"
           (with-current-buffer " *MESSAGE information message*"
@@ -8061,15 +8072,7 @@ The following arguments may contain lists of values."
 	(funcall ask question))
     (funcall ask question)))
 
-(defun message-flatten-list (list)
-  "Return a new, flat list that contains all elements of LIST.
-
-\(message-flatten-list \\='(1 (2 3 (4 5 (6))) 7))
-=> (1 2 3 4 5 6 7)"
-  (cond ((consp list)
-	 (apply 'append (mapcar 'message-flatten-list list)))
-	(list
-	 (list list))))
+(define-obsolete-function-alias 'message-flatten-list #'flatten-tree "27.1")
 
 (defun message-generate-new-buffer-clone-locals (name &optional varstr)
   "Create and return a buffer with name based on NAME using `generate-new-buffer'.

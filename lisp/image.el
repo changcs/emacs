@@ -1,6 +1,6 @@
 ;;; image.el --- image API  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1998-2018 Free Software Foundation, Inc.
+;; Copyright (C) 1998-2019 Free Software Foundation, Inc.
 
 ;; Maintainer: emacs-devel@gnu.org
 ;; Keywords: multimedia
@@ -261,7 +261,7 @@ We accept the tag Exif because that is the same format."
 	  (setq i (1+ i))
 	  (when (>= (+ i 2) len)
 	    (throw 'jfif nil))
-	  (let ((nbytes (+ (lsh (aref data (+ i 1)) 8)
+	  (let ((nbytes (+ (ash (aref data (+ i 1)) 8)
 			   (aref data (+ i 2))))
 		(code (aref data i)))
 	    (when (and (>= code #xe0) (<= code #xef))
@@ -982,8 +982,8 @@ default is 20%."
     image))
 
 (defun image--get-imagemagick-and-warn ()
-  (unless (or (fboundp 'imagemagick-types) (featurep 'ns))
-    (error "Cannot rescale images without ImageMagick support"))
+  (unless (or (fboundp 'imagemagick-types) (image-scaling-p))
+    (error "Cannot rescale images on this terminal"))
   (let ((image (image--get-image)))
     (image-flush image)
     (when (fboundp 'imagemagick-types)

@@ -1,6 +1,6 @@
 ;;; tramp-archive.el --- Tramp archive manager  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2017-2018 Free Software Foundation, Inc.
+;; Copyright (C) 2017-2019 Free Software Foundation, Inc.
 
 ;; Author: Michael Albinus <michael.albinus@gmx.de>
 ;; Keywords: comm, processes
@@ -174,7 +174,7 @@ It must be supported by libarchive(3).")
 ;;;###autoload
 (progn (defmacro tramp-archive-autoload-file-name-regexp ()
   "Regular expression matching archive file names."
-  `(concat
+  '(concat
     "\\`" "\\(" ".+" "\\."
       ;; Default suffixes ...
       (regexp-opt tramp-archive-suffixes)
@@ -253,7 +253,6 @@ It must be supported by libarchive(3).")
     (file-truename . tramp-archive-handle-file-truename)
     (file-writable-p . ignore)
     (find-backup-file-name . ignore)
-    ;; `find-file-noselect' performed by default handler.
     ;; `get-file-buffer' performed by default handler.
     (insert-directory . tramp-archive-handle-insert-directory)
     (insert-file-contents . tramp-archive-handle-insert-file-contents)
@@ -262,6 +261,7 @@ It must be supported by libarchive(3).")
     (make-directory . tramp-archive-handle-not-implemented)
     (make-directory-internal . tramp-archive-handle-not-implemented)
     (make-nearby-temp-file . tramp-handle-make-nearby-temp-file)
+    (make-process . ignore)
     (make-symbolic-link . tramp-archive-handle-not-implemented)
     (process-file . ignore)
     (rename-file . tramp-archive-handle-not-implemented)
@@ -274,6 +274,7 @@ It must be supported by libarchive(3).")
     (start-file-process . tramp-archive-handle-not-implemented)
     ;; `substitute-in-file-name' performed by default handler.
     (temporary-file-directory . tramp-archive-handle-temporary-file-directory)
+    ;; `tramp-set-file-uid-gid' performed by default handler.
     (unhandled-file-name-directory . ignore)
     (vc-registered . ignore)
     (verify-visited-file-modtime . tramp-handle-verify-visited-file-modtime)
@@ -332,13 +333,17 @@ pass to the OPERATION."
 	      (tramp-archive-run-real-handler operation args)))))))
 
 ;;;###autoload
+(defalias
+  'tramp-archive-autoload-file-name-handler 'tramp-autoload-file-name-handler)
+
+;;;###autoload
 (progn (defun tramp-register-archive-file-name-handler ()
   "Add archive file name handler to `file-name-handler-alist'."
   (when tramp-archive-enabled
     (add-to-list 'file-name-handler-alist
 	         (cons (tramp-archive-autoload-file-name-regexp)
-		       'tramp-autoload-file-name-handler))
-    (put 'tramp-archive-file-name-handler 'safe-magic t))))
+		       'tramp-archive-autoload-file-name-handler))
+    (put 'tramp-archive-autoload-file-name-handler 'safe-magic t))))
 
 ;;;###autoload
 (progn
@@ -375,6 +380,7 @@ pass to the OPERATION."
 (defun tramp-archive-file-name-p (name)
   "Return t if NAME is a string with archive file name syntax."
   (and (stringp name)
+       ;; We cannot use `string-match-p', the matches are used.
        (string-match tramp-archive-file-name-regexp name)
        t))
 
@@ -427,8 +433,9 @@ name is kept in slot `hop'"
        ;; http://...
        ((and url-handler-mode
 	     tramp-compat-use-url-tramp-p
-             (string-match url-handler-regexp archive)
-	     (string-match "https?" (url-type (url-generic-parse-url archive))))
+             (string-match-p url-handler-regexp archive)
+	     (string-match-p
+	      "https?" (url-type (url-generic-parse-url archive))))
 	(let* ((url-tramp-protocols
 		(cons
 		 (url-type (url-generic-parse-url archive))

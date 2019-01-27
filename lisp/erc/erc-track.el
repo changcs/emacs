@@ -1,6 +1,6 @@
 ;;; erc-track.el --- Track modified channel buffers  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2002-2018 Free Software Foundation, Inc.
+;; Copyright (C) 2002-2019 Free Software Foundation, Inc.
 
 ;; Author: Mario Lang <mlang@delysid.org>
 ;; Maintainer: emacs-devel@gnu.org
@@ -640,7 +640,7 @@ only consider active buffers visible.")
   (unless (minibuffer-window-active-p (minibuffer-window))
     ;; delay this until command has finished to make sure window is
     ;; actually visible before clearing activity
-    (add-hook 'post-command-hook 'erc-modified-channels-update)))
+    (erc-modified-channels-update)))
 
 (defvar erc-modified-channels-update-inside nil
   "Variable to prevent running `erc-modified-channels-update' multiple
@@ -669,8 +669,7 @@ ARGS are ignored."
 		  (erc-modified-channels-remove-buffer buffer))))
 	    erc-modified-channels-alist)
       (when removed-channel
-	(erc-modified-channels-display)))
-    (remove-hook 'post-command-hook 'erc-modified-channels-update)))
+	(erc-modified-channels-display)))))
 
 (defvar erc-track-mouse-face (if (featurep 'xemacs)
 				 'modeline-mousable
@@ -929,14 +928,14 @@ relative to `erc-track-switch-direction'"
 	offset)
     (when (< arg 0)
       (setq dir (pcase dir
-		  (`oldest      'newest)
-		  (`newest      'oldest)
-		  (`mostactive  'leastactive)
-		  (`leastactive 'mostactive)
-		  (`importance  'oldest)))
+		  ('oldest      'newest)
+		  ('newest      'oldest)
+		  ('mostactive  'leastactive)
+		  ('leastactive 'mostactive)
+		  ('importance  'oldest)))
       (setq arg (- arg)))
     (setq offset (pcase dir
-		   ((or `oldest `leastactive)
+		   ((or 'oldest 'leastactive)
 		    (- (length erc-modified-channels-alist) arg))
 		   (_ (1- arg))))
     ;; normalize out of range user input

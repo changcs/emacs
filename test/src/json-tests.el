@@ -1,6 +1,6 @@
 ;;; json-tests.el --- unit tests for json.c          -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2017-2018 Free Software Foundation, Inc.
+;; Copyright (C) 2017-2019 Free Software Foundation, Inc.
 
 ;; This file is part of GNU Emacs.
 
@@ -86,8 +86,8 @@
   (should (equal
            (json-serialize
             (list :detect-hash-table #s(hash-table test equal data ("bla" "ble"))
-                  :detect-alist `((bla . "ble"))
-                  :detect-plist `(:bla "ble")))
+                  :detect-alist '((bla . "ble"))
+                  :detect-plist '(:bla "ble")))
            "\
 {\
 \"detect-hash-table\":{\"bla\":\"ble\"},\
@@ -272,11 +272,20 @@ Test with both unibyte and multibyte strings."
                   (cl-incf calls)
                   (throw 'test-tag 'throw-value))
                 :local)
-      (should-error
-       (catch 'test-tag
-         (json-insert '((a . "b") (c . 123) (d . [1 2 t :false]))))
-       :type 'no-catch)
+      (should
+       (equal
+        (catch 'test-tag
+          (json-insert '((a . "b") (c . 123) (d . [1 2 t :false]))))
+        'throw-value))
       (should (equal calls 1)))))
+
+(ert-deftest json-serialize/bignum ()
+  (skip-unless (fboundp 'json-serialize))
+  (should (equal (json-serialize (vector (1+ most-positive-fixnum)
+                                         (1- most-negative-fixnum)))
+                 (format "[%d,%d]"
+                         (1+ most-positive-fixnum)
+                         (1- most-negative-fixnum)))))
 
 (provide 'json-tests)
 ;;; json-tests.el ends here

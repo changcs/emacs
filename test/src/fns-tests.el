@@ -1,6 +1,6 @@
 ;;; fns-tests.el --- tests for src/fns.c
 
-;; Copyright (C) 2014-2018 Free Software Foundation, Inc.
+;; Copyright (C) 2014-2019 Free Software Foundation, Inc.
 
 ;; This file is part of GNU Emacs.
 
@@ -22,6 +22,17 @@
 ;;; Code:
 
 (require 'cl-lib)
+
+;; Test that equality predicates work correctly on NaNs when combined
+;; with hash tables based on those predicates.  This was not the case
+;; for eql in Emacs 26.
+(ert-deftest fns-tests-equality-nan ()
+  (dolist (test (list #'eq #'eql #'equal))
+    (let* ((h (make-hash-table :test test))
+           (nan 0.0e+NaN)
+           (-nan (- nan)))
+      (puthash nan t h)
+      (should (eq (funcall test nan -nan) (gethash -nan h))))))
 
 (ert-deftest fns-tests-reverse ()
   (should-error (reverse))
@@ -150,7 +161,10 @@
 	     '(9 . "ppp") '(8 . "ttt") '(8 . "eee") '(9 . "fff"))
 	    (lambda (x y) (< (car x) (car y))))
 	   [(8 . "xxx") (8 . "bbb") (8 . "ttt") (8 . "eee")
-	    (9 . "aaa") (9 . "zzz") (9 . "ppp") (9 . "fff")])))
+	    (9 . "aaa") (9 . "zzz") (9 . "ppp") (9 . "fff")]))
+  ;; Bug#34104
+  (should (equal (should-error (sort "cba" #'<) :type 'wrong-type-argument)
+                 '(wrong-type-argument list-or-vector-p "cba"))))
 
 (ert-deftest fns-tests-collate-sort ()
   (skip-unless (fns-tests--collate-enabled-p))
@@ -592,5 +606,46 @@
   (should (equal 2 (string-distance "ab" "ab我她")))
   (should (equal 1 (string-distance "ab" "a我b")))
   (should (equal 1 (string-distance "我" "她"))))
+
+(ert-deftest test-bignum-eql ()
+  "Test that `eql' works for bignums."
+  (let ((x (+ most-positive-fixnum 1))
+        (y (+ most-positive-fixnum 1)))
+    (should (eq x x))
+    (should (eql x y))
+    (should (equal x y))
+    (should-not (eql x 0.0e+NaN))))
+
+(ert-deftest test-bignum-hash ()
+  "Test that hash tables work for bignums."
+  ;; Make two bignums that are eql but not eq.
+  (let ((b1 (1+ most-positive-fixnum))
+        (b2 (1+ most-positive-fixnum)))
+    (dolist (test '(eq eql equal))
+      (let ((hash (make-hash-table :test test)))
+        (puthash b1 t hash)
+        (should (eq (gethash b2 hash)
+                    (funcall test b1 b2)))))))
+
+(ert-deftest test-nthcdr-simple ()
+  (should (eq (nthcdr 0 'x) 'x))
+  (should (eq (nthcdr 1 '(x . y)) 'y))
+  (should (eq (nthcdr 2 '(x y . z)) 'z)))
+
+(ert-deftest test-nthcdr-circular ()
+  (dolist (len '(1 2 5 37 120 997 1024))
+    (let ((cycle (make-list len nil)))
+      (setcdr (last cycle) cycle)
+      (dolist (n (list (1- most-negative-fixnum) most-negative-fixnum
+                       -1 0 1
+                       (1- len) len (1+ len)
+                       most-positive-fixnum (1+ most-positive-fixnum)
+                       (* 2 most-positive-fixnum)
+                       (* most-positive-fixnum most-positive-fixnum)
+                       (ash 1 12345)))
+        (let ((a (nthcdr n cycle))
+              (b (if (<= n 0) cycle (nthcdr (mod n len) cycle))))
+          (should (equal (list (eq a b) n len)
+                         (list t n len))))))))
 
 (provide 'fns-tests)

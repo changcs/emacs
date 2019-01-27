@@ -1,13 +1,13 @@
 /* JSON parsing and serialization.
 
-Copyright (C) 2017-2018 Free Software Foundation, Inc.
+Copyright (C) 2017-2019 Free Software Foundation, Inc.
 
 This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or (at
-nyour option) any later version.
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -34,6 +34,7 @@ along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 
 #ifdef WINDOWSNT
 # include <windows.h>
+# include "w32common.h"
 # include "w32.h"
 
 DEF_DLL_FN (void, json_set_alloc_funcs,
@@ -159,7 +160,12 @@ init_json_functions (void)
    than PTRDIFF_MAX.  Such objects wouldn't play well with the rest of
    Emacs's codebase, which generally uses ptrdiff_t for sizes and
    indices.  The other functions in this file also generally assume
-   that size_t values never exceed PTRDIFF_MAX.  */
+   that size_t values never exceed PTRDIFF_MAX.
+
+   In addition, we need to use a custom allocator because on
+   MS-Windows we replace malloc/free with our own functions, see
+   w32heap.c, so we must force the library to use our allocator, or
+   else we won't be able to free storage allocated by the library.  */
 
 static void *
 json_malloc (size_t size)
@@ -284,8 +290,8 @@ json_parse_error (const json_error_t *error)
 #endif
   xsignal (symbol,
            list5 (json_build_string (error->text),
-                  json_build_string (error->source), make_natnum (error->line),
-                  make_natnum (error->column), make_natnum (error->position)));
+                  json_build_string (error->source), make_fixed_natnum (error->line),
+                  make_fixed_natnum (error->column), make_fixed_natnum (error->position)));
 }
 
 static void
@@ -484,8 +490,12 @@ lisp_to_json (Lisp_Object lisp, struct json_configuration *conf)
     return json_check (json_true ());
   else if (INTEGERP (lisp))
     {
-      CHECK_TYPE_RANGED_INTEGER (json_int_t, lisp);
-      return json_check (json_integer (XINT (lisp)));
+      intmax_t low = TYPE_MINIMUM (json_int_t);
+      intmax_t high = TYPE_MAXIMUM (json_int_t);
+      intmax_t value;
+      if (! integer_to_intmax (lisp, &value) || value < low || high < value)
+        args_out_of_range_3 (lisp, make_int (low), make_int (high));
+      return json_check (json_integer (value));
     }
   else if (FLOATP (lisp))
     return json_check (json_real (XFLOAT_DATA (lisp)));
@@ -605,7 +615,7 @@ usage: (json-serialize OBJECT &rest ARGS)  */)
   char *string = json_dumps (json, JSON_COMPACT);
   if (string == NULL)
     json_out_of_memory ();
-  record_unwind_protect_ptr (free, string);
+  record_unwind_protect_ptr (json_free, string);
 
   return unbind_to (count, json_build_string (string));
 }
@@ -614,42 +624,54 @@ struct json_buffer_and_size
 {
   const char *buffer;
   ptrdiff_t size;
+  /* This tracks how many bytes were inserted by the callback since
+     json_dump_callback was called.  */
+  ptrdiff_t inserted_bytes;
 };
 
 static Lisp_Object
 json_insert (void *data)
 {
   struct json_buffer_and_size *buffer_and_size = data;
-  /* FIXME: This should be possible without creating an intermediate
-     string object.  */
-  Lisp_Object string
-    = json_make_string (buffer_and_size->buffer, buffer_and_size->size);
-  insert1 (string);
+  ptrdiff_t len = buffer_and_size->size;
+  ptrdiff_t inserted_bytes = buffer_and_size->inserted_bytes;
+  ptrdiff_t gap_size = GAP_SIZE - inserted_bytes;
+
+  /* Enlarge the gap if necessary.  */
+  if (gap_size < len)
+    make_gap (len - gap_size);
+
+  /* Copy this chunk of data into the gap.  */
+  memcpy ((char *) BEG_ADDR + PT_BYTE - BEG_BYTE + inserted_bytes,
+	  buffer_and_size->buffer, len);
+  buffer_and_size->inserted_bytes += len;
   return Qnil;
 }
 
 struct json_insert_data
 {
+  /* This tracks how many bytes were inserted by the callback since
+     json_dump_callback was called.  */
+  ptrdiff_t inserted_bytes;
   /* nil if json_insert succeeded, otherwise the symbol
      Qcatch_all_memory_full or a cons (ERROR-SYMBOL . ERROR-DATA).  */
   Lisp_Object error;
 };
 
-/* Callback for json_dump_callback that inserts the UTF-8 string in
-   [BUFFER, BUFFER + SIZE) into the current buffer.
-   If [BUFFER, BUFFER + SIZE) does not contain a valid UTF-8 string,
-   an unspecified string is inserted into the buffer.  DATA must point
-   to a structure of type json_insert_data.  This function may not
-   exit nonlocally.  It catches all nonlocal exits and stores them in
-   data->error for reraising.  */
+/* Callback for json_dump_callback that inserts a JSON representation
+   as a unibyte string into the gap.  DATA must point to a structure
+   of type json_insert_data.  This function may not exit nonlocally.
+   It catches all nonlocal exits and stores them in data->error for
+   reraising.  */
 
 static int
 json_insert_callback (const char *buffer, size_t size, void *data)
 {
   struct json_insert_data *d = data;
   struct json_buffer_and_size buffer_and_size
-    = {.buffer = buffer, .size = size};
+    = {.buffer = buffer, .size = size, .inserted_bytes = d->inserted_bytes};
   d->error = internal_catch_all (json_insert, &buffer_and_size, Fidentity);
+  d->inserted_bytes = buffer_and_size.inserted_bytes;
   return NILP (d->error) ? 0 : -1;
 }
 
@@ -685,10 +707,15 @@ usage: (json-insert OBJECT &rest ARGS)  */)
   json_t *json = lisp_to_json (args[0], &conf);
   record_unwind_protect_ptr (json_release_object, json);
 
+  prepare_to_modify_buffer (PT, PT, NULL);
+  move_gap_both (PT, PT_BYTE);
   struct json_insert_data data;
+  data.inserted_bytes = 0;
   /* If desired, we might want to add the following flags:
      JSON_DECODE_ANY, JSON_ALLOW_NUL.  */
   int status
+    /* Could have used json_dumpb, but that became available only in
+       Jansson 2.10, whereas we want to support 2.7 and upward.  */
     = json_dump_callback (json, json_insert_callback, &data, JSON_COMPACT);
   if (status == -1)
     {
@@ -698,12 +725,71 @@ usage: (json-insert OBJECT &rest ARGS)  */)
         json_out_of_memory ();
     }
 
+  ptrdiff_t inserted = 0;
+  ptrdiff_t inserted_bytes = data.inserted_bytes;
+  if (inserted_bytes > 0)
+    {
+      /* Make the inserted text part of the buffer, as unibyte text.  */
+      GAP_SIZE -= inserted_bytes;
+      GPT      += inserted_bytes;
+      GPT_BYTE += inserted_bytes;
+      ZV       += inserted_bytes;
+      ZV_BYTE  += inserted_bytes;
+      Z        += inserted_bytes;
+      Z_BYTE   += inserted_bytes;
+
+      if (GAP_SIZE > 0)
+	/* Put an anchor to ensure multi-byte form ends at gap.  */
+	*GPT_ADDR = 0;
+
+      /* If required, decode the stuff we've read into the gap.  */
+      struct coding_system coding;
+      /* JSON strings are UTF-8 encoded strings.  If for some reason
+	 the text returned by the Jansson library includes invalid
+	 byte sequences, they will be represented by raw bytes in the
+	 buffer text.  */
+      setup_coding_system (Qutf_8_unix, &coding);
+      coding.dst_multibyte =
+	!NILP (BVAR (current_buffer, enable_multibyte_characters));
+      if (CODING_MAY_REQUIRE_DECODING (&coding))
+	{
+	  move_gap_both (PT, PT_BYTE);
+	  GAP_SIZE += inserted_bytes;
+	  ZV_BYTE -= inserted_bytes;
+	  Z_BYTE -= inserted_bytes;
+	  ZV -= inserted_bytes;
+	  Z -= inserted_bytes;
+	  decode_coding_gap (&coding, inserted_bytes, inserted_bytes);
+	  inserted = coding.produced_char;
+	}
+      else
+	{
+	  /* The target buffer is unibyte, so we don't need to decode.  */
+	  invalidate_buffer_caches (current_buffer,
+				    PT, PT + inserted_bytes);
+	  adjust_after_insert (PT, PT_BYTE,
+			       PT + inserted_bytes,
+			       PT_BYTE + inserted_bytes,
+			       inserted_bytes);
+	  inserted = inserted_bytes;
+	}
+    }
+
+  /* Call after-change hooks.  */
+  signal_after_change (PT, 0, inserted);
+  if (inserted > 0)
+    {
+      update_compositions (PT, PT, CHECK_BORDER);
+      /* Move point to after the inserted text.  */
+      SET_PT_BOTH (PT + inserted, PT_BYTE + inserted_bytes);
+    }
+
   return unbind_to (count, Qnil);
 }
 
 /* Convert a JSON object to a Lisp object.  */
 
-static _GL_ARG_NONNULL ((1)) Lisp_Object
+static Lisp_Object ARG_NONNULL ((1))
 json_to_lisp (json_t *json, struct json_configuration *conf)
 {
   switch (json_typeof (json))
@@ -715,14 +801,10 @@ json_to_lisp (json_t *json, struct json_configuration *conf)
     case JSON_TRUE:
       return Qt;
     case JSON_INTEGER:
-      /* Return an integer if possible, a floating-point number
-         otherwise.  This loses precision for integers with large
-         magnitude; however, such integers tend to be nonportable
-         anyway because many JSON implementations use only 64-bit
-                      floating-point numbers with 53 mantissa bits.  See
-                      https://tools.ietf.org/html/rfc7159#section-6 for some
-      discussion.  */
-      return make_fixnum_or_float (json_integer_value (json));
+      {
+	json_int_t i = json_integer_value (json);
+	return INT_TO_INTEGER (i);
+      }
     case JSON_REAL:
       return make_float (json_real_value (json));
     case JSON_STRING:
@@ -733,9 +815,9 @@ json_to_lisp (json_t *json, struct json_configuration *conf)
         if (++lisp_eval_depth > max_lisp_eval_depth)
           xsignal0 (Qjson_object_too_deep);
         size_t size = json_array_size (json);
-        if (FIXNUM_OVERFLOW_P (size))
-          xsignal0 (Qoverflow_error);
-        Lisp_Object result = Fmake_vector (make_natnum (size), Qunbound);
+        if (PTRDIFF_MAX < size)
+          overflow_error ();
+        Lisp_Object result = make_vector (size, Qunbound);
         for (ptrdiff_t i = 0; i < size; ++i)
           ASET (result, i,
                 json_to_lisp (json_array_get (json, i), conf));
@@ -753,9 +835,9 @@ json_to_lisp (json_t *json, struct json_configuration *conf)
             {
               size_t size = json_object_size (json);
               if (FIXNUM_OVERFLOW_P (size))
-                xsignal0 (Qoverflow_error);
+                overflow_error ();
               result = CALLN (Fmake_hash_table, QCtest, Qequal, QCsize,
-                              make_natnum (size));
+                              make_fixed_natnum (size));
               struct Lisp_Hash_Table *h = XHASH_TABLE (result);
               const char *key_str;
               json_t *value;

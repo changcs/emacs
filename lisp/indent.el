@@ -1,6 +1,6 @@
 ;;; indent.el --- indentation commands for Emacs  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1985, 1995, 2001-2018 Free Software Foundation, Inc.
+;; Copyright (C) 1985, 1995, 2001-2019 Free Software Foundation, Inc.
 
 ;; Maintainer: emacs-devel@gnu.org
 ;; Package: emacs
@@ -303,8 +303,10 @@ only if necessary.  It leaves point at end of indentation."
            (delete-region (progn (move-to-column column t) (point))
                           ;; The `move-to-column' call may replace
                           ;; tabs with spaces, so we can't reuse the
-                          ;; previous `back-to-indentation' point.
-                          (progn (back-to-indentation) (point)))))))
+                          ;; previous start point.
+                          (progn (beginning-of-line 1)
+                                 (skip-chars-forward " \t")
+                                 (point)))))))
 
 (defun current-left-margin ()
   "Return the left margin to use for this line.

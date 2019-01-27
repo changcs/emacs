@@ -1,6 +1,6 @@
 /* conf_post.h --- configure.ac includes this via AH_BOTTOM
 
-Copyright (C) 1988, 1993-1994, 1999-2002, 2004-2018 Free Software
+Copyright (C) 1988, 1993-1994, 1999-2002, 2004-2019 Free Software
 Foundation, Inc.
 
 This file is part of GNU Emacs.
@@ -20,9 +20,16 @@ along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 
 /* Put the code here rather than in configure.ac using AH_BOTTOM.
    This way, the code does not get processed by autoheader.  For
-   example, undefs here are not commented out.
+   example, undefs here are not commented out.  */
 
-   To help make dependencies clearer elsewhere, this file typically
+/* Disable 'assert' unless enabling checking.  Do this early, in
+   case some misguided implementation depends on NDEBUG in some
+   include file other than assert.h.  */
+#if !defined ENABLE_CHECKING && !defined NDEBUG
+# define NDEBUG
+#endif
+
+/* To help make dependencies clearer elsewhere, this file typically
    does not #include other files.  The exceptions are first stdbool.h
    because it is unlikely to interfere with configuration and bool is
    such a core part of the C language, and second ms-w32.h (DOS_NT
@@ -48,9 +55,11 @@ along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 #endif
 
 /* The type of bool bitfields.  Needed to compile Objective-C with
-   standard GCC.  It was also needed to port to pre-C99 compilers,
-   although we don't care about that any more.  */
-#if NS_IMPL_GNUSTEP
+   standard GCC, and to make sure adjacent bool_bf fields are packed
+   into the same 1-, 2-, or 4-byte allocation unit in the MinGW
+   builds.  It was also needed to port to pre-C99 compilers, although
+   we don't care about that any more.  */
+#if NS_IMPL_GNUSTEP || defined(__MINGW32__)
 typedef unsigned int bool_bf;
 #else
 typedef bool bool_bf;
@@ -206,7 +215,7 @@ extern void _DebPrint (const char *fmt, ...);
 /* Tell regex.c to use a type compatible with Emacs.  */
 #define RE_TRANSLATE_TYPE Lisp_Object
 #define RE_TRANSLATE(TBL, C) char_table_translate (TBL, C)
-#define RE_TRANSLATE_P(TBL) (!EQ (TBL, make_number (0)))
+#define RE_TRANSLATE_P(TBL) (!EQ (TBL, make_fixnum (0)))
 #endif
 
 /* Tell time_rz.c to use Emacs's getter and setter for TZ.
@@ -270,6 +279,7 @@ extern int emacs_setenv_TZ (char const *);
 #define ATTRIBUTE_FORMAT_PRINTF(string_index, first_to_check) \
   ATTRIBUTE_FORMAT ((PRINTF_ARCHETYPE, string_index, first_to_check))
 
+#define ARG_NONNULL _GL_ARG_NONNULL
 #define ATTRIBUTE_CONST _GL_ATTRIBUTE_CONST
 #define ATTRIBUTE_UNUSED _GL_UNUSED
 
@@ -289,8 +299,10 @@ extern int emacs_setenv_TZ (char const *);
 
 #if 3 <= __GNUC__
 # define ATTRIBUTE_MALLOC __attribute__ ((__malloc__))
+# define ATTRIBUTE_SECTION(name) __attribute__((section (name)))
 #else
 # define ATTRIBUTE_MALLOC
+#define ATTRIBUTE_SECTION(name)
 #endif
 
 #if __has_attribute (alloc_size)

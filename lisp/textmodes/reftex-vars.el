@@ -1,6 +1,6 @@
 ;;; reftex-vars.el --- configuration variables for RefTeX
 
-;; Copyright (C) 1997-1999, 2001-2018 Free Software Foundation, Inc.
+;; Copyright (C) 1997-1999, 2001-2019 Free Software Foundation, Inc.
 
 ;; Author: Carsten Dominik <dominik@science.uva.nl>
 ;; Maintainer: auctex-devel@gnu.org
@@ -1030,7 +1030,9 @@ This is used to string together whole reference sets, like
     ("Hyperref" "hyperref"
      (("\\autoref" ?a) ("\\autopageref" ?u)))
     ("Cleveref" "cleveref"
-     (("\\cref" ?c) ("\\Cref" ?C) ("\\cpageref" ?d) ("\\Cpageref" ?D))))
+     (("\\cref" ?c) ("\\Cref" ?C) ("\\cpageref" ?d) ("\\Cpageref" ?D)))
+    ("AMSmath" "amsmath"
+     (("\\eqref" ?e))))
   "Alist of reference styles.
 Each element is a list of the style name, the name of the LaTeX
 package associated with the style or t for any package, and an
@@ -1040,7 +1042,7 @@ the macro type is being prompted for.  (See also
 `reftex-ref-macro-prompt'.)  The keys, represented as characters,
 have to be unique."
   :group 'reftex-referencing-labels
-  :version "24.3"
+  :version "27.1"
   :type '(alist :key-type (string :tag "Style name")
 		:value-type (group (choice :tag "Package"
 					   (const :tag "Any package" t)

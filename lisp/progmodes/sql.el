@@ -1,6 +1,6 @@
 ;;; sql.el --- specialized comint.el for SQL interpreters  -*- lexical-binding: t -*-
 
-;; Copyright (C) 1998-2018 Free Software Foundation, Inc.
+;; Copyright (C) 1998-2019 Free Software Foundation, Inc.
 
 ;; Author: Alex Schroeder <alex@gnu.org>
 ;; Maintainer: Michael Mauger <michael@mauger.com>
@@ -213,7 +213,7 @@
 ;; Drew Adams <drew.adams@oracle.com> -- Emacs 20 support
 ;; Harald Maier <maierh@myself.com> -- sql-send-string
 ;; Stefan Monnier <monnier@iro.umontreal.ca> -- font-lock corrections;
-;;      code polish
+;;      code polish; on-going guidance and mentorship
 ;; Paul Sleigh <bat@flurf.net> -- MySQL keyword enhancement
 ;; Andrew Schein <andrew@andrewschein.com> -- sql-port bug
 ;; Ian Bjorhovde <idbjorh@dataproxy.com> -- db2 escape newlines
@@ -222,6 +222,7 @@
 ;; Mark Wilkinson <wilkinsonmr@gmail.com> -- file-local variables ignored
 ;; Simen Heggestøyl <simenheg@gmail.com> -- Postgres database completion
 ;; Robert Cochran <robert-emacs@cochranmail.com> -- MariaDB support
+;; Alex Harsanyi <alexharsanyi@gmail.com> -- sql-indent package and support
 ;;
 
 
@@ -723,6 +724,30 @@ This allows highlighting buffers properly when you open them."
   :group 'SQL
   :safe 'symbolp)
 
+;; SQL indent support
+
+(defcustom sql-use-indent-support t
+  "If non-nil then use the SQL indent support features of sql-indent.
+The `sql-indent' package in ELPA provides indentation support for
+SQL statements with easy customizations to support varied layout
+requirements.
+
+The package must be available to be loaded and activated."
+  :group 'SQL
+  :link '(url-link "https://elpa.gnu.org/packages/sql-indent.html")
+  :type 'booleanp
+  :version "27.1")
+
+(defun sql-is-indent-available ()
+  "Check if sql-indent module is available."
+  (when (locate-library "sql-indent")
+    (fboundp 'sqlind-minor-mode)))
+
+(defun sql-indent-enable ()
+  "Enable `sqlind-minor-mode' if available and requested."
+  (when (sql-is-indent-available)
+    (sqlind-minor-mode (if sql-use-indent-support +1 -1))))
+
 ;; misc customization of sql.el behavior
 
 (defcustom sql-electric-stuff nil
@@ -850,15 +875,17 @@ commands when the input history is read, as if you had set
 
 ;; The usual hooks
 
-(defcustom sql-interactive-mode-hook '()
+(defcustom sql-interactive-mode-hook '(sql-indent-enable)
   "Hook for customizing `sql-interactive-mode'."
   :type 'hook
-  :group 'SQL)
+  :group 'SQL
+  :version "27.1")
 
-(defcustom sql-mode-hook '()
+(defcustom sql-mode-hook '(sql-indent-enable)
   "Hook for customizing `sql-mode'."
   :type 'hook
-  :group 'SQL)
+  :group 'SQL
+  :version "27.1")
 
 (defcustom sql-set-sqli-hook '()
   "Hook for reacting to changes of `sql-buffer'.
@@ -2641,13 +2668,17 @@ argument must be a plist keyword accepted by
 
   (let* ((p (assoc product sql-product-alist))
          (v (plist-get (cdr p) feature)))
-    (if p
+    (if (and p v)
         (if (and
              (member feature sql-indirect-features)
              (symbolp v))
             (set v newvalue)
           (setcdr p (plist-put (cdr p) feature newvalue)))
-      (error "`%s' is not a known product; use `sql-add-product' to add it first." product))))
+      (progn
+       (when (null p)
+         (error "`%s' is not a known product; use `sql-add-product' to add it first." product))
+       (when (null v)
+         (error "`%s' is not a known feature for `%s'; use `sql-add-product' to add it first." feature product))))))
 
 (defun sql-get-product-feature (product feature &optional fallback not-indirect)
   "Lookup FEATURE associated with a SQL PRODUCT.
@@ -3182,21 +3213,21 @@ function like this: (sql-get-login \\='user \\='password \\='database)."
   (dolist (w what)
     (let ((plist (cdr-safe w)))
       (pcase (or (car-safe w) w)
-        (`user
+        ('user
          (sql-get-login-ext 'sql-user "User: " 'sql-user-history plist))
 
-        (`password
+        ('password
          (setq-default sql-password
                        (read-passwd "Password: " nil (sql-default-value 'sql-password))))
 
-        (`server
+        ('server
          (sql-get-login-ext 'sql-server "Server: " 'sql-server-history plist))
 
-        (`database
+        ('database
          (sql-get-login-ext 'sql-database "Database: "
                             'sql-database-history plist))
 
-        (`port
+        ('port
          (sql-get-login-ext 'sql-port "Port: "
                             nil (append '(:number t) plist)))))))
 
@@ -3305,20 +3336,20 @@ server/database name."
                           (sql-get-product-feature (or product sql-product) :sqli-login)
                           (lambda (token plist)
                               (pcase token
-                                (`user
+                                ('user
                                  (unless (string= "" sql-user)
                                    (list "/" sql-user)))
-                                (`port
+                                ('port
                                  (unless (or (not (numberp sql-port))
                                              (= 0 sql-port))
                                    (list ":" (number-to-string sql-port))))
-                                (`server
+                                ('server
                                  (unless (string= "" sql-server)
                                    (list "."
                                          (if (plist-member plist :file)
                                              (file-name-nondirectory sql-server)
                                            sql-server))))
-                                (`database
+                                ('database
                                  (unless (string= "" sql-database)
                                    (list "@"
                                          (if (plist-member plist :file)
@@ -4287,11 +4318,11 @@ is specified in the connection settings."
                       (mapcar
                        (lambda (v)
                          (pcase (car v)
-                           (`sql-user     'user)
-                           (`sql-password 'password)
-                           (`sql-server   'server)
-                           (`sql-database 'database)
-                           (`sql-port     'port)
+                           ('sql-user     'user)
+                           ('sql-password 'password)
+                           ('sql-server   'server)
+                           ('sql-database 'database)
+                           ('sql-port     'port)
                            (s             s)))
                        connect-set))
 
@@ -4355,11 +4386,11 @@ optionally is saved to the user's init file."
                        `(product ,@login)
                        (lambda (token _plist)
                            (pcase token
-                             (`product  `(sql-product  ',product))
-                             (`user     `(sql-user     ,user))
-                             (`database `(sql-database ,database))
-                             (`server   `(sql-server   ,server))
-                             (`port     `(sql-port     ,port)))))))
+                             ('product  `(sql-product  ',product))
+                             ('user     `(sql-user     ,user))
+                             ('database `(sql-database ,database))
+                             ('server   `(sql-server   ,server))
+                             ('port     `(sql-port     ,port)))))))
 
           (setq alist (append alist (list connect)))
 

@@ -1,6 +1,6 @@
 ;;; startup.el --- process Emacs shell arguments  -*- lexical-binding: t -*-
 
-;; Copyright (C) 1985-1986, 1992, 1994-2018 Free Software Foundation,
+;; Copyright (C) 1985-1986, 1992, 1994-2019 Free Software Foundation,
 ;; Inc.
 
 ;; Maintainer: emacs-devel@gnu.org
@@ -1056,7 +1056,8 @@ please check its value")
       (let* ((longopts '(("--no-init-file") ("--no-site-file")
                          ("--no-x-resources") ("--debug-init")
                          ("--user") ("--iconic") ("--icon-type") ("--quick")
-			 ("--no-blinking-cursor") ("--basic-display")))
+			 ("--no-blinking-cursor") ("--basic-display")
+                         ("--dump-file") ("--temacs")))
              (argi (pop args))
              (orig-argi argi)
              argval)
@@ -1108,6 +1109,9 @@ please check its value")
 	  (push '(visibility . icon) initial-frame-alist))
 	 ((member argi '("-nbc" "-no-blinking-cursor"))
 	  (setq no-blinking-cursor t))
+         ((member argi '("-dump-file" "-temacs"))  ; Handled in C
+          (or argval (pop args))
+          (setq argval nil))
 	 ;; Push the popped arg back on the list of arguments.
 	 (t
           (push argi args)
@@ -1755,7 +1759,7 @@ a face or button specification."
    :face 'variable-pitch "To quit a partially entered command, type "
    :face 'default "Control-g"
    :face 'variable-pitch ".\n")
-  (fancy-splash-insert :face `(variable-pitch font-lock-builtin-face)
+  (fancy-splash-insert :face '(variable-pitch font-lock-builtin-face)
 		       "\nThis is "
 		       (emacs-version)
 		       "\n"
@@ -2534,9 +2538,9 @@ nil default-directory" name)
                    ((eq initial-buffer-choice t)
                     (get-buffer-create "*scratch*"))
                    (t
-                    (error "initial-buffer-choice must be a string, a function, or t.")))))
+                    (error "`initial-buffer-choice' must be a string, a function, or t")))))
         (unless (buffer-live-p buf)
-          (error "initial-buffer-choice is not a live buffer."))
+          (error "Value returned by `initial-buffer-choice' is not a live buffer: %S" buf))
         (setq displayable-buffers (cons buf (delq buf displayable-buffers)))))
 
     ;; Display the first two buffers in `displayable-buffers'.  If

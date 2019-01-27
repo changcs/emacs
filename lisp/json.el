@@ -1,6 +1,6 @@
 ;;; json.el --- JavaScript Object Notation parser / generator -*- lexical-binding: t -*-
 
-;; Copyright (C) 2006-2018 Free Software Foundation, Inc.
+;; Copyright (C) 2006-2019 Free Software Foundation, Inc.
 
 ;; Author: Theresa O'Connor <ted@oconnor.cx>
 ;; Version: 1.4
@@ -370,7 +370,7 @@ representation will be parsed correctly."
 
 (defun json--decode-utf-16-surrogates (high low)
   "Return the code point represented by the UTF-16 surrogates HIGH and LOW."
-  (+ (lsh (- high #xD800) 10) (- low #xDC00) #x10000))
+  (+ (ash (- high #xD800) 10) (- low #xDC00) #x10000))
 
 (defun json-read-escaped-char ()
   "Read the JSON string escaped character at point."
@@ -523,8 +523,8 @@ Please see the documentation of `json-object-type' and `json-key-type'."
     ;; Skip over the "}"
     (json-advance)
     (pcase json-object-type
-      (`alist (nreverse elements))
-      (`plist (json--plist-reverse elements))
+      ('alist (nreverse elements))
+      ('plist (json--plist-reverse elements))
       (_ elements))))
 
 ;; Hash table encoding
@@ -641,8 +641,8 @@ become JSON objects."
     ;; Skip over the "]"
     (json-advance)
     (pcase json-array-type
-      (`vector (nreverse (vconcat elements)))
-      (`list (nreverse elements)))))
+      ('vector (nreverse (vconcat elements)))
+      ('list (nreverse elements)))))
 
 ;; Array encoding
 

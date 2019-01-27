@@ -1,7 +1,7 @@
 ;;; org.el --- Outline-based notes management and organizer -*- lexical-binding: t; -*-
 
 ;; Carstens outline-mode for keeping track of everything.
-;; Copyright (C) 2004-2018 Free Software Foundation, Inc.
+;; Copyright (C) 2004-2019 Free Software Foundation, Inc.
 ;;
 ;; Author: Carsten Dominik <carsten at orgmode dot org>
 ;; Maintainer: Carsten Dominik <carsten at orgmode dot org>
@@ -230,8 +230,9 @@ file to byte-code before it is loaded."
   (let* ((age (lambda (file)
 		(float-time
 		 (time-subtract (current-time)
-				(nth 5 (or (file-attributes (file-truename file))
-					   (file-attributes file)))))))
+				(file-attribute-modification-time
+				 (or (file-attributes (file-truename file))
+				     (file-attributes file)))))))
 	 (base-name (file-name-sans-extension file))
 	 (exported-file (concat base-name ".el")))
     ;; tangle if the Org file is newer than the elisp file
@@ -10058,7 +10059,7 @@ Note: this function also decodes single byte encodings like
 		  (cons 6 128))))
 	  (when (>= val 192) (setq eat (car shift-xor)))
 	  (setq val (logxor val (cdr shift-xor)))
-	  (setq sum (+ (lsh sum (car shift-xor)) val))
+	  (setq sum (+ (ash sum (car shift-xor)) val))
 	  (when (> eat 0) (setq eat (- eat 1)))
 	  (cond
 	   ((= 0 eat)			;multi byte
@@ -22381,7 +22382,9 @@ returned by, e.g., `current-time'."
        ;; (e.g. HFS+) do not retain any finer granularity.  As
        ;; a consequence, make sure we return non-nil when the two
        ;; times are equal.
-       (not (time-less-p (cl-subseq (nth 5 (file-attributes file)) 0 2)
+       (not (time-less-p (cl-subseq (file-attribute-modification-time
+				     (file-attributes file))
+				    0 2)
 			 (cl-subseq time 0 2)))))
 
 (defun org-compile-file (source process ext &optional err-msg log-buf spec)
