@@ -51,7 +51,7 @@ See also the variable `electric-pair-text-pairs'."
 
 Pairs of delimiters in this list are a fallback in case they have
 no syntax relevant to `electric-pair-mode' in the syntax table
-defined in `electric-pair-text-syntax-table'"
+defined in `electric-pair-text-syntax-table'."
   :version "24.4"
   :group 'electricity
   :type '(repeat (cons character character)))
@@ -159,7 +159,7 @@ return value is considered instead."
   #'electric-pair--skip-whitespace
   "Function to use to skip whitespace forward.
 Before attempting a skip, if `electric-pair-skip-whitespace' is
-non-nil, this function is called. It move point to a new buffer
+non-nil, this function is called.  It move point to a new buffer
 position, presumably skipping only whitespace in between.")
 
 (defun electric-pair--skip-whitespace ()
@@ -246,7 +246,7 @@ functions when `parse-sexp-lookup-properties' is non-nil.  The
 cache is flushed from position START, defaulting to point."
   (declare (debug ((form &optional form) body)) (indent 1))
   (let ((start-var (make-symbol "start")))
-    `(let ((syntax-propertize-function nil)
+    `(let ((syntax-propertize-function #'ignore)
            (,start-var ,(or start '(point))))
        (unwind-protect
            (with-syntax-table ,table
@@ -380,7 +380,7 @@ If point is not enclosed by any lists, return ((t) . (t))."
 (defvar electric-pair-string-bound-function 'point-max
   "Next buffer position where strings are syntactically unexpected.
 Value is a function called with no arguments and returning a
-buffer position. Major modes should set this variable
+buffer position.  Major modes should set this variable
 buffer-locally if they experience slowness with
 `electric-pair-mode' when pairing quotes.")
 
@@ -429,20 +429,25 @@ some list calculations, finally restoring the situation as if nothing
 happened."
   (pcase (electric-pair-syntax-info char)
     (`(,syntax ,pair ,_ ,s-or-c)
-     (unwind-protect
-         (progn
-           (delete-char -1)
-           (cond ((eq ?\( syntax)
-                  (let* ((pair-data
-                          (electric-pair--balance-info 1 s-or-c))
-                         (outermost (cdr pair-data)))
-                    (cond ((car outermost)
-                           nil)
-                          (t
-                           (eq (cdr outermost) pair)))))
-                 ((eq syntax ?\")
-                  (electric-pair--unbalanced-strings-p char))))
-       (insert char)))))
+     (catch 'done
+       ;; FIXME: modify+undo is *very* tricky business.  We used to
+       ;; use `delete-char' followed by `insert', but this changed the
+       ;; position some markers.  The real fix would be to compute the
+       ;; result without having to modify the buffer at all.
+       (atomic-change-group
+         (delete-char -1)
+         (throw
+          'done
+          (cond ((eq ?\( syntax)
+                 (let* ((pair-data
+                         (electric-pair--balance-info 1 s-or-c))
+                        (outermost (cdr pair-data)))
+                   (cond ((car outermost)
+                          nil)
+                         (t
+                          (eq (cdr outermost) pair)))))
+                ((eq syntax ?\")
+                 (electric-pair--unbalanced-strings-p char)))))))))
 
 (defun electric-pair-skip-if-helps-balance (char)
   "Return non-nil if skipping CHAR would benefit parentheses' balance.
@@ -559,13 +564,6 @@ happened."
                       (matching-paren (char-after))))
          (save-excursion (newline 1 t)))))))
 
-;; Prioritize this to kick in after
-;; `electric-layout-post-self-insert-function': that considerably
-;; simplifies interoperation when `electric-pair-mode',
-;; `electric-layout-mode' and `electric-indent-mode' are used
-;; together.  Use `vc-region-history' on these lines for more info.
-(put 'electric-pair-post-self-insert-function   'priority  50)
-
 (defun electric-pair-will-use-region ()
   (and (use-region-p)
        (memq (car (electric-pair-syntax-info last-command-event))
@@ -617,8 +615,14 @@ To toggle the mode in a single buffer, use `electric-pair-local-mode'."
   (if electric-pair-mode
       (progn
 	(add-hook 'post-self-insert-hook
-		  #'electric-pair-post-self-insert-function)
-        (electric--sort-post-self-insertion-hook)
+		  #'electric-pair-post-self-insert-function
+                  ;; Prioritize this to kick in after
+                  ;; `electric-layout-post-self-insert-function': that
+                  ;; considerably simplifies interoperation when
+                  ;; `electric-pair-mode', `electric-layout-mode' and
+                  ;; `electric-indent-mode' are used together.
+                  ;; Use `vc-region-history' on these lines for more info.
+                  50)
 	(add-hook 'self-insert-uses-region-functions
 		  #'electric-pair-will-use-region))
     (remove-hook 'post-self-insert-hook

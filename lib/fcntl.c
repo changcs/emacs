@@ -25,6 +25,7 @@
 #include <errno.h>
 #include <limits.h>
 #include <stdarg.h>
+#include <stdlib.h>
 #include <unistd.h>
 
 #ifdef __KLIBC__
@@ -545,7 +546,7 @@ rpl_fcntl_DUPFD_CLOEXEC (int fd, int target)
 #ifdef __KLIBC__
 
 static int
-klibc_fcntl (int fd, int action, /* arg */...);
+klibc_fcntl (int fd, int action, /* arg */...)
 {
   va_list arg_ptr;
   int arg;

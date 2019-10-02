@@ -19,8 +19,6 @@ along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 
 #include <config.h>
 
-#ifdef HAVE_KQUEUE
-#include <stdio.h>
 #include <sys/types.h>
 #include <sys/event.h>
 #include <sys/time.h>
@@ -99,7 +97,7 @@ kqueue_generate_event (Lisp_Object watch_object, Lisp_Object actions,
     event.arg = list2 (Fcons (XCAR (watch_object),
 			      Fcons (actions,
 				     NILP (file1)
-				     ? Fcons (file, Qnil)
+				     ? list1 (file)
 				     : list2 (file, file1))),
 		       Fnth (make_fixnum (3), watch_object));
     kbd_buffer_store_event (&event);
@@ -532,8 +530,6 @@ syms_of_kqueue (void)
 
   Fprovide (intern_c_string ("kqueue"), Qnil);
 }
-
-#endif /* HAVE_KQUEUE  */
 
 /* PROBLEMS
    * https://bugs.launchpad.net/ubuntu/+source/libkqueue/+bug/1514837

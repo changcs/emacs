@@ -23,6 +23,9 @@
 # in Git 1.8.2 (March 2013).
 
 
+# Personal customization.
+.dir-locals-2.el
+
 # Built by 'autogen.sh'.
 /aclocal.m4
 /configure
@@ -185,7 +188,6 @@ src/bootstrap-emacs
 src/emacs
 src/emacs-[0-9]*
 src/temacs
-src/temacs.in
 src/fingerprint.c
 src/dmpstruct.h
 src/*.pdmp
@@ -199,6 +201,7 @@ lisp/international/charscript.el
 lisp/international/cp51932.el
 lisp/international/eucjp-ms.el
 lisp/international/uni-*.el
+lisp/language/pinyin.el
 
 # Documentation.
 *.aux
@@ -256,11 +259,13 @@ gnustmp*
 ChangeLog
 [0-9]*.patch
 [0-9]*.txt
-.dir-locals?.el
 /vc-dwim-log-*
 
 # Built by 'make install'.
 etc/emacs.tmpdesktop
+
+# Built by 'make-dist'.
+/MANIFEST
 
 # Distribution directories.
 /emacs-[1-9]*/

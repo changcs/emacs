@@ -397,16 +397,6 @@ baz\"\""
    "\" ( \n		\n  )  \"" 4 41 "\" ()  \"" 5 'c++-mode
    '((electric-pair-skip-whitespace . chomp))
    (lambda () (electric-pair-mode 1))))
-;; A test failure introduced by:
-;;
-;;    bb591f139f: Enhance CC Mode's fontification, etc., of unterminated strings.
-;;
-;; Hopefully CC mode will sort this out eventually.  See
-;; https://lists.gnu.org/archive/html/emacs-devel/2018-06/msg00535.html
-(setf
- (ert-test-expected-result-type
-  (ert-get-test 'electric-pair-whitespace-chomping-2-at-point-4-in-c++-mode-in-strings))
- :failed)
 
 (define-electric-pair-test whitespace-chomping-dont-cross-comments
   " ( \n\t\t\n  )  " "--)------" :expected-string " () \n\t\t\n  )  "
@@ -876,14 +866,24 @@ baz\"\""
       (call-interactively (key-binding `[,last-command-event])))
     (should (equal (buffer-string) "int main () {\n  \n}"))))
 
-(define-derived-mode plainer-c-mode c-mode "pC"
-  "A plainer/saner C-mode with no internal electric machinery."
-  (c-toggle-electric-state -1)
-  (setq-local electric-indent-local-mode-hook nil)
-  (setq-local electric-indent-mode-hook nil)
-  (electric-indent-local-mode 1)
-  (dolist (key '(?\" ?\' ?\{ ?\} ?\( ?\) ?\[ ?\]))
-    (local-set-key (vector key) 'self-insert-command)))
+(ert-deftest electric-layout-control-reindentation ()
+  "Same as `e-l-int-main-kernel-style', but checking Bug#35254."
+  (ert-with-test-buffer ()
+    (plainer-c-mode)
+    (electric-layout-local-mode 1)
+    (electric-pair-local-mode 1)
+    (electric-indent-local-mode 1)
+    (setq-local electric-layout-rules
+                '((?\{ . (after))
+                  (?\} . (before))))
+    (insert "int main () ")
+    (let ((last-command-event ?\{))
+      (call-interactively (key-binding `[,last-command-event])))
+    (should (equal (buffer-string) "int main () {\n  \n}"))
+    ;; insert an additional newline and check indentation and
+    ;; reindentation
+    (call-interactively 'newline)
+    (should (equal (buffer-string) "int main () {\n\n  \n}"))))
 
 (ert-deftest electric-modes-int-main-allman-style ()
   (ert-with-test-buffer ()

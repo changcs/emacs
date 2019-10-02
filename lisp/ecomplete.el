@@ -96,7 +96,7 @@ string that was matched."
 (defun ecomplete-add-item (type key text)
   "Add item TEXT of TYPE to the database, using KEY as the identifier."
   (let ((elems (assq type ecomplete-database))
-	(now (string-to-number (format-time-string "%s")))
+	(now (time-convert nil 'integer))
 	entry)
     (unless elems
       (push (setq elems (list type)) ecomplete-database))
@@ -210,7 +210,7 @@ matches."
 (defun ecomplete-decay-1 (elem)
   ;; We subtract 5% from the item for each week it hasn't been used.
   (/ (car elem)
-     (expt 1.05 (/ (- (float-time) (cadr elem))
+     (expt 1.05 (/ (float-time (time-since (cadr elem)))
                    (* 7 24 60 60)))))
 
 ;; `ecomplete-get-matches' uses substring matching, so also use the `substring'

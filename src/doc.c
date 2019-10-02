@@ -136,7 +136,7 @@ get_doc_string (Lisp_Object filepos, bool unibyte, bool definition)
 	}
       if (fd < 0)
 	{
-	  if (errno == EMFILE || errno == ENFILE)
+	  if (errno != ENOENT && errno != ENOTDIR)
 	    report_file_error ("Read error on documentation file", file);
 
 	  SAFE_FREE ();
@@ -233,7 +233,7 @@ get_doc_string (Lisp_Object filepos, bool unibyte, bool definition)
     }
 
   /* Scan the text and perform quoting with ^A (char code 1).
-     ^A^A becomes ^A, ^A0 becomes a null char, and ^A_ becomes a ^_.  */
+     ^A^A becomes ^A, ^A0 becomes a NUL char, and ^A_ becomes a ^_.  */
   from = get_doc_string_buffer + offset;
   to = get_doc_string_buffer + offset;
   while (from != p)
@@ -302,7 +302,7 @@ reread_doc_file (Lisp_Object file)
   if (NILP (file))
     Fsnarf_documentation (Vdoc_file_name);
   else
-    Fload (file, Qt, Qt, Qt, Qnil);
+    save_match_data_load (file, Qt, Qt, Qt, Qnil);
 
   return 1;
 }
@@ -337,8 +337,10 @@ string is passed through `substitute-command-keys'.  */)
     fun = XCDR (fun);
   if (SUBRP (fun))
     doc = make_fixnum (XSUBR (fun)->doc);
+#ifdef HAVE_MODULES
   else if (MODULE_FUNCTIONP (fun))
-    doc = XMODULE_FUNCTION (fun)->documentation;
+    doc = module_function_documentation (XMODULE_FUNCTION (fun));
+#endif
   else if (COMPILEDP (fun))
     {
       if (PVSIZE (fun) <= COMPILED_DOC_STRING)
@@ -434,8 +436,22 @@ aren't strings.  */)
  documentation_property:
 
   tem = Fget (symbol, prop);
+
+  /* If we don't have any documentation for this symbol (and we're asking for
+     the variable documentation), try to see whether it's an indirect variable
+     and get the documentation from there instead. */
+  if (EQ (prop, Qvariable_documentation)
+      && NILP (tem))
+    {
+      Lisp_Object indirect = Findirect_variable (symbol);
+      if (!NILP (indirect))
+	tem = Fget (indirect, prop);
+    }
+
   if (EQ (tem, make_fixnum (0)))
     tem = Qnil;
+
+  /* See if we want to look for the string in the DOC file. */
   if (FIXNUMP (tem) || (CONSP (tem) && FIXNUMP (XCDR (tem))))
     {
       Lisp_Object doc = tem;
@@ -705,7 +721,7 @@ into the output, \\=\\=\\=\\[ puts \\=\\[ into the output, and \\=\\=\\=` puts \
 output.
 
 Return the original STRING if no substitutions are made.
-Otherwise, return a new string.  */)
+Otherwise, return a new string (without any text properties).  */)
   (Lisp_Object string)
 {
   char *buf;
@@ -968,7 +984,7 @@ Otherwise, return a new string.  */)
 	{
 	  /* Nothing has changed other than quoting, so copy the string’s
 	     text properties.  FIXME: Text properties should survive other
-	     changes too.  */
+	     changes too; see bug#17052.  */
 	  INTERVAL interval_copy = copy_intervals (string_intervals (string),
 						   0, SCHARS (string));
 	  if (interval_copy)

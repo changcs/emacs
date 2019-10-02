@@ -146,6 +146,8 @@ Patterns can match both regular files and directories.
 To root an entry, start it with `./'.  To match directories only,
 end it with `/'.  DIR must be one of `project-roots' or
 `project-external-roots'."
+  ;; TODO: Document and support regexp ignores as used by Hg.
+  ;; TODO: Support whitelist entries.
   (require 'grep)
   (defvar grep-find-ignored-files)
   (nconc
@@ -155,19 +157,13 @@ end it with `/'.  DIR must be one of `project-roots' or
     vc-directory-exclusion-list)
    grep-find-ignored-files))
 
-(cl-defgeneric project-file-completion-table (project dirs)
-  "Return a completion table for files in directories DIRS in PROJECT.
-DIRS is a list of absolute directories; it should be some
-subset of the project roots and external roots.
-
-The default implementation delegates to `project-files'."
-  (let ((all-files (project-files project dirs)))
-    (lambda (string pred action)
-      (cond
-       ((eq action 'metadata)
-        '(metadata . ((category . project-file))))
-       (t
-        (complete-with-action action all-files string pred))))))
+(defun project--file-completion-table (all-files)
+  (lambda (string pred action)
+    (cond
+     ((eq action 'metadata)
+      '(metadata . ((category . project-file))))
+     (t
+      (complete-with-action action all-files string pred)))))
 
 (cl-defmethod project-roots ((project (head transient)))
   (list (cdr project)))
@@ -189,9 +185,10 @@ to find the list of ignores for each directory."
 (defun project--files-in-directory (dir ignores &optional files)
   (require 'find-dired)
   (defvar find-name-arg)
-  (let ((command (format "%s %s %s -type f %s -print0"
+  (let ((default-directory dir)
+        (command (format "%s %s %s -type f %s -print0"
                          find-program
-                         dir
+                         (file-local-name dir)
                          (xref--find-ignores-arguments
                           ignores
                           (expand-file-name dir))
@@ -205,7 +202,18 @@ to find the list of ignores for each directory."
                                      " "
                                      (shell-quote-argument ")"))"")
                          )))
-    (split-string (shell-command-to-string command) "\0" t)))
+    (project--remote-file-names
+     (sort (split-string (shell-command-to-string command) "\0" t)
+           #'string<))))
+
+(defun project--remote-file-names (local-files)
+  "Return LOCAL-FILES as if they were on the system of `default-directory'."
+  (let ((remote-id (file-remote-p default-directory)))
+    (if (not remote-id)
+        local-files
+      (mapcar (lambda (file)
+                (concat remote-id file))
+              local-files))))
 
 (defgroup project-vc nil
   "Project implementation using the VC package."
@@ -323,6 +331,8 @@ DIRS must contain directory names."
 (declare-function xref--show-xrefs "xref")
 (declare-function xref-backend-identifier-at-point "xref")
 (declare-function xref--find-ignores-arguments "xref")
+(declare-function xref--regexp-to-extended "xref")
+(declare-function xref--convert-hits "xref")
 
 ;;;###autoload
 (defun project-find-regexp (regexp)
@@ -341,9 +351,11 @@ requires quoting, e.g. `\\[quoted-insert]<space>'."
             (let ((dir (read-directory-name "Base directory: "
                                             nil default-directory t)))
               (project--files-in-directory dir
-                                           (project--dir-ignores pr dir)
+                                           nil
                                            (grep-read-files regexp))))))
-    (project--find-regexp-in-files regexp files)))
+    (xref--show-xrefs
+     (apply-partially #'project--find-regexp-in-files regexp files)
+     nil)))
 
 (defun project--dir-ignores (project dir)
   (let* ((roots (project-roots project))
@@ -368,7 +380,9 @@ pattern to search for."
           (project-files pr (append
                              (project-roots pr)
                              (project-external-roots pr)))))
-    (project--find-regexp-in-files regexp files)))
+    (xref--show-xrefs
+     (apply-partially #'project--find-regexp-in-files regexp files)
+     nil)))
 
 (defun project--find-regexp-in-files (regexp files)
   (pcase-let*
@@ -377,7 +391,7 @@ pattern to search for."
        (status nil)
        (hits nil)
        (xrefs nil)
-       (command (format "xargs -0 grep %s -nHe %s"
+       (command (format "xargs -0 grep %s -nHE -e %s"
                         (if (and case-fold-search
                                  (isearch-no-upper-case-p regexp t))
                             "-i"
@@ -410,7 +424,7 @@ pattern to search for."
     (setq xrefs (xref--convert-hits (nreverse hits) regexp))
     (unless xrefs
       (user-error "No matches for: %s" regexp))
-    (xref--show-xrefs xrefs nil)))
+    xrefs))
 
 (defun project--process-file-region (start end program
                                      &optional buffer display
@@ -456,80 +470,102 @@ recognized."
                 (project-external-roots pr))))
     (project-find-file-in (thing-at-point 'filename) dirs pr)))
 
-(defun project-find-file-in (filename dirs project)
-  "Complete FILENAME in DIRS in PROJECT and visit the result."
-  (let* ((table (project-file-completion-table project dirs))
-         (file (project--completing-read-strict
-                "Find file" table nil nil
-                filename)))
-    (if (string= file "")
-        (user-error "You didn't specify the file")
-      (find-file file))))
+(defcustom project-read-file-name-function #'project--read-file-cpd-relative
+  "Function to call to read a file name from a list.
+For the arguments list, see `project--read-file-cpd-relative'."
+  :type '(choice (const :tag "Read with completion from relative names"
+                        project--read-file-cpd-relative)
+                 (const :tag "Read with completion from absolute names"
+                        project--read-file-absolute)
+                 (function :tag "Custom function" nil))
+  :version "27.1")
 
-(defun project--completing-read-strict (prompt
-                                        collection &optional predicate
-                                        hist default inherit-input-method)
-  ;; Tried both expanding the default before showing the prompt, and
-  ;; removing it when it has no matches.  Neither seems natural
-  ;; enough.  Removal is confusing; early expansion makes the prompt
-  ;; too long.
+(defun project--read-file-cpd-relative (prompt
+                                        all-files &optional predicate
+                                        hist default)
+  "Read a file name, prompting with PROMPT.
+ALL-FILES is a list of possible file name completions.
+PREDICATE, HIST, and DEFAULT have the same meaning as in
+`completing-read'."
   (let* ((common-parent-directory
-          (let ((common-prefix (try-completion "" collection)))
+          (let ((common-prefix (try-completion "" all-files)))
             (if (> (length common-prefix) 0)
                 (file-name-directory common-prefix))))
          (cpd-length (length common-parent-directory))
          (prompt (if (zerop cpd-length)
                      prompt
                    (concat prompt (format " in %s" common-parent-directory))))
-         ;; XXX: This requires collection to be "flat" as well.
-         (substrings (mapcar (lambda (s) (substring s cpd-length))
-                             (all-completions "" collection)))
-         (new-collection
-          (lambda (string pred action)
-            (cond
-             ((eq action 'metadata)
-              (if (functionp collection) (funcall collection nil nil 'metadata)))
-             (t
-	      (complete-with-action action substrings string pred)))))
-         (new-prompt (if default
+         (substrings (mapcar (lambda (s) (substring s cpd-length)) all-files))
+         (new-collection (project--file-completion-table substrings))
+         (res (project--completing-read-strict prompt
+                                               new-collection
+                                               predicate
+                                               hist default)))
+    (concat common-parent-directory res)))
+
+(defun project--read-file-absolute (prompt
+                                    all-files &optional predicate
+                                    hist default)
+  (project--completing-read-strict prompt
+                                   (project--file-completion-table all-files)
+                                   predicate
+                                   hist default))
+
+(defun project-find-file-in (filename dirs project)
+  "Complete FILENAME in DIRS in PROJECT and visit the result."
+  (let* ((all-files (project-files project dirs))
+         (file (funcall project-read-file-name-function
+                       "Find file" all-files nil nil
+                       filename)))
+    (if (string= file "")
+        (user-error "You didn't specify the file")
+      (find-file file))))
+
+(defun project--completing-read-strict (prompt
+                                        collection &optional predicate
+                                        hist default)
+  ;; Tried both expanding the default before showing the prompt, and
+  ;; removing it when it has no matches.  Neither seems natural
+  ;; enough.  Removal is confusing; early expansion makes the prompt
+  ;; too long.
+  (let* ((new-prompt (if (and default (not (string-equal default "")))
                          (format "%s (default %s): " prompt default)
                        (format "%s: " prompt)))
          (res (completing-read new-prompt
-                               new-collection predicate t
+                               collection predicate t
                                nil ;; initial-input
-                               hist default inherit-input-method)))
+                               hist default)))
     (when (and (equal res default)
                (not (test-completion res collection predicate)))
       (setq res
             (completing-read (format "%s: " prompt)
-                             new-collection predicate t res hist nil
-                             inherit-input-method)))
-    (concat common-parent-directory res)))
+                             collection predicate t res hist nil)))
+    res))
 
-(declare-function multifile-continue "multifile" ())
+(declare-function fileloop-continue "fileloop" ())
 
 ;;;###autoload
 (defun project-search (regexp)
   "Search for REGEXP in all the files of the project.
 Stops when a match is found.
-To continue searching for next match, use command \\[multifile-continue]."
+To continue searching for next match, use command \\[fileloop-continue]."
   (interactive "sSearch (regexp): ")
-  (multifile-initialize-search
+  (fileloop-initialize-search
    regexp (project-files (project-current t)) 'default)
-  (multifile-continue))
+  (fileloop-continue))
 
 ;;;###autoload
-(defun project-query-replace (from to)
+(defun project-query-replace-regexp (from to)
   "Search for REGEXP in all the files of the project.
 Stops when a match is found.
-To continue searching for next match, use command \\[multifile-continue]."
+To continue searching for next match, use command \\[fileloop-continue]."
   (interactive
    (pcase-let ((`(,from ,to)
                 (query-replace-read-args "Query replace (regexp)" t t)))
      (list from to)))
-  (multifile-initialize-replace
+  (fileloop-initialize-replace
    from to (project-files (project-current t)) 'default)
-  (multifile-continue))
+  (fileloop-continue))
 
 (provide 'project)
 ;;; project.el ends here

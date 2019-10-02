@@ -58,6 +58,7 @@ for doing so on MS-DOS).  Menus are supported on all text terminals.
 * Drag and Drop::       Using drag and drop to open files and insert text.
 * Menu Bars::           Enabling and disabling the menu bar.
 * Tool Bars::           Enabling and disabling the tool bar.
+* Tab Bars::            Enabling and disabling the tab bar.
 * Dialog Boxes::        Controlling use of dialog boxes.
 * Tooltips::            Displaying information at the current mouse position.
 * Mouse Avoidance::     Preventing the mouse pointer from obscuring text.
@@ -531,8 +532,10 @@ the mouse cursor to the chosen frame.
 @cindex fonts
 
   By default, Emacs displays text on graphical displays using a
-10-point monospace font.  There are several different ways to specify
-a different font:
+10-point monospace font, and the font size can be changed
+interactively (@pxref{Text Scale}).
+
+  There are several different ways to specify a different font:
 
 @itemize
 @item
@@ -899,6 +902,16 @@ input stream for each server.  Each server also has its own selected
 frame.  The commands you enter with a particular X server apply to
 that server's selected frame.
 
+  On multi-monitor displays it is possible to use the command
+@code{make-frame-on-monitor}:
+
+@findex make-frame-on-monitor
+@table @kbd
+@item M-x make-frame-on-monitor @key{RET} @var{monitor} @key{RET}
+Create a new frame on monitor @var{monitor} whose screen area is
+a part of the current display.
+@end table
+
 @node Frame Parameters
 @section Frame Parameters
 @vindex default-frame-alist
@@ -977,13 +990,14 @@ frame, use the command @kbd{M-x toggle-scroll-bar}.
 
 @vindex scroll-bar-mode
   To control the use of vertical scroll bars at startup, customize the
-variable @code{scroll-bar-mode}.  Its value should be either
-@code{right} (put scroll bars on the right side of windows), @code{left}
-(put them on the left), or @code{nil} (disable vertical scroll bars).
-By default, Emacs puts scroll bars on the right if it was compiled with
-GTK+ support on the X Window System, and on MS-Windows or macOS; Emacs
-puts scroll bars on the left if compiled on the X Window System without
-GTK+ support (following the old convention for X applications).
+variable @code{scroll-bar-mode} (@pxref{Customization}).  Its value
+should be either @code{right} (put scroll bars on the right side of
+windows), @code{left} (put them on the left), or @code{nil} (disable
+vertical scroll bars).  By default, Emacs puts scroll bars on the
+right if it was compiled with GTK+ support on the X Window System, and
+on MS-Windows or macOS; Emacs puts scroll bars on the left if compiled
+on the X Window System without GTK+ support (following the old
+convention for X applications).
 
 @vindex scroll-bar-width
 @cindex width of the vertical scroll bar
@@ -1200,6 +1214,41 @@ therefore do not display it when a window is undecorated.  @xref{Frame
 Parameters,,, elisp, The Emacs Lisp Reference Manual}.  On macOS the
 tool bar is hidden when the frame is put into fullscreen, but can be
 displayed by moving the mouse pointer to the top of the screen.
+
+@node Tab Bars
+@section Tab Bars
+@cindex Tab Bar mode
+@cindex mode, Tab Bar
+@cindex tabs, tabbar
+
+  On graphical displays and on text terminals, Emacs puts a @dfn{tab bar}
+at the top of each frame, just below the menu bar.  This is a row of
+tabs which you can click on with the mouse to switch window configurations.
+
+  Each tab on the tab bar represents a named persistent window
+configuration.  Its name is composed from the names of buffers
+visible in windows of the window configuration.  Clicking on the
+tab name switches the current window configuration to the previously
+used configuration of windows and buffers.
+
+  If you are using the desktop library to save and restore your
+sessions, the tabs from the tab bar are recorded in the desktop file,
+together with their associated window configurations.
+
+@findex tab-bar-mode
+@vindex tab-bar-mode
+  To toggle the use of tab bars, type @kbd{M-x tab-bar-mode}.  This
+command applies to all frames, including frames yet to be created.  To
+control the use of tab bars at startup, customize the variable
+@code{tab-bar-mode}.
+
+@vindex tab-bar-new-tab-choice
+@cindex Tab Bar new tab
+  By default, Emacs follows the same behavior as when creating frames,
+to start a new tab with the current buffer, i.e. the buffer
+that was current before calling the command that adds a new tab.
+To start a new tab with other buffers, customize the variable
+@code{tab-bar-new-tab-choice}.
 
 @node Dialog Boxes
 @section Using Dialog Boxes

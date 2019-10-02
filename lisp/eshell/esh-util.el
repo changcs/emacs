@@ -232,6 +232,14 @@ It might be different from \(getenv \"PATH\"), when
 `default-directory' points to a remote host.")
 (make-variable-buffer-local 'eshell-path-env)
 
+(defun eshell-get-path ()
+  "Return $PATH as a list.
+Add the current directory on MS-Windows."
+  (eshell-parse-colon-path
+   (if (eshell-under-windows-p)
+       (concat "." path-separator eshell-path-env)
+     eshell-path-env)))
+
 (defun eshell-parse-colon-path (path-env)
   "Split string with `parse-colon-path'.
 Prepend remote identification of `default-directory', if any."
@@ -478,24 +486,22 @@ list."
       (insert-file-contents (or filename eshell-hosts-file))
       (goto-char (point-min))
       (while (re-search-forward
-	      "^\\([^#[:space:]]+\\)\\s-+\\(\\S-+\\)\\(\\s-*\\(\\S-+\\)\\)?" nil t)
-	(if (match-string 1)
-	    (cl-pushnew (match-string 1) hosts :test #'equal))
-	(if (match-string 2)
-	    (cl-pushnew (match-string 2) hosts :test #'equal))
-	(if (match-string 4)
-	    (cl-pushnew (match-string 4) hosts :test #'equal))))
-    (sort hosts #'string-lessp)))
+              ;; "^ \t\\([^# \t\n]+\\)[ \t]+\\([^ \t\n]+\\)\\([ \t]*\\([^ \t\n]+\\)\\)?"
+	      "^[ \t]*\\([^# \t\n]+\\)[ \t]+\\([^ \t\n].+\\)" nil t)
+        (push (cons (match-string 1)
+                    (split-string (match-string 2)))
+              hosts)))
+    (nreverse hosts)))
 
 (defun eshell-read-hosts (file result-var timestamp-var)
-  "Read the contents of /etc/passwd for user names."
+  "Read the contents of /etc/hosts for host names."
   (if (or (not (symbol-value result-var))
 	  (not (symbol-value timestamp-var))
 	  (time-less-p
 	   (symbol-value timestamp-var)
 	   (file-attribute-modification-time (file-attributes file))))
       (progn
-	(set result-var (eshell-read-hosts-file file))
+	(set result-var (apply #'nconc (eshell-read-hosts-file file)))
 	(set timestamp-var (current-time))))
   (symbol-value result-var))
 
@@ -594,10 +600,7 @@ If NOSORT is non-nil, the list is not sorted--its order is unpredictable.
 	  (setq host-users (cdr host-users))
 	  (cdr (assoc user host-users))))))
 
-;; Add an autoload for parse-time-string
-(if (and (not (fboundp 'parse-time-string))
-	 (locate-library "parse-time"))
-    (autoload 'parse-time-string "parse-time"))
+(autoload 'parse-time-string "parse-time")
 
 (eval-when-compile
   (require 'ange-ftp nil t))		; ange-ftp-parse-filename
@@ -643,17 +646,14 @@ If NOSORT is non-nil, the list is not sorted--its order is unpredictable.
 	       (size (string-to-number (match-string 5)))
 	       (name (ange-ftp-parse-filename))
 	       (mtime
-		(if (fboundp 'parse-time-string)
-		    (let ((moment (parse-time-string
-				   (match-string 6))))
-		      (if (nth 0 moment)
-			  (setcar (nthcdr 5 moment)
-				  (nth 5 (decode-time)))
-			(setcar (nthcdr 0 moment) 0)
-			(setcar (nthcdr 1 moment) 0)
-			(setcar (nthcdr 2 moment) 0))
-		      (apply 'encode-time moment))
-		  (ange-ftp-file-modtime (expand-file-name name dir))))
+		(let ((moment (parse-time-string (match-string 6))))
+		  (if (decoded-time-second moment)
+		      (setf (decoded-time-year moment)
+			    (decoded-time-year (decode-time)))
+		    (setf (decoded-time-second moment) 0)
+		    (setf (decoded-time-minute moment) 0)
+                    (setf (decoded-time-hour moment) 0))
+		  (encode-time moment)))
 	       symlink)
 	  (if (string-match "\\(.+\\) -> \\(.+\\)" name)
 	      (setq symlink (match-string 2 name)

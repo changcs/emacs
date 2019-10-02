@@ -190,17 +190,6 @@ Returns nil when we can't find this char."
                            (eq (char-before) last-command-event)))))
       pos)))
 
-(defun electric--sort-post-self-insertion-hook ()
-  "Ensure order of electric functions in `post-self-insertion-hook'.
-
-Hooks in this variable interact in non-trivial ways, so a
-relative order must be maintained within it."
-  (setq-default post-self-insert-hook
-                (sort (default-value 'post-self-insert-hook)
-                      #'(lambda (fn1 fn2)
-                          (< (or (if (symbolp fn1) (get fn1 'priority)) 0)
-                             (or (if (symbolp fn2) (get fn2 'priority)) 0))))))
-
 ;;; Electric indentation.
 
 ;; Autoloading variables is generally undesirable, but major modes
@@ -223,9 +212,9 @@ Python does not lend itself to fully automatic indentation.")
 
 (defvar electric-indent-functions-without-reindent
   '(indent-relative indent-to-left-margin indent-relative-maybe
-    py-indent-line coffee-indent-line org-indent-line yaml-indent-line
-    haskell-indentation-indent-line haskell-indent-cycle haskell-simple-indent
-    yaml-indent-line)
+    indent-relative-first-indent-point py-indent-line coffee-indent-line
+    org-indent-line yaml-indent-line haskell-indentation-indent-line
+    haskell-indent-cycle haskell-simple-indent yaml-indent-line)
   "List of indent functions that can't reindent.
 If `indent-line-function' is one of those, then `electric-indent-mode' will
 not try to reindent lines.  It is normally better to make the major
@@ -281,10 +270,13 @@ or comment."
                   (goto-char before)
                   (condition-case-unless-debug ()
                       (indent-according-to-mode)
-                    (error (throw 'indent-error nil)))
-                  ;; The goal here will be to remove the trailing
-                  ;; whitespace after reindentation of the previous line
-                  ;; because that may have (re)introduced it.
+                    (error (throw 'indent-error nil))))
+                (unless (eq electric-indent-inhibit 'electric-layout-mode)
+                  ;; Unless we're operating under
+                  ;; `electric-layout-mode' (Bug#35254), the goal here
+                  ;; will be to remove the trailing whitespace after
+                  ;; reindentation of the previous line because that
+                  ;; may have (re)introduced it.
                   (goto-char before)
                   ;; We were at EOL in marker `before' before the call
                   ;; to `indent-according-to-mode' but after we may
@@ -296,8 +288,6 @@ or comment."
             (condition-case-unless-debug ()
                 (indent-according-to-mode)
               (error (throw 'indent-error nil)))))))))
-
-(put 'electric-indent-post-self-insert-function 'priority  60)
 
 (defun electric-indent-just-newline (arg)
   "Insert just a newline, without any auto-indentation."
@@ -341,8 +331,8 @@ use `electric-indent-local-mode'."
         (remove-hook 'post-self-insert-hook
                      #'electric-indent-post-self-insert-function))
     (add-hook 'post-self-insert-hook
-              #'electric-indent-post-self-insert-function)
-    (electric--sort-post-self-insertion-hook)))
+              #'electric-indent-post-self-insert-function
+              60)))
 
 ;;;###autoload
 (define-minor-mode electric-indent-local-mode
@@ -464,15 +454,13 @@ If multiple rules match, only first one is executed.")
                       ;; really wants to reindent, then
                       ;; `last-command-event' should be in
                       ;; `electric-indent-chars'.
-                      (let ((electric-indent-inhibit t))
+                      (let ((electric-indent-inhibit 'electric-layout-mode))
                         (funcall nl-after)))))))
             (pcase sym
               ('before (funcall nl-before))
               ('after  (funcall nl-after))
               ('after-stay (save-excursion (funcall nl-after)))
               ('around (funcall nl-before) (funcall nl-after))))))))
-
-(put 'electric-layout-post-self-insert-function 'priority  40)
 
 ;;;###autoload
 (define-minor-mode electric-layout-mode
@@ -482,8 +470,8 @@ The variable `electric-layout-rules' says when and how to insert newlines."
   :global t :group 'electricity
   (cond (electric-layout-mode
          (add-hook 'post-self-insert-hook
-                   #'electric-layout-post-self-insert-function)
-         (electric--sort-post-self-insertion-hook))
+                   #'electric-layout-post-self-insert-function
+                   40))
         (t
          (remove-hook 'post-self-insert-hook
                       #'electric-layout-post-self-insert-function))))
@@ -623,8 +611,6 @@ This requotes when a quoting key is typed."
                     (replace-match (string q>>))
                     (setq last-command-event q>>))))))))))
 
-(put 'electric-quote-post-self-insert-function 'priority 10)
-
 ;;;###autoload
 (define-minor-mode electric-quote-mode
   "Toggle on-the-fly requoting (Electric Quote mode).
@@ -651,8 +637,8 @@ use `electric-quote-local-mode'."
         (remove-hook 'post-self-insert-hook
                      #'electric-quote-post-self-insert-function))
     (add-hook 'post-self-insert-hook
-              #'electric-quote-post-self-insert-function)
-    (electric--sort-post-self-insertion-hook)))
+              #'electric-quote-post-self-insert-function
+              10)))
 
 ;;;###autoload
 (define-minor-mode electric-quote-local-mode

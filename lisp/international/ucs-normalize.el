@@ -30,7 +30,7 @@
 ;;
 ;; HFS-Normalization:
 ;; Reference:
-;; http://developer.apple.com/technotes/tn/tn1150.html
+;; https://developer.apple.com/library/archive/technotes/tn/tn1150.html
 ;;
 ;; HFS Normalization excludes following area for decomposition.
 ;;
@@ -109,7 +109,9 @@
 
 (defconst ucs-normalize-version "1.2")
 
-(eval-when-compile (require 'cl-lib))
+(eval-when-compile
+  (require 'cl-lib)
+  (require 'regexp-opt))
 
 (declare-function nfd "ucs-normalize" (char))
 

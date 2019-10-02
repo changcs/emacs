@@ -492,7 +492,7 @@ do_mouse_event (MOUSE_EVENT_RECORD *event,
 	    if (!NILP (Vmouse_autoselect_window))
 	      {
 		Lisp_Object mouse_window = window_from_coordinates (f, mx, my,
-								    0, 0);
+								    0, 0, 0);
 		/* A window will be selected only when it is not
 		   selected now, and the last mouse movement event was
 		   not in it.  A minibuffer window will be selected iff
@@ -680,7 +680,7 @@ handle_file_notifications (struct input_event *hold_quit)
 		     already be defined at this point.  */
 		  Lisp_Object fname
 		    = code_convert_string_norecord (utf_16_fn, cs, 0);
-		  Lisp_Object action = lispy_file_action (fni->Action);
+		  Lisp_Object action = w32_lispy_file_action (fni->Action);
 
 		  inev.kind = FILE_NOTIFY_EVENT;
 		  inev.timestamp = GetTickCount ();

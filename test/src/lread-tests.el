@@ -140,7 +140,9 @@ literals (Bug#20852)."
     (should (equal (lread-tests--last-message)
                    (concat (format-message "Loading `%s': " file-name)
                            "unescaped character literals "
-                           "`?\"', `?(', `?)', `?;', `?[', `?]' detected!")))))
+                           "`?\"', `?(', `?)', `?;', `?[', `?]' detected, "
+                           "`?\\\"', `?\\(', `?\\)', `?\\;', `?\\[', `?\\]' "
+                           "expected!")))))
 
 (ert-deftest lread-tests--funny-quote-symbols ()
   "Check that 'smart quotes' or similar trigger errors in symbol names."
@@ -217,5 +219,8 @@ literals (Bug#20852)."
                    (1+ most-positive-fixnum)
                    (* most-positive-fixnum most-positive-fixnum)))
     (should (= n (string-to-number (format "%d." n))))))
+
+(ert-deftest lread-circular-hash ()
+  (should-error (read "#s(hash-table data #0=(#0# . #0#))")))
 
 ;;; lread-tests.el ends here

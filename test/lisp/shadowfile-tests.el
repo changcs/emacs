@@ -63,9 +63,23 @@
       (format "/mock::%s" temporary-file-directory)))
   "Temporary directory for Tramp tests.")
 
+(message
+ "%s %s" temporary-file-directory shadow-test-remote-temporary-file-directory)
+
 (setq password-cache-expiry nil
+      shadow-debug (getenv "EMACS_HYDRA_CI")
       tramp-verbose 0
-      tramp-message-show-message nil)
+      tramp-message-show-message nil
+      ;; On macOS, `temporary-file-directory' is a symlinked directory.
+      temporary-file-directory (file-truename temporary-file-directory)
+      shadow-test-remote-temporary-file-directory
+      (ignore-errors
+        (file-truename shadow-test-remote-temporary-file-directory)))
+
+(when shadow-debug
+  (message
+   "%s %s"
+   temporary-file-directory shadow-test-remote-temporary-file-directory))
 
 ;; This should happen on hydra only.
 (when (getenv "EMACS_HYDRA_CI")
@@ -78,6 +92,35 @@
 (defconst shadow-test-todo-file
   (expand-file-name "shadow_todo_test" temporary-file-directory)
   "File to store the list of uncopied shadows in during tests.")
+
+(defun shadow--tests-cleanup ()
+  "Reset all `shadowfile' internals."
+  ;; Delete auto-saved files.
+  (with-current-buffer (find-file-noselect shadow-info-file 'nowarn)
+    (ignore-errors (delete-file (make-auto-save-file-name)))
+    (set-buffer-modified-p nil)
+    (kill-buffer))
+  (with-current-buffer (find-file-noselect shadow-todo-file 'nowarn)
+    (ignore-errors (delete-file (make-auto-save-file-name)))
+    (set-buffer-modified-p nil)
+    (kill-buffer))
+  ;; Delete buffers.
+  (ignore-errors
+    (with-current-buffer shadow-info-buffer
+      (set-buffer-modified-p nil)
+      (kill-buffer)))
+  (ignore-errors
+    (with-current-buffer shadow-todo-buffer
+      (set-buffer-modified-p nil)
+      (kill-buffer)))
+  ;; Delete files.
+  (ignore-errors (delete-file shadow-info-file))
+  (ignore-errors (delete-file shadow-todo-file))
+  ;; Reset variables.
+  (setq shadow-info-buffer nil
+        shadow-hashtable nil
+        shadow-todo-buffer nil
+        shadow-files-to-copy nil))
 
 (ert-deftest shadow-test00-clusters ()
   "Check cluster definitions.
@@ -96,23 +139,21 @@ guaranteed by the originator of a cluster definition."
     (unwind-protect
 	;; We must mock `read-from-minibuffer' and `read-string', in
 	;; order to avoid interactive arguments.
-	(cl-letf* (((symbol-function 'read-from-minibuffer)
+	(cl-letf* (((symbol-function #'read-from-minibuffer)
 		    (lambda (&rest args) (pop mocked-input)))
-		   ((symbol-function 'read-string)
+		   ((symbol-function #'read-string)
 		    (lambda (&rest args) (pop mocked-input))))
 
-	  ;; Cleanup.
-	  (when (file-exists-p shadow-info-file)
-	    (delete-file shadow-info-file))
-	  (when (file-exists-p shadow-todo-file)
-	    (delete-file shadow-todo-file))
+          ;; Cleanup & initialize.
+          (shadow--tests-cleanup)
+          (shadow-initialize)
 
 	  ;; Define a cluster.
 	  (setq cluster "cluster"
 		primary shadow-system-name
 		regexp (shadow-regexp-superquote primary)
 		mocked-input `(,cluster ,primary ,regexp))
-	  (call-interactively 'shadow-define-cluster)
+	  (call-interactively #'shadow-define-cluster)
 	  (should
 	   (string-equal
 	    (shadow-cluster-name (shadow-get-cluster cluster)) cluster))
@@ -136,7 +177,7 @@ guaranteed by the originator of a cluster definition."
 		mocked-input `(,cluster ,cluster ,primary ,regexp))
           (with-current-buffer (messages-buffer)
             (narrow-to-region (point-max) (point-max)))
-	  (call-interactively 'shadow-define-cluster)
+	  (call-interactively #'shadow-define-cluster)
 	  (should
            (string-match
             (regexp-quote "Not a valid primary!")
@@ -157,7 +198,7 @@ guaranteed by the originator of a cluster definition."
 		mocked-input `(,cluster ,primary ,cluster ,regexp))
           (with-current-buffer (messages-buffer)
             (narrow-to-region (point-max) (point-max)))
-	  (call-interactively 'shadow-define-cluster)
+	  (call-interactively #'shadow-define-cluster)
 	  (should
            (string-match
             (regexp-quote "Regexp doesn't include the primary host!")
@@ -178,7 +219,7 @@ guaranteed by the originator of a cluster definition."
 		(file-remote-p shadow-test-remote-temporary-file-directory)
 		regexp (shadow-regexp-superquote primary)
 		mocked-input `(,cluster ,primary ,regexp))
-	  (call-interactively 'shadow-define-cluster)
+	  (call-interactively #'shadow-define-cluster)
 	  (should
 	   (string-equal
 	    (shadow-cluster-name (shadow-get-cluster cluster)) cluster))
@@ -198,10 +239,7 @@ guaranteed by the originator of a cluster definition."
 
       ;; Cleanup.
       (with-current-buffer (messages-buffer) (widen))
-      (when (file-exists-p shadow-info-file)
-	(delete-file shadow-info-file))
-      (when (file-exists-p shadow-todo-file)
-	(delete-file shadow-todo-file)))))
+      (shadow--tests-cleanup))))
 
 (ert-deftest shadow-test01-sites ()
   "Check site definitions.
@@ -218,16 +256,14 @@ guaranteed by the originator of a cluster definition."
     (unwind-protect
 	;; We must mock `read-from-minibuffer' and `read-string', in
 	;; order to avoid interactive arguments.
-	(cl-letf* (((symbol-function 'read-from-minibuffer)
+	(cl-letf* (((symbol-function #'read-from-minibuffer)
 		    (lambda (&rest args) (pop mocked-input)))
-		   ((symbol-function 'read-string)
+		   ((symbol-function #'read-string)
 		    (lambda (&rest args) (pop mocked-input))))
 
-	  ;; Cleanup.
-	  (when (file-exists-p shadow-info-file)
-	    (delete-file shadow-info-file))
-	  (when (file-exists-p shadow-todo-file)
-	    (delete-file shadow-todo-file))
+          ;; Cleanup & initialize.
+          (shadow--tests-cleanup)
+          (shadow-initialize)
 
 	  ;; Define a cluster.
 	  (setq cluster1 "cluster1"
@@ -308,10 +344,7 @@ guaranteed by the originator of a cluster definition."
            (shadow-site-match (shadow-site-primary cluster1) cluster2)))
 
       ;; Cleanup.
-      (when (file-exists-p shadow-info-file)
-	(delete-file shadow-info-file))
-      (when (file-exists-p shadow-todo-file)
-	(delete-file shadow-todo-file)))))
+      (shadow--tests-cleanup))))
 
 (ert-deftest shadow-test02-files ()
   "Check file manipulation functions."
@@ -324,11 +357,10 @@ guaranteed by the originator of a cluster definition."
 	cluster primary regexp file hup)
     (unwind-protect
 	(progn
-	  ;; Cleanup.
-	  (when (file-exists-p shadow-info-file)
-	    (delete-file shadow-info-file))
-	  (when (file-exists-p shadow-todo-file)
-	    (delete-file shadow-todo-file))
+
+          ;; Cleanup & initialize.
+          (shadow--tests-cleanup)
+          (shadow-initialize)
 
 	  ;; Define a cluster.
 	  (setq cluster "cluster"
@@ -384,10 +416,7 @@ guaranteed by the originator of a cluster definition."
 	  (should-not (shadow-local-file nil)))
 
       ;; Cleanup.
-      (when (file-exists-p shadow-info-file)
-	(delete-file shadow-info-file))
-      (when (file-exists-p shadow-todo-file)
-	(delete-file shadow-todo-file)))))
+      (shadow--tests-cleanup))))
 
 (ert-deftest shadow-test03-expand-cluster-in-file-name ()
   "Check canonical file name of a cluster or site."
@@ -400,11 +429,10 @@ guaranteed by the originator of a cluster definition."
 	cluster primary regexp file1 file2)
     (unwind-protect
 	(progn
-	  ;; Cleanup.
-	  (when (file-exists-p shadow-info-file)
-	    (delete-file shadow-info-file))
-	  (when (file-exists-p shadow-todo-file)
-	    (delete-file shadow-todo-file))
+
+          ;; Cleanup & initialize.
+          (shadow--tests-cleanup)
+          (shadow-initialize)
 
 	  ;; Define a cluster.
 	  (setq cluster "cluster"
@@ -455,10 +483,7 @@ guaranteed by the originator of a cluster definition."
             (concat primary file1))))
 
       ;; Cleanup.
-      (when (file-exists-p shadow-info-file)
-	(delete-file shadow-info-file))
-      (when (file-exists-p shadow-todo-file)
-	(delete-file shadow-todo-file)))))
+      (shadow--tests-cleanup))))
 
 (ert-deftest shadow-test04-contract-file-name ()
   "Check canonical file name of a cluster or site."
@@ -471,11 +496,10 @@ guaranteed by the originator of a cluster definition."
 	cluster primary regexp file)
     (unwind-protect
 	(progn
-	  ;; Cleanup.
-	  (when (file-exists-p shadow-info-file)
-	    (delete-file shadow-info-file))
-	  (when (file-exists-p shadow-todo-file)
-	    (delete-file shadow-todo-file))
+
+          ;; Cleanup & initialize.
+          (shadow--tests-cleanup)
+          (shadow-initialize)
 
 	  ;; Define a cluster.
 	  (setq cluster "cluster"
@@ -516,10 +540,7 @@ guaranteed by the originator of a cluster definition."
             (concat "/cluster:" file))))
 
       ;; Cleanup.
-      (when (file-exists-p shadow-info-file)
-	(delete-file shadow-info-file))
-      (when (file-exists-p shadow-todo-file)
-	(delete-file shadow-todo-file)))))
+      (shadow--tests-cleanup))))
 
 (ert-deftest shadow-test05-file-match ()
   "Check `shadow-same-site' and `shadow-file-match'."
@@ -532,11 +553,10 @@ guaranteed by the originator of a cluster definition."
 	cluster primary regexp file)
     (unwind-protect
 	(progn
-	  ;; Cleanup.
-	  (when (file-exists-p shadow-info-file)
-	    (delete-file shadow-info-file))
-	  (when (file-exists-p shadow-todo-file)
-	    (delete-file shadow-todo-file))
+
+          ;; Cleanup & initialize.
+          (shadow--tests-cleanup)
+          (shadow-initialize)
 
 	  ;; Define a cluster.
 	  (setq cluster "cluster"
@@ -575,10 +595,7 @@ guaranteed by the originator of a cluster definition."
 	    file)))
 
       ;; Cleanup.
-      (when (file-exists-p shadow-info-file)
-	(delete-file shadow-info-file))
-      (when (file-exists-p shadow-todo-file)
-	(delete-file shadow-todo-file)))))
+      (shadow--tests-cleanup))))
 
 (ert-deftest shadow-test06-literal-groups ()
   "Check literal group definitions."
@@ -592,16 +609,14 @@ guaranteed by the originator of a cluster definition."
     (unwind-protect
 	;; We must mock `read-from-minibuffer' and `read-string', in
 	;; order to avoid interactive arguments.
-	(cl-letf* (((symbol-function 'read-from-minibuffer)
+	(cl-letf* (((symbol-function #'read-from-minibuffer)
 		    (lambda (&rest args) (pop mocked-input)))
-		   ((symbol-function 'read-string)
+		   ((symbol-function #'read-string)
 		    (lambda (&rest args) (pop mocked-input))))
 
-	  ;; Cleanup.
-	  (when (file-exists-p shadow-info-file)
-	    (delete-file shadow-info-file))
-	  (when (file-exists-p shadow-todo-file)
-	    (delete-file shadow-todo-file))
+          ;; Cleanup & initialize.
+          (shadow--tests-cleanup)
+          (shadow-initialize)
 
 	  ;; Define clusters.
 	  (setq cluster1 "cluster1"
@@ -627,7 +642,8 @@ guaranteed by the originator of a cluster definition."
 		mocked-input `(,cluster1 ,file1 ,cluster2 ,file2 ,(kbd "RET")))
 	  (with-temp-buffer
             (set-visited-file-name file1)
-	    (call-interactively 'shadow-define-literal-group))
+	    (call-interactively #'shadow-define-literal-group)
+            (set-buffer-modified-p nil))
 
           ;; `shadow-literal-groups' is a list of lists.
           (should (consp shadow-literal-groups))
@@ -640,10 +656,7 @@ guaranteed by the originator of a cluster definition."
                           (car shadow-literal-groups))))
 
       ;; Cleanup.
-      (when (file-exists-p shadow-info-file)
-	(delete-file shadow-info-file))
-      (when (file-exists-p shadow-todo-file)
-	(delete-file shadow-todo-file)))))
+      (shadow--tests-cleanup))))
 
 (ert-deftest shadow-test07-regexp-groups ()
   "Check regexp group definitions."
@@ -657,16 +670,14 @@ guaranteed by the originator of a cluster definition."
     (unwind-protect
 	;; We must mock `read-from-minibuffer' and `read-string', in
 	;; order to avoid interactive arguments.
-	(cl-letf* (((symbol-function 'read-from-minibuffer)
+	(cl-letf* (((symbol-function #'read-from-minibuffer)
 		    (lambda (&rest args) (pop mocked-input)))
-		   ((symbol-function 'read-string)
+		   ((symbol-function #'read-string)
 		    (lambda (&rest args) (pop mocked-input))))
 
-	  ;; Cleanup.
-	  (when (file-exists-p shadow-info-file)
-	    (delete-file shadow-info-file))
-	  (when (file-exists-p shadow-todo-file)
-	    (delete-file shadow-todo-file))
+          ;; Cleanup & initialize.
+          (shadow--tests-cleanup)
+          (shadow-initialize)
 
 	  ;; Define clusters.
 	  (setq cluster1 "cluster1"
@@ -688,7 +699,8 @@ guaranteed by the originator of a cluster definition."
                                ,cluster1 ,cluster2 ,(kbd "RET")))
 	  (with-temp-buffer
             (set-visited-file-name nil)
-	    (call-interactively 'shadow-define-regexp-group))
+	    (call-interactively #'shadow-define-regexp-group)
+            (set-buffer-modified-p nil))
 
           ;; `shadow-regexp-groups' is a list of lists.
           (should (consp shadow-regexp-groups))
@@ -707,10 +719,7 @@ guaranteed by the originator of a cluster definition."
             (car shadow-regexp-groups))))
 
       ;; Cleanup.
-      (when (file-exists-p shadow-info-file)
-	(delete-file shadow-info-file))
-      (when (file-exists-p shadow-todo-file)
-	(delete-file shadow-todo-file)))))
+      (shadow--tests-cleanup))))
 
 (ert-deftest shadow-test08-shadow-todo ()
   "Check that needed shadows are added to todo."
@@ -727,23 +736,30 @@ guaranteed by the originator of a cluster definition."
 	cluster1 cluster2 primary regexp file)
     (unwind-protect
         (progn
-	  ;; Cleanup.
-	  (when (file-exists-p shadow-info-file)
-	    (delete-file shadow-info-file))
-	  (when (file-exists-p shadow-todo-file)
-	    (delete-file shadow-todo-file))
+
+          ;; Cleanup & initialize.
+          (shadow--tests-cleanup)
+          (shadow-initialize)
 
           ;; Define clusters.
 	  (setq cluster1 "cluster1"
 		primary shadow-system-name
 		regexp (shadow-regexp-superquote primary))
 	  (shadow-set-cluster cluster1 primary regexp)
+          (when shadow-debug
+            (message
+             "shadow-test08-shadow-todo: %s %s %s %s"
+             cluster1 primary regexp shadow-clusters))
 
 	  (setq cluster2 "cluster2"
 		primary
 		(file-remote-p shadow-test-remote-temporary-file-directory)
 		regexp (shadow-regexp-superquote primary))
 	  (shadow-set-cluster cluster2 primary regexp)
+          (when shadow-debug
+            (message
+             "shadow-test08-shadow-todo: %s %s %s %s"
+             cluster2 primary regexp shadow-clusters))
 
 	  ;; Define a literal group.
 	  (setq file
@@ -751,12 +767,20 @@ guaranteed by the originator of a cluster definition."
 		 (expand-file-name "shadowfile-tests" temporary-file-directory))
                 shadow-literal-groups
                 `((,(concat "/cluster1:" file) ,(concat "/cluster2:" file))))
+          (when shadow-debug
+            (message
+             "shadow-test08-shadow-todo: %s %s" file shadow-literal-groups))
 
           ;; Save file from "cluster1" definition.
           (with-temp-buffer
             (set-visited-file-name file)
             (insert "foo")
             (save-buffer))
+          (when shadow-debug
+            (message
+             "shadow-test08-shadow-todo: %s %s"
+             (cons file (shadow-contract-file-name (concat "/cluster2:" file)))
+             shadow-files-to-copy))
 	  (should
            (member
             (cons file (shadow-contract-file-name (concat "/cluster2:" file)))
@@ -767,6 +791,13 @@ guaranteed by the originator of a cluster definition."
             (set-visited-file-name (concat (shadow-site-primary cluster2) file))
             (insert "foo")
             (save-buffer))
+          (when shadow-debug
+            (message
+             "shadow-test08-shadow-todo: %s %s"
+             (cons
+              (concat (shadow-site-primary cluster2) file)
+              (shadow-contract-file-name (concat "/cluster1:" file)))
+             shadow-files-to-copy))
 	  (should
            (member
             (cons
@@ -781,12 +812,20 @@ guaranteed by the originator of a cluster definition."
                             (shadow-regexp-superquote file))
                    ,(concat (shadow-site-primary cluster2)
                             (shadow-regexp-superquote file)))))
+          (when shadow-debug
+            (message
+             "shadow-test08-shadow-todo: %s %s" file shadow-regexp-groups))
 
           ;; Save file from "cluster1" definition.
           (with-temp-buffer
             (set-visited-file-name file)
             (insert "foo")
             (save-buffer))
+          (when shadow-debug
+            (message
+             "shadow-test08-shadow-todo: %s %s"
+             (cons file (shadow-contract-file-name (concat "/cluster2:" file)))
+             shadow-files-to-copy))
 	  (should
            (member
             (cons file (shadow-contract-file-name (concat "/cluster2:" file)))
@@ -797,6 +836,13 @@ guaranteed by the originator of a cluster definition."
             (set-visited-file-name (concat (shadow-site-primary cluster2) file))
             (insert "foo")
             (save-buffer))
+          (when shadow-debug
+            (message
+             "shadow-test08-shadow-todo: %s %s"
+             (cons
+              (concat (shadow-site-primary cluster2) file)
+              (shadow-contract-file-name (concat "/cluster1:" file)))
+             shadow-files-to-copy))
 	  (should
            (member
             (cons
@@ -805,16 +851,13 @@ guaranteed by the originator of a cluster definition."
             shadow-files-to-copy)))
 
       ;; Cleanup.
-      (when (file-exists-p shadow-info-file)
-	(delete-file shadow-info-file))
-      (when (file-exists-p shadow-todo-file)
-	(delete-file shadow-todo-file))
-      (ignore-errors
-        (when (file-exists-p file)
-	  (delete-file file)))
-      (ignore-errors
-        (when (file-exists-p (concat (shadow-site-primary cluster2) file))
-	  (delete-file (concat (shadow-site-primary cluster2) file)))))))
+      (dolist (elt `(,file ,(concat (shadow-site-primary cluster2) file)))
+        (ignore-errors
+          (with-current-buffer (get-file-buffer elt)
+            (set-buffer-modified-p nil)
+            (kill-buffer)))
+        (ignore-errors (delete-file elt)))
+      (shadow--tests-cleanup))))
 
 (ert-deftest shadow-test09-shadow-copy-files ()
   "Check that needed shadow files are copied."
@@ -831,13 +874,10 @@ guaranteed by the originator of a cluster definition."
 	cluster1 cluster2 primary regexp file mocked-input)
     (unwind-protect
 	(progn
-	  ;; Cleanup.
-	  (when (file-exists-p shadow-info-file)
-	    (delete-file shadow-info-file))
-	  (when (file-exists-p shadow-todo-file)
-	    (delete-file shadow-todo-file))
-          (when (buffer-live-p shadow-todo-buffer)
-            (with-current-buffer shadow-todo-buffer (erase-buffer)))
+
+          ;; Cleanup & initialize.
+          (shadow--tests-cleanup)
+          (shadow-initialize)
 
           ;; Define clusters.
 	  (setq cluster1 "cluster1"
@@ -878,7 +918,7 @@ guaranteed by the originator of a cluster definition."
 	  ;; We must mock `write-region', in order to check proper
 	  ;; action.
           (add-function
-           :before (symbol-function 'write-region)
+           :before (symbol-function #'write-region)
 	   (lambda (&rest args)
              (when (and (buffer-file-name) mocked-input)
                (should (equal (buffer-file-name) (pop mocked-input)))))
@@ -893,17 +933,14 @@ guaranteed by the originator of a cluster definition."
              (looking-at (regexp-quote "(setq shadow-files-to-copy nil)")))))
 
       ;; Cleanup.
-      (remove-function (symbol-function 'write-region) "write-region-mock")
-      (when (file-exists-p shadow-info-file)
-	(delete-file shadow-info-file))
-      (when (file-exists-p shadow-todo-file)
-	(delete-file shadow-todo-file))
-      (ignore-errors
-        (when (file-exists-p file)
-	  (delete-file file)))
-      (ignore-errors
-        (when (file-exists-p (concat (shadow-site-primary cluster2) file))
-	  (delete-file (concat (shadow-site-primary cluster2) file)))))))
+      (remove-function (symbol-function #'write-region) "write-region-mock")
+      (dolist (elt `(,file ,(concat (shadow-site-primary cluster2) file)))
+        (ignore-errors
+          (with-current-buffer (get-file-buffer elt)
+            (set-buffer-modified-p nil)
+            (kill-buffer)))
+        (ignore-errors (delete-file elt)))
+      (shadow--tests-cleanup))))
 
 (defun shadowfile-test-all (&optional interactive)
   "Run all tests for \\[shadowfile]."
@@ -911,10 +948,6 @@ guaranteed by the originator of a cluster definition."
   (if interactive
       (ert-run-tests-interactively "^shadowfile-")
     (ert-run-tests-batch "^shadowfile-")))
-
-(let ((shadow-info-file shadow-test-info-file)
-      (shadow-todo-file shadow-test-todo-file))
-  (shadow-initialize))
 
 (provide 'shadowfile-tests)
 ;;; shadowfile-tests.el ends here

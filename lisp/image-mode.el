@@ -39,6 +39,7 @@
 ;;; Code:
 
 (require 'image)
+(require 'exif)
 (eval-when-compile (require 'cl-lib))
 
 ;;; Image mode window-info management.
@@ -429,7 +430,9 @@ call."
     (define-key map "a-" 'image-decrease-speed)
     (define-key map "a0" 'image-reset-speed)
     (define-key map "ar" 'image-reverse-speed)
-    (define-key map "k" 'image-kill-buffer)
+    (define-key map "w" 'image-mode-copy-file-name-as-kill)
+    (define-key map "m" 'image-mode-mark-file)
+    (define-key map "u" 'image-mode-unmark-file)
     (define-key map [remap forward-char] 'image-forward-hscroll)
     (define-key map [remap backward-char] 'image-backward-hscroll)
     (define-key map [remap right-char] 'image-forward-hscroll)
@@ -476,6 +479,9 @@ call."
          :help "Move to next image in this directory"]
 	["Previous Image" image-previous-file :active buffer-file-name
          :help "Move to previous image in this directory"]
+	["Copy File Name" image-mode-copy-file-name-as-kill
+         :active buffer-file-name
+         :help "Copy the current file name to the kill ring"]
 	"--"
 	["Fit Frame to Image" image-mode-fit-frame :active t
 	 :help "Resize frame to match image"]
@@ -720,11 +726,15 @@ was inserted."
 				     archive-superior-buffer))
 			   (not (and (boundp 'tar-superior-buffer)
 				     tar-superior-buffer))
+                           ;; This means the buffer holds the contents
+                           ;; of a file uncompressed by jka-compr.el.
+                           (not (and (local-variable-p
+                                      'jka-compr-really-do-compress)
+                                     jka-compr-really-do-compress))
                            ;; This means the buffer holds the
                            ;; decrypted content (bug#21870).
-                           (not (and (boundp 'epa-file-encrypt-to)
-                                     (local-variable-p
-                                      'epa-file-encrypt-to))))))
+                           (not (local-variable-p
+                                 'epa-file-encrypt-to)))))
 	 (file-or-data
           (if data-p
 	      (let ((str
@@ -736,20 +746,29 @@ was inserted."
 	 ;; If we have a `fit-width' or a `fit-height', don't limit
 	 ;; the size of the image to the window size.
 	 (edges (and (null image-transform-resize)
-		     (window-inside-pixel-edges
-		      (get-buffer-window (current-buffer)))))
+		     (window-inside-pixel-edges (get-buffer-window))))
 	 (type (if (image--imagemagick-wanted-p filename)
 		   'imagemagick
 		 (image-type file-or-data nil data-p)))
-	 (image (if (not edges)
-		    (create-image file-or-data type data-p)
-		  (create-image file-or-data type data-p
-				:max-width (- (nth 2 edges) (nth 0 edges))
-				:max-height (- (nth 3 edges) (nth 1 edges)))))
 	 (inhibit-read-only t)
 	 (buffer-undo-list t)
 	 (modified (buffer-modified-p))
-	 props)
+	 props image)
+
+    ;; Get the rotation data from the file, if any.
+    (setq image-transform-rotation
+          (or (exif-orientation
+               (ignore-error exif-error
+                 (exif-parse-buffer)))
+              0.0))
+
+    ;; :scale 1: If we do not set this, create-image will apply
+    ;; default scaling based on font size.
+    (setq image (if (not edges)
+		    (create-image file-or-data type data-p :scale 1)
+		  (create-image file-or-data type data-p :scale 1
+				:max-width (- (nth 2 edges) (nth 0 edges))
+				:max-height (- (nth 3 edges) (nth 1 edges)))))
 
     ;; Discard any stale image data before looking it up again.
     (image-flush image)
@@ -804,7 +823,7 @@ was inserted."
 
 If the current buffer is displaying an image file as an image,
 call `image-mode-as-text' to switch to text or hex display.
-Otherwise, display the image by calling `image-mode'"
+Otherwise, display the image by calling `image-mode'."
   (interactive)
   (if (image-get-display-property)
       (image-mode-as-text)
@@ -971,6 +990,68 @@ This command visits the specified file via `find-alternate-file',
 replacing the current Image mode buffer."
   (interactive "p")
   (image-next-file (- n)))
+
+(defun image-mode-copy-file-name-as-kill ()
+  "Push the currently visited file name onto the kill ring."
+  (interactive)
+  (unless buffer-file-name
+    (error "The current buffer doesn't visit a file"))
+  (kill-new buffer-file-name)
+  (message "Copied %s" buffer-file-name))
+
+(defun image-mode-mark-file ()
+  "Mark the current file in the appropriate dired buffer(s).
+Any dired buffer that's opened to the current file's directory
+will have the line where the image appears (if any) marked.
+
+If no such buffer exists, it will be opened."
+  (interactive)
+  (unless buffer-file-name
+    (error "The current buffer doesn't visit a file."))
+  (image-mode--mark-file buffer-file-name #'dired-mark "marked"))
+
+(defun image-mode-unmark-file ()
+  "Unmark the current file in the appropriate dired buffer(s).
+Any dired buffer that's opened to the current file's directory
+will remove the mark from the line where the image appears (if
+any).
+
+If no such buffer exists, it will be opened."
+  (interactive)
+  (unless buffer-file-name
+    (error "The current buffer doesn't visit a file."))
+  (image-mode--mark-file buffer-file-name #'dired-unmark "unmarked"))
+
+(declare-function dired-mark "dired" (arg &optional interactive))
+(declare-function dired-unmark "dired" (arg &optional interactive))
+(declare-function dired-goto-file "dired" (file))
+
+(defun image-mode--mark-file (file function message)
+  (require 'dired)
+  (let* ((dir (file-name-directory file))
+	 (buffers
+          (cl-loop for buffer in (buffer-list)
+		   when (with-current-buffer buffer
+			  (and (eq major-mode 'dired-mode)
+			       (equal (file-truename dir)
+				      (file-truename default-directory))))
+		   collect buffer))
+         results)
+    (unless buffers
+      (save-excursion
+        (setq buffers (list (find-file-noselect dir)))))
+    (dolist (buffer buffers)
+      (with-current-buffer buffer
+	(if (not (dired-goto-file file))
+            (push (format "couldn't find in %s" (directory-file-name dir))
+                  results)
+	  (funcall function 1)
+          (push (format "%s in %s" message (directory-file-name dir))
+                results))))
+    ;; Capitalize first character.
+    (let ((string (mapconcat #'identity results "; ")))
+      (message "%s%s" (capitalize (substring string 0 1))
+               (substring string 1)))))
 
 (defun image-mode--images-in-directory (file)
   (let* ((dir (file-name-directory buffer-file-name))
@@ -1148,6 +1229,7 @@ compiled with ImageMagick support."
     ;; Note: `image-size' looks up and thus caches the untransformed
     ;; image.  There's no easy way to prevent that.
     (let* ((size (image-size spec t))
+           (edges (window-inside-pixel-edges (get-buffer-window)))
 	   (resized
 	    (cond
 	     ((numberp image-transform-resize)
@@ -1157,13 +1239,11 @@ compiled with ImageMagick support."
 	     ((eq image-transform-resize 'fit-width)
 	      (image-transform-fit-width
 	       (car size) (cdr size)
-	       (- (nth 2 (window-inside-pixel-edges))
-		  (nth 0 (window-inside-pixel-edges)))))
+	       (- (nth 2 edges) (nth 0 edges))))
 	     ((eq image-transform-resize 'fit-height)
 	      (let ((res (image-transform-fit-width
 			  (cdr size) (car size)
-			  (- (nth 3 (window-inside-pixel-edges))
-			     (nth 1 (window-inside-pixel-edges))))))
+			  (- (nth 3 edges) (nth 1 edges)))))
 		(cons (cdr res) (car res)))))))
       `(,@(when (car resized)
 	    (list :width (car resized)))

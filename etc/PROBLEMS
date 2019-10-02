@@ -45,6 +45,13 @@ following command may do the trick.  See xrdb(1) for more information.
 
   $ xrdb -merge ~/.Xresources
 
+** Emacs compiled with Cairo crashes when restoring session from desktop file.
+
+This can happen if the '.emacs.desktop' file contains setting for
+'font-backend' frame parameter.  A workaround is to delete the
+offending '.emacs.desktop' file, or edit it to remove the setting of
+'font-backend'.
+
 ** Emacs aborts while starting up, only when run without X.
 
 This problem often results from compiling Emacs with GCC when GCC was
@@ -291,7 +298,7 @@ you launched Emacs:
 
 This problem occurs because unfortunately there are two libraries
 called "libotf".  One is the library for handling OpenType fonts,
-http://www.m17n.org/libotf/, which is the one that Emacs expects.
+https://www.nongnu.org/m17n/, which is the one that Emacs expects.
 The other is a library for Open Trace Format, and is used by some
 versions of the MPI message passing interface for parallel
 programming.
@@ -1832,6 +1839,12 @@ term/xterm.el) for more details.
 * Runtime problems specific to individual Unix variants
 
 ** GNU/Linux
+
+*** GNU/Linux: profiler-report outputs nothing.
+
+A few versions of the Linux kernel have timer bugs that break CPU
+profiling; see Bug#34235.  To fix the problem, upgrade to one of the
+kernel versions 4.14.97, 4.19.19, or 4.20.6, or later.
 
 *** GNU/Linux: Process output is corrupted.
 

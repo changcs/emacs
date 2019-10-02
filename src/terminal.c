@@ -18,8 +18,6 @@ along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 
 #include <config.h>
 
-#include <stdio.h>
-
 #include "lisp.h"
 #include "character.h"
 #include "frame.h"
@@ -264,8 +262,8 @@ get_named_terminal (const char *name)
 static struct terminal *
 allocate_terminal (void)
 {
-  return ALLOCATE_ZEROED_PSEUDOVECTOR
-    (struct terminal, next_terminal, PVEC_TERMINAL);
+  return ALLOCATE_ZEROED_PSEUDOVECTOR (struct terminal, glyph_code_table,
+				       PVEC_TERMINAL);
 }
 
 /* Create a new terminal object of TYPE and add it to the terminal list.  RIF
@@ -624,6 +622,7 @@ init_initial_terminal (void)
   initial_terminal->kboard = initial_kboard;
   initial_terminal->delete_terminal_hook = &delete_initial_terminal;
   initial_terminal->delete_frame_hook = &initial_free_frame_resources;
+  initial_terminal->defined_color_hook = &tty_defined_color; /* xfaces.c */
   /* Other hooks are NULL by default.  */
 
   return initial_terminal;

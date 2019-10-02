@@ -35,8 +35,7 @@
 
 ;;; Code:
 
-(require 'eshell)
-(require 'esh-opt)
+(require 'esh-mode)
 (require 'pcomplete)
 
 ;;;###autoload
@@ -140,7 +139,7 @@ Otherwise, Emacs will attempt to use rsh to invoke du on the remote machine."
 
 ;;; Functions:
 
-(defun eshell-unix-initialize ()
+(defun eshell-unix-initialize ()    ;Called from `eshell-mode' via intern-soft!
   "Initialize the UNIX support/emulation code."
   (when (eshell-using-module 'eshell-cmpl)
     (add-hook 'pcomplete-try-first-hook
@@ -943,7 +942,8 @@ Summarize disk usage of each FILE, recursively for directories.")
 (defvar eshell-time-start nil)
 
 (defun eshell-show-elapsed-time ()
-  (let ((elapsed (format "%.3f secs\n" (- (float-time) eshell-time-start))))
+  (let ((elapsed (format "%.3f secs\n"
+			 (float-time (time-since eshell-time-start)))))
     (set-text-properties 0 (length elapsed) '(face bold) elapsed)
     (eshell-interactive-print elapsed))
   (remove-hook 'eshell-post-command-hook 'eshell-show-elapsed-time t))

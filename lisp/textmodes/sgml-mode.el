@@ -96,24 +96,20 @@ a DOCTYPE or an XML declaration."
 `text-mode-hook' is run first."
   :type 'hook)
 
-;; As long as Emacs's syntax can't be complemented with predicates to context
-;; sensitively confirm the syntax of characters, we have to live with this
-;; kludgy kind of tradeoff.
-(defvar sgml-specials '(?\")
+;; The official handling of "--" is complicated in SGML, and
+;; historically not well supported by browser HTML parsers.
+;; Recommendations for writing HTML comments is to use <!--...-->
+;; (where ... doesn't contain "--") to avoid the complications
+;; altogether (XML goes even further by requiring this in the spec).
+;; So there is probably no need to handle it "correctly".
+(defvar sgml-specials '(?\" ?\')
   "List of characters that have a special meaning for SGML mode.
 This list is used when first loading the `sgml-mode' library.
-The supported characters and potential disadvantages are:
+The supported characters are ?\\\", ?\\=', and ?-.
 
-  ?\\\"	Makes \" in text start a string.
-  ?\\='	Makes \\=' in text start a string.
-  ?-	Makes -- in text start a comment.
-
-When only one of ?\\\" or ?\\=' are included, \"\\='\" or \\='\"\\=', as can be found in
-DTDs, start a string.  To partially avoid this problem this also makes these
-self insert as named entities depending on `sgml-quick-keys'.
-
-Including ?- has the problem of affecting dashes that have nothing to do
-with comments, so we normally turn it off.")
+Including ?- makes double dashes into comment delimiters, but
+they are really only supposed to delimit comments within DTD
+definitions.  So we normally turn it off.")
 
 (defvar sgml-quick-keys nil
   "Use <, >, &, /, SPC and `sgml-specials' keys \"electrically\" when non-nil.
@@ -333,6 +329,30 @@ Any terminating `>' or `/' is not matched.")
 (defvar sgml-font-lock-keywords sgml-font-lock-keywords-1
   "Rules for highlighting SGML code.  See also `sgml-tag-face-alist'.")
 
+(defun sgml-font-lock-syntactic-face (state)
+  "`font-lock-syntactic-face-function' for `sgml-mode'."
+  ;; Don't use string face outside of tags.
+  (cond ((and (nth 9 state) (nth 3 state)) font-lock-string-face)
+        ((nth 4 state) font-lock-comment-face)))
+
+(defvar-local sgml--syntax-propertize-ppss nil)
+
+(defun sgml--syntax-propertize-ppss (pos)
+  "Return PPSS at POS, fixing the syntax of any lone `>' along the way."
+  (cl-assert (>= pos (car sgml--syntax-propertize-ppss)))
+  (let ((ppss (parse-partial-sexp (car sgml--syntax-propertize-ppss) pos -1
+                                  nil (cdr sgml--syntax-propertize-ppss))))
+    (while (eq -1 (car ppss))
+      (put-text-property (1- (point)) (point)
+                         'syntax-table (string-to-syntax "."))
+      ;; Hack attack: rather than recompute the ppss from
+      ;; (car sgml--syntax-propertize-ppss), we manually "fix it".
+      (setcar ppss 0)
+      (setq ppss (parse-partial-sexp (point) pos -1 nil ppss)))
+    (setcdr sgml--syntax-propertize-ppss ppss)
+    (setcar sgml--syntax-propertize-ppss pos)
+    ppss))
+
 (eval-and-compile
   (defconst sgml-syntax-propertize-rules
     (syntax-propertize-precompile-rules
@@ -343,29 +363,50 @@ Any terminating `>' or `/' is not matched.")
      ("--[ \t\n]*\\(>\\)" (1 "> b"))
      ("\\(<\\)[?!]" (1 (prog1 "|>"
                          (sgml-syntax-propertize-inside end))))
-     ;; Double quotes outside of tags should not introduce strings which end up
-     ;; hiding tags.  We used to test every double quote and mark it as "."
-     ;; if it's outside of tags, but there are too many double quotes and
+     ;; Quotes outside of tags should not introduce strings which end up
+     ;; hiding tags.  We used to test every quote and mark it as "."
+     ;; if it's outside of tags, but there are too many quotes and
      ;; the resulting number of calls to syntax-ppss made it too slow
      ;; (bug#33887), so we're now careful to leave alone any pair
-     ;; of quotes that doesn't hold a < or > char, which is the vast majority.
-     ("\\(\"\\)[^\"<>]*[<>\"]"
-      (1 (unless (eq ?\" (char-before))
+     ;; of quotes that doesn't hold a < or > char, which is the vast majority:
+     ;; either they're both within a tag (or a comment), in which case it's
+     ;; indeed correct to leave them as is, or they're both outside of tags, in
+     ;; which case they arguably should have punctuation syntax, but it is
+     ;; harmless to let them have string syntax because they won't "hide" any
+     ;; tag or comment from us (and we use the
+     ;; font-lock-syntactic-face-function to make sure those spurious "strings
+     ;; within text" aren't highlighted as strings).
+     ("\\([\"']\\)[^\"'<>]*"
+      (1 (if (eq (char-after) (char-after (match-beginning 0)))
+             ;; Fast-track case.
+             (forward-char 1)
+           ;; Point has moved to the end of the text we matched after the
+           ;; quote, but this risks overlooking a match to one of the other
+           ;; regexp in the rules.  We could just (goto-char (match-end 1))
+           ;; to solve this, but that would be too easy, so instead we
+           ;; only move back enough to avoid skipping comment ender, which
+           ;; happens to be the only one that we could have overlooked.
+           (when (eq (char-after) ?>)
+             (skip-chars-backward "-"))
            ;; Be careful to call `syntax-ppss' on a position before the one
            ;; we're going to change, so as not to need to flush the data we
            ;; just computed.
-           (if (prog1 (zerop (car (syntax-ppss (match-beginning 0))))
-                 (goto-char (1- (match-end 0))))
+           (if (zerop (save-excursion
+                        (car (sgml--syntax-propertize-ppss
+                              (match-beginning 0)))))
                (string-to-syntax ".")))))
      )))
 
 (defun sgml-syntax-propertize (start end)
   "Syntactic keywords for `sgml-mode'."
-  (goto-char start)
+  (setq sgml--syntax-propertize-ppss (cons start (syntax-ppss start)))
+  (cl-assert (>= (cadr sgml--syntax-propertize-ppss) 0))
   (sgml-syntax-propertize-inside end)
   (funcall
    (syntax-propertize-rules sgml-syntax-propertize-rules)
-   start end))
+   start end)
+  ;; Catch any '>' after the last quote.
+  (sgml--syntax-propertize-ppss end))
 
 (defun sgml-syntax-propertize-inside (end)
   (let ((ppss (syntax-ppss)))
@@ -551,7 +592,7 @@ Do \\[describe-key] on the following bindings to discover what they do.
   ;; This is desirable because SGML discards a newline that appears
   ;; immediately after a start tag or immediately before an end tag.
   (setq-local paragraph-start (concat "[ \t]*$\\|\
-[ \t]*</?\\(" sgml-name-re sgml-attrs-re "\\)?>"))
+\[ \t]*</?\\(" sgml-name-re sgml-attrs-re "\\)?>"))
   (setq-local paragraph-separate (concat paragraph-start "$"))
   (setq-local adaptive-fill-regexp "[ \t]*")
   (add-hook 'fill-nobreak-predicate 'sgml-fill-nobreak nil t)
@@ -569,8 +610,11 @@ Do \\[describe-key] on the following bindings to discover what they do.
   (setq font-lock-defaults '((sgml-font-lock-keywords
 			      sgml-font-lock-keywords-1
 			      sgml-font-lock-keywords-2)
-			     nil t))
+                             nil t nil
+                             (font-lock-syntactic-face-function
+                              . sgml-font-lock-syntactic-face)))
   (setq-local syntax-propertize-function #'sgml-syntax-propertize)
+  (setq-local syntax-ppss-table sgml-tag-syntax-table)
   (setq-local facemenu-add-face-function 'sgml-mode-facemenu-add-face-function)
   (setq-local sgml-xml-mode (sgml-xml-guess))
   (unless sgml-xml-mode
@@ -773,8 +817,16 @@ If QUIET, do not print a message when there are no attributes for TAG."
 		(symbolp (car (car alist))))
 	    (setq car (car alist)
 		  alist (cdr alist)))
-	(or quiet
-	    (message "No attributes configured."))
+	(unless (or alist quiet)
+	  (message "No attributes configured."))
+        (when alist
+          ;; Add class and id attributes if a) the element has any
+          ;; other attributes configured, and b) they're not already
+          ;; present.
+          (unless (assoc-string "class" alist)
+            (setq alist (cons '("class") alist)))
+          (unless (assoc-string "id" alist)
+            (setq alist (cons '("id") alist))))
 	(if (stringp (car alist))
 	    (progn
 	      (insert (if (eq (preceding-char) ?\s) "" ?\s)
@@ -894,7 +946,7 @@ Return non-nil if we skipped over matched tags."
   (condition-case err
   (save-excursion
     (goto-char end)
-    (skip-chars-backward "[:alnum:]-_.:")
+    (skip-chars-backward "-[:alnum:]_.:")
     (if (and ;; (<= (point) beg) ; This poses problems for downcase-word.
              (or (eq (char-before) ?<)
                  (and (eq (char-before) ?/)
@@ -902,7 +954,7 @@ Return non-nil if we skipped over matched tags."
              (null (get-char-property (point) 'text-clones)))
         (let* ((endp (eq (char-before) ?/))
                (cl-start (point))
-               (cl-end (progn (skip-chars-forward "[:alnum:]-_.:") (point)))
+	       (cl-end (progn (skip-chars-forward "-[:alnum:]_.:") (point)))
                (match
                 (if endp
                     (when (sgml-skip-tag-backward 1) (forward-char 1) t)
@@ -919,7 +971,8 @@ Return non-nil if we skipped over matched tags."
                      (equal (buffer-substring cl-start cl-end)
                             (buffer-substring (point)
                                               (save-excursion
-                                                (skip-chars-forward "[:alnum:]-_.:")
+						(skip-chars-forward
+						 "-[:alnum:]_.:")
                                                 (point))))
                      (or (not endp) (eq (char-after cl-end) ?>)))
             (when clones
@@ -1249,7 +1302,7 @@ With prefix argument UNQUOTEP, unquote the region.  All numeric entities,
     (if unquotep
 	;; FIXME: We should unquote other named character references as well.
 	(while (re-search-forward
-		"\\(&\\(amp\\|quot\\|lt\\|gt\\|#\\([0-9]+\\|[xX][0-9a-fA-F]+\\)\\)\\)\\([][<>&;\n\t \"%!'(),/=?]\\|$\\)"
+		"\\(&\\(amp\\|quot\\|lt\\|gt\\|#\\([0-9]+\\|[xX][[:xdigit:]]+\\)\\)\\)\\([][<>&;\n\t \"%!'(),/=?]\\|$\\)"
 		nil t)
           (replace-match
            (string
@@ -1751,6 +1804,7 @@ This takes effect when first loading the library.")
     (define-key map "\C-c\C-ci" 'html-image)
     (when html-quick-keys
       (define-key map "\C-c-" 'html-horizontal-rule)
+      (define-key map "\C-cd" 'html-div)
       (define-key map "\C-co" 'html-ordered-list)
       (define-key map "\C-cu" 'html-unordered-list)
       (define-key map "\C-cr" 'html-radio-buttons)
@@ -1758,7 +1812,8 @@ This takes effect when first loading the library.")
       (define-key map "\C-cl" 'html-list-item)
       (define-key map "\C-ch" 'html-href-anchor)
       (define-key map "\C-cn" 'html-name-anchor)
-      (define-key map "\C-ci" 'html-image))
+      (define-key map "\C-ci" 'html-image)
+      (define-key map "\C-cs" 'html-span))
     (define-key map "\C-c\C-s" 'html-autoview-mode)
     (define-key map "\C-c\C-v" 'browse-url-of-buffer)
     (define-key map [menu-bar html] (cons "HTML" menu-map))
@@ -1959,7 +2014,7 @@ This takes effect when first loading the library.")
       ("dd" ,(not sgml-xml-mode))
       ("del" nil ("cite") ("datetime"))
       ("dfn")
-      ("div")
+      ("div" \n ("id") ("class"))
       ("dl" (nil \n
 		 ( "Term: "
 		   "<dt>" str (if sgml-xml-mode "</dt>")
@@ -2445,16 +2500,16 @@ HTML Autoview mode is a buffer-local minor mode for use with
 (define-skeleton html-ordered-list
   "HTML ordered list tags."
   nil
-  "<ol>" \n
+  \n "<ol>" \n
   "<li>" _ (if sgml-xml-mode "</li>") \n
-  "</ol>")
+  "</ol>" > \n)
 
 (define-skeleton html-unordered-list
   "HTML unordered list tags."
   nil
-  "<ul>" \n
+  \n "<ul>" \n
   "<li>" _ (if sgml-xml-mode "</li>") \n
-  "</ul>")
+  "</ul>" > \n)
 
 (define-skeleton html-list-item
   "HTML list item tag."
@@ -2465,8 +2520,17 @@ HTML Autoview mode is a buffer-local minor mode for use with
 (define-skeleton html-paragraph
   "HTML paragraph tag."
   nil
-  (if (bolp) nil ?\n)
-  "<p>" _ (if sgml-xml-mode "</p>"))
+  \n "<p>" _ (if sgml-xml-mode "</p>"))
+
+(define-skeleton html-div
+  "HTML div tag."
+  nil
+  "<div>" > \n _ \n "</div>" >)
+
+(define-skeleton html-span
+  "HTML span tag."
+  nil
+  "<span>" > _ "</span>")
 
 (define-skeleton html-checkboxes
   "Group of connected checkbox inputs."

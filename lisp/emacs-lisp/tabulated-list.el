@@ -36,6 +36,48 @@
 
 ;;; Code:
 
+(defgroup tabulated-list nil
+  "Tabulated-list customization group."
+  :group 'convenience
+  :group 'display)
+
+(defcustom tabulated-list-gui-sort-indicator-asc ?▼
+  "Indicator for columns sorted in ascending order, for GUI frames.
+See `tabulated-list-tty-sort-indicator-asc' for the indicator used on
+text-mode frames."
+  :group 'tabulated-list
+  :type 'character
+  :version "27.1")
+
+(defcustom tabulated-list-gui-sort-indicator-desc ?▲
+  "Indicator for columns sorted in descending order, for GUI frames.
+See `tabulated-list-tty-sort-indicator-desc' for the indicator used on
+text-mode frames."
+  :group 'tabulated-list
+  :type 'character
+  :version "27.1")
+
+(defcustom tabulated-list-tty-sort-indicator-asc ?v
+  "Indicator for columns sorted in ascending order, for text-mode frames.
+See `tabulated-list-gui-sort-indicator-asc' for the indicator used on GUI
+frames."
+  :group 'tabulated-list
+  :type 'character
+  :version "27.1")
+
+(defcustom tabulated-list-tty-sort-indicator-desc ?^
+  "Indicator for columns sorted in ascending order, for text-mode frames.
+See `tabulated-list-gui-sort-indicator-asc' for the indicator used on GUI
+frames."
+  :group 'tabulated-list
+  :type 'character
+  :version "27.1")
+
+(defface tabulated-list-fake-header
+  '((t :overline t :underline t :weight bold))
+  "Face used on fake header lines."
+  :version "27.1")
+
 ;; The reason `tabulated-list-format' and other variables are
 ;; permanent-local is to make it convenient to switch to a different
 ;; major mode, switch back, and have the original Tabulated List data
@@ -150,6 +192,19 @@ If ADVANCE is non-nil, move forward by one line afterwards."
   (if advance
       (forward-line)))
 
+(defun tabulated-list-clear-all-tags ()
+  "Clear all tags from the padding area in the current buffer."
+  (unless (> tabulated-list-padding 0)
+    (error "There can be no tags in current buffer"))
+  (save-excursion
+    (goto-char (point-min))
+    (let ((inhibit-read-only t)
+          ;; Match non-space in the first n characters.
+          (re (format "^ \\{0,%d\\}[^ ]" (1- tabulated-list-padding)))
+          (empty (make-string tabulated-list-padding ? )))
+      (while (re-search-forward re nil 'noerror)
+        (tabulated-list-put-tag empty)))))
+
 (defvar tabulated-list-mode-map
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map (make-composed-keymap
@@ -158,6 +213,8 @@ If ADVANCE is non-nil, move forward by one line afterwards."
     (define-key map "n" 'next-line)
     (define-key map "p" 'previous-line)
     (define-key map "S" 'tabulated-list-sort)
+    (define-key map "}" 'tabulated-list-widen-current-column)
+    (define-key map "{" 'tabulated-list-narrow-current-column)
     (define-key map [follow-link] 'mouse-face)
     (define-key map [mouse-2] 'mouse-select-window)
     map)
@@ -174,14 +231,20 @@ If ADVANCE is non-nil, move forward by one line afterwards."
     map)
   "Local keymap for `tabulated-list-mode' sort buttons.")
 
-(defvar tabulated-list-glyphless-char-display
+(defun tabulated-list-make-glyphless-char-display-table ()
+  "Make the `glyphless-char-display' table used for text-mode frames.
+This table is used for displaying the sorting indicators, see
+variables `tabulated-list-tty-sort-indicator-asc' and
+`tabulated-list-tty-sort-indicator-desc' for more information."
   (let ((table (make-char-table 'glyphless-char-display nil)))
     (set-char-table-parent table glyphless-char-display)
-    ;; Some text terminals can't display the Unicode arrows; be safe.
-    (aset table 9650 (cons nil "^"))
-    (aset table 9660 (cons nil "v"))
-    table)
-  "The `glyphless-char-display' table in Tabulated List buffers.")
+    (aset table
+          tabulated-list-gui-sort-indicator-desc
+          (cons nil (char-to-string tabulated-list-tty-sort-indicator-desc)))
+    (aset table
+          tabulated-list-gui-sort-indicator-asc
+          (cons nil (char-to-string tabulated-list-tty-sort-indicator-asc)))
+    table))
 
 (defvar tabulated-list--header-string nil
   "Holds the header if `tabulated-list-use-header-line' is nil.
@@ -231,8 +294,11 @@ Populated by `tabulated-list-init-header'.")
 		  (concat label
 			  (cond
 			   ((> (+ 2 (length label)) width) "")
-			   ((cdr tabulated-list-sort-key) " ▲")
-			   (t " ▼")))
+			   ((cdr tabulated-list-sort-key)
+                            (format " %c"
+                                    tabulated-list-gui-sort-indicator-desc))
+			   (t (format " %c"
+                                      tabulated-list-gui-sort-indicator-asc))))
 		  'face 'bold
 		  'tabulated-list-column-name label
 		  button-props))
@@ -260,7 +326,6 @@ Populated by `tabulated-list-init-header'.")
     (setq cols (apply 'concat (nreverse cols)))
     (if tabulated-list-use-header-line
 	(setq header-line-format cols)
-      (setq header-line-format nil)
       (setq-local tabulated-list--header-string cols))))
 
 (defun tabulated-list-print-fake-header ()
@@ -274,7 +339,8 @@ Do nothing if `tabulated-list--header-string' is nil."
           (move-overlay tabulated-list--header-overlay (point-min) (point))
         (setq-local tabulated-list--header-overlay
                     (make-overlay (point-min) (point))))
-      (overlay-put tabulated-list--header-overlay 'face 'underline))))
+      (overlay-put tabulated-list--header-overlay
+                   'face 'tabulated-list-fake-header))))
 
 (defsubst tabulated-list-header-overlay-p (&optional pos)
   "Return non-nil if there is a fake header.
@@ -320,7 +386,7 @@ column.  Negate the predicate that would be returned if
                                   (if (stringp b) b (car b)))))))
       ;; Reversed order.
       (if (cdr tabulated-list-sort-key)
-          (lambda (a b) (not (funcall sorter a b)))
+          (lambda (a b) (funcall sorter b a))
         sorter))))
 
 (defsubst tabulated-list--col-local-max-widths (col)
@@ -599,6 +665,39 @@ With a numeric prefix argument N, sort the Nth column."
     (tabulated-list-init-header)
     (tabulated-list-print t)))
 
+(defun tabulated-list-widen-current-column (&optional n)
+  "Widen the current tabulated-list column by N chars.
+Interactively, N is the prefix numeric argument, and defaults to
+1."
+  (interactive "p")
+  (let ((start (current-column))
+        (nb-cols (length tabulated-list-format))
+        (col-nb 0)
+        (total-width 0)
+        (found nil)
+        col-width)
+    (while (and (not found)
+                (< col-nb nb-cols))
+      (if (> start
+             (setq total-width
+                   (+ total-width
+                      (setq col-width
+                            (cadr (aref tabulated-list-format
+                                        col-nb))))))
+          (setq col-nb (1+ col-nb))
+        (setq found t)
+        (setf (cadr (aref tabulated-list-format col-nb))
+              (max 1 (+ col-width n)))
+        (tabulated-list-print t)
+        (tabulated-list-init-header)))))
+
+(defun tabulated-list-narrow-current-column (&optional n)
+  "Narrow the current tabulated list column by N chars.
+Interactively, N is the prefix numeric argument, and defaults to
+1."
+  (interactive "p")
+  (tabulated-list-widen-current-column (- n)))
+
 (defvar tabulated-list--current-lnum-width nil)
 (defun tabulated-list-watch-line-number-width (_window)
   (if display-line-numbers
@@ -655,7 +754,8 @@ as the ewoc pretty-printer."
   (setq-local truncate-lines t)
   (setq-local buffer-undo-list t)
   (setq-local revert-buffer-function #'tabulated-list-revert)
-  (setq-local glyphless-char-display tabulated-list-glyphless-char-display)
+  (setq-local glyphless-char-display
+              (tabulated-list-make-glyphless-char-display-table))
   ;; Avoid messing up the entries' display just because the first
   ;; column of the first entry happens to begin with a R2L letter.
   (setq bidi-paragraph-direction 'left-to-right)

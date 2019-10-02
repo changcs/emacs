@@ -22,6 +22,7 @@
 ;;; Code:
 
 (require 'ert)
+(require 'puny)
 
 ;; Timeout in seconds; the test fails if the timeout is reached.
 (defvar process-test-sentinel-wait-timeout 2.0)
@@ -144,6 +145,41 @@
     (should (equal "hello stderr!\n"
 		   (mapconcat #'identity (nreverse stderr-output) "")))))
 
+(ert-deftest set-process-filter-t ()
+  "Test setting process filter to t and back." ;; Bug#36591
+  (with-temp-buffer
+    (let* ((print-level nil)
+           (print-length nil)
+           (proc (start-process
+                  "test proc" (current-buffer)
+                  (concat invocation-directory invocation-name)
+                  "-Q" "--batch" "--eval"
+                  (prin1-to-string
+                   '(let ((s nil) (count 0))
+                      (while (setq s (read-from-minibuffer
+                                      (format "%d> " count)))
+                        (princ s)
+                        (princ "\n")
+                        (setq count (1+ count))))))))
+      (set-process-query-on-exit-flag proc nil)
+      (send-string proc "one\n")
+      (while (not (equal (buffer-substring
+                          (line-beginning-position) (point-max))
+                         "1> "))
+        (accept-process-output proc))   ; Read "one".
+      (should (equal (buffer-string) "0> one\n1> "))
+      (set-process-filter proc t)       ; Stop reading from proc.
+      (send-string proc "two\n")
+      (should-not
+       (accept-process-output proc 1))  ; Can't read "two" yet.
+      (should (equal (buffer-string) "0> one\n1> "))
+      (set-process-filter proc nil)     ; Resume reading from proc.
+      (while (not (equal (buffer-substring
+                          (line-beginning-position) (point-max))
+                         "2> "))
+        (accept-process-output proc))   ; Read "Two".
+      (should (equal (buffer-string) "0> one\n1> two\n2> ")))))
+
 (ert-deftest start-process-should-not-modify-arguments ()
   "`start-process' must not modify its arguments in-place."
   ;; See bug#21831.
@@ -215,6 +251,26 @@
                                       (string-to-list "stdout\n")
                                       (string-to-list "stderr\n"))))))
 
+(ert-deftest make-process-w32-debug-spawn-error ()
+  "Check that debugger runs on `make-process' failure (Bug#33016)."
+  (skip-unless (eq system-type 'windows-nt))
+  (let* ((debug-on-error t)
+         (have-called-debugger nil)
+         (debugger (lambda (&rest _)
+                     (setq have-called-debugger t)
+                     ;; Allow entering the debugger later in the same
+                     ;; test run, before going back to the command
+                     ;; loop.
+                     (setq internal-when-entered-debugger -1))))
+    (should (eq :got-error ;; NOTE: `should-error' would inhibit debugger.
+                (condition-case-unless-debug ()
+                    ;; Emacs doesn't search for absolute filenames, so
+                    ;; the error will be hit in the w32 process spawn
+                    ;; code.
+                    (make-process :name "test" :command '("c:/No-Such-Command"))
+                  (error :got-error))))
+    (should have-called-debugger)))
+
 (ert-deftest make-process/file-handler/found ()
   "Check that the ‘:file-handler’ argument of ‘make-process’
 works as expected if a file name handler is found."
@@ -263,6 +319,51 @@ file name handler."
 
 (put #'process-tests--file-handler 'operations
      '(unhandled-file-name-directory make-process))
+
+(ert-deftest make-process/stop ()
+  "Check that `make-process' doesn't accept a `:stop' key.
+See Bug#30460."
+  (should-error
+   (make-process :name "test"
+                 :command (list (expand-file-name invocation-name
+                                                  invocation-directory))
+                 :stop t)))
+
+;; All the following tests require working DNS, which appears not to
+;; be the case for hydra.nixos.org, so disable them there for now.
+
+(ert-deftest lookup-family-specification ()
+  "network-lookup-address-info should only accept valid family symbols."
+  (skip-unless (not (getenv "EMACS_HYDRA_CI")))
+  (should-error (network-lookup-address-info "google.com" 'both))
+  (should (network-lookup-address-info "google.com" 'ipv4))
+  (should (network-lookup-address-info "google.com" 'ipv6)))
+
+(ert-deftest lookup-unicode-domains ()
+  "Unicode domains should fail"
+  (skip-unless (not (getenv "EMACS_HYDRA_CI")))
+  (should-error (network-lookup-address-info "faß.de"))
+  (should (network-lookup-address-info (puny-encode-domain "faß.de"))))
+
+(ert-deftest unibyte-domain-name ()
+  "Unibyte domain names should work"
+  (skip-unless (not (getenv "EMACS_HYDRA_CI")))
+  (should (network-lookup-address-info (string-to-unibyte "google.com"))))
+
+(ert-deftest lookup-google ()
+  "Check that we can look up google IP addresses"
+  (skip-unless (not (getenv "EMACS_HYDRA_CI")))
+  (let ((addresses-both (network-lookup-address-info "google.com"))
+        (addresses-v4 (network-lookup-address-info "google.com" 'ipv4))
+        (addresses-v6 (network-lookup-address-info "google.com" 'ipv6)))
+    (should addresses-both)
+    (should addresses-v4)
+    (should addresses-v6)))
+
+(ert-deftest non-existent-lookup-failure ()
+  (skip-unless (not (getenv "EMACS_HYDRA_CI")))
+  "Check that looking up non-existent domain returns nil"
+  (should (eq nil (network-lookup-address-info "emacs.invalid"))))
 
 (provide 'process-tests)
 ;; process-tests.el ends here.

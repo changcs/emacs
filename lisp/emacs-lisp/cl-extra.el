@@ -48,6 +48,8 @@ TYPE is a Common Lisp type specifier.
 \n(fn OBJECT TYPE)"
   (cond ((eq type 'list) (if (listp x) x (append x nil)))
 	((eq type 'vector) (if (vectorp x) x (vconcat x)))
+	((eq type 'bool-vector)
+         (if (bool-vector-p x) x (apply #'bool-vector (cl-coerce x 'list))))
 	((eq type 'string) (if (stringp x) x (concat x)))
 	((eq type 'array) (if (arrayp x) x (vconcat x)))
 	((and (eq type 'character) (stringp x) (= (length x) 1)) (aref x 0))
@@ -332,10 +334,9 @@ If so, return the true (non-nil) value returned by PREDICATE.
 
 ;;;###autoload
 (defun cl-isqrt (x)
-  "Return the integer square root of the argument."
+  "Return the integer square root of the (integer) argument."
   (if (and (integerp x) (> x 0))
-      (let ((g (cond ((<= x 100) 10) ((<= x 10000) 100)
-		     ((<= x 1000000) 1000) (t x)))
+      (let ((g (ash 2 (/ (logb x) 2)))
 	    g2)
 	(while (< (setq g2 (/ (+ g (/ x g)) 2)) g)
 	  (setq g g2))
@@ -438,7 +439,7 @@ as an integer unless JUNK-ALLOWED is non-nil."
 ;; Random numbers.
 
 (defun cl--random-time ()
-  (car (encode-time nil t)))
+  (car (time-convert nil t)))
 
 ;;;###autoload (autoload 'cl-random-state-p "cl-extra")
 (cl-defstruct (cl--random-state
@@ -594,10 +595,10 @@ too large if positive or too small if negative)."
 ;;;###autoload
 (defun cl-list-length (x)
   "Return the length of list X.  Return nil if list is circular."
-  (let ((n 0) (fast x) (slow x))
-    (while (and (cdr fast) (not (and (eq fast slow) (> n 0))))
-      (setq n (+ n 2) fast (cdr (cdr fast)) slow (cdr slow)))
-    (if fast (if (cdr fast) nil (1+ n)) n)))
+  (cl-check-type x list)
+  (condition-case nil
+      (length x)
+    (circular-list)))
 
 ;;;###autoload
 (defun cl-tailp (sublist list)
@@ -938,7 +939,6 @@ Outputs to the current buffer."
 (run-hooks 'cl-extra-load-hook)
 
 ;; Local variables:
-;; byte-compile-dynamic: t
 ;; generated-autoload-file: "cl-loaddefs.el"
 ;; End:
 

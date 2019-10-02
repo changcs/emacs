@@ -1776,22 +1776,27 @@ w32_executable_type (char * filename,
           if (data_dir)
             {
               /* Look for Cygwin DLL in the DLL import list. */
-              IMAGE_DATA_DIRECTORY import_dir =
-                data_dir[IMAGE_DIRECTORY_ENTRY_IMPORT];
+              IMAGE_DATA_DIRECTORY import_dir
+                = data_dir[IMAGE_DIRECTORY_ENTRY_IMPORT];
 
 	      /* Import directory can be missing in .NET DLLs.  */
 	      if (import_dir.VirtualAddress != 0)
 		{
+		  IMAGE_SECTION_HEADER *section
+		    = rva_to_section (import_dir.VirtualAddress, nt_header);
+		  if (!section)
+		    emacs_abort ();
+
 		  IMAGE_IMPORT_DESCRIPTOR * imports =
-		    RVA_TO_PTR (import_dir.VirtualAddress,
-				rva_to_section (import_dir.VirtualAddress,
-						nt_header),
+		    RVA_TO_PTR (import_dir.VirtualAddress, section,
 				executable);
 
 		  for ( ; imports->Name; imports++)
 		    {
-		      IMAGE_SECTION_HEADER * section =
-			rva_to_section (imports->Name, nt_header);
+		      section = rva_to_section (imports->Name, nt_header);
+		      if (!section)
+			emacs_abort ();
+
 		      char * dllname = RVA_TO_PTR (imports->Name, section,
 						   executable);
 
@@ -2002,9 +2007,9 @@ sys_spawnve (int mode, char *cmdname, char **argv, char **envp)
     }
 
   /* we have to do some conjuring here to put argv and envp into the
-     form CreateProcess wants...  argv needs to be a space separated/null
-     terminated list of parameters, and envp is a null
-     separated/double-null terminated list of parameters.
+     form CreateProcess wants...  argv needs to be a space separated/NUL
+     terminated list of parameters, and envp is a NUL
+     separated/double-NUL terminated list of parameters.
 
      Additionally, zero-length args and args containing whitespace or
      quote chars need to be wrapped in double quotes - for this to work,
@@ -3248,6 +3253,12 @@ such programs cannot be invoked by Emacs anyway.  */)
 }
 
 #ifdef HAVE_LANGINFO_CODESET
+
+/* If we are compiling for compatibility with older 32-bit Windows
+   versions, this might not be defined by the Windows headers.  */
+#ifndef LOCALE_IPAPERSIZE
+# define LOCALE_IPAPERSIZE 0x100A
+#endif
 /* Emulation of nl_langinfo.  Used in fns.c:Flocale_info.  */
 char *
 nl_langinfo (nl_item item)
@@ -3260,7 +3271,8 @@ nl_langinfo (nl_item item)
     LOCALE_SMONTHNAME1, LOCALE_SMONTHNAME2, LOCALE_SMONTHNAME3,
     LOCALE_SMONTHNAME4, LOCALE_SMONTHNAME5, LOCALE_SMONTHNAME6,
     LOCALE_SMONTHNAME7, LOCALE_SMONTHNAME8, LOCALE_SMONTHNAME9,
-    LOCALE_SMONTHNAME10, LOCALE_SMONTHNAME11, LOCALE_SMONTHNAME12
+    LOCALE_SMONTHNAME10, LOCALE_SMONTHNAME11, LOCALE_SMONTHNAME12,
+    LOCALE_IPAPERSIZE, LOCALE_IPAPERSIZE
   };
 
   static char *nl_langinfo_buf = NULL;
@@ -3268,6 +3280,8 @@ nl_langinfo (nl_item item)
 
   if (nl_langinfo_len <= 0)
     nl_langinfo_buf = xmalloc (nl_langinfo_len = 1);
+
+  char *retval = nl_langinfo_buf;
 
   if (item < 0 || item >= _NL_NUM)
     nl_langinfo_buf[0] = 0;
@@ -3290,6 +3304,8 @@ nl_langinfo (nl_item item)
 	  if (nl_langinfo_len <= need_len)
 	    nl_langinfo_buf = xrealloc (nl_langinfo_buf,
 					nl_langinfo_len = need_len);
+	  retval = nl_langinfo_buf;
+
 	  if (!GetLocaleInfo (cloc, w32item[item] | LOCALE_USE_CP_ACP,
 			      nl_langinfo_buf, nl_langinfo_len))
 	    nl_langinfo_buf[0] = 0;
@@ -3306,9 +3322,32 @@ nl_langinfo (nl_item item)
 		  nl_langinfo_buf[1] = 'p';
 		}
 	    }
+	  else if (item == _NL_PAPER_WIDTH || item == _NL_PAPER_HEIGHT)
+	    {
+	      static const int paper_size[][2] =
+		{
+		 { -1, -1 },
+		 { 216, 279 },
+		 { -1, -1 },
+		 { -1, -1 },
+		 { -1, -1 },
+		 { 216, 356 },
+		 { -1, -1 },
+		 { -1, -1 },
+		 { 297, 420 },
+		 { 210, 297 }
+		};
+	      int idx = atoi (nl_langinfo_buf);
+	      if (0 <= idx && idx < ARRAYELTS (paper_size))
+		retval = (char *)(intptr_t) (item == _NL_PAPER_WIDTH
+					     ? paper_size[idx][0]
+					     : paper_size[idx][1]);
+	      else
+		retval = (char *)(intptr_t) -1;
+	    }
 	}
     }
-  return nl_langinfo_buf;
+  return retval;
 }
 #endif	/* HAVE_LANGINFO_CODESET */
 
@@ -3359,10 +3398,10 @@ If LCID (a 16-bit number) is not a valid locale, the result is nil.  */)
       got_full = GetLocaleInfo (XFIXNUM (lcid),
 				XFIXNUM (longform),
 				full_name, sizeof (full_name));
-      /* GetLocaleInfo's return value includes the terminating null
+      /* GetLocaleInfo's return value includes the terminating NUL
 	 character, when the returned information is a string, whereas
 	 make_unibyte_string needs the string length without the
-	 terminating null.  */
+	 terminating NUL.  */
       if (got_full)
 	return make_unibyte_string (full_name, got_full - 1);
     }

@@ -53,9 +53,8 @@ present for backward compatibility."
     (setq file-name-handler-alist
 	  (delete a1 (delete a2 file-name-handler-alist)))))
 
-(eval-after-load "ange-ftp"
-  '(when (functionp 'tramp-disable-ange-ftp)
-     (tramp-disable-ange-ftp)))
+(with-eval-after-load 'ange-ftp
+  (tramp-disable-ange-ftp))
 
 ;;;###tramp-autoload
 (defun tramp-ftp-enable-ange-ftp ()
@@ -86,7 +85,7 @@ present for backward compatibility."
 			 ange-ftp-completion-hook-function)
 		       file-name-handler-alist)))))
 
-(add-hook 'tramp-ftp-unload-hook 'tramp-ftp-enable-ange-ftp)
+(add-hook 'tramp-ftp-unload-hook #'tramp-ftp-enable-ange-ftp)
 
 ;; Define FTP method ...
 ;;;###tramp-autoload
@@ -139,7 +138,7 @@ pass to the OPERATION."
        ;; because this returns another user but the one declared in
        ;; "~/.netrc".
        ((memq operation '(file-directory-p file-exists-p))
-	(if (apply 'ange-ftp-hook-function operation args)
+	(if (apply #'ange-ftp-hook-function operation args)
 	    (let ((v (tramp-dissect-file-name (car args) t)))
 	      (setf (tramp-file-name-method v) tramp-ftp-method)
 	      (tramp-set-connection-property v "started" t))
@@ -173,7 +172,7 @@ pass to the OPERATION."
 			(and (eq inhibit-file-name-operation operation)
 			     inhibit-file-name-handlers)))
 		 (inhibit-file-name-operation operation))
-	    (apply 'ange-ftp-hook-function operation args)))))))
+	    (apply #'ange-ftp-hook-function operation args)))))))
 
 ;; It must be a `defsubst' in order to push the whole code into
 ;; tramp-loaddefs.el.  Otherwise, there would be recursive autoloading.

@@ -37,11 +37,13 @@
 (defun calc-time ()
   (interactive)
   (calc-wrapper
-   (let ((time (decode-time)))
+   (let ((time (decode-time nil nil 'integer))) ;; FIXME: Support subseconds.
      (calc-enter-result 0 "time"
 			(list 'mod
 			      (list 'hms
-				    (nth 2 time) (nth 1 time) (nth 0 time))
+				    (decoded-time-hour time)
+                                    (decoded-time-minute time)
+                                    (decoded-time-second time))
 			      (list 'hms 24 0 0))))))
 
 (defun calc-to-hms (arg)
@@ -60,7 +62,7 @@
 
 
 (defun calc-hms-notation (fmt)
-  (interactive "sHours-minutes-seconds format (hms, @ \\=' \", etc.): ")
+  (interactive "sHours-minutes-seconds format (hms, @ ' \", etc.): ")
   (calc-wrapper
    (if (string-match "\\`\\([^,; ]+\\)\\([,; ]*\\)\\([^,; ]\\)\\([,; ]*\\)\\([^,; ]\\)\\'" fmt)
        (progn
@@ -497,7 +499,8 @@ in the Gregorian calendar and the remaining part determines the time."
 	(math-add (math-float date)
 		  (math-div (math-add (+ (* (nth 3 dt) 3600)
 					 (* (nth 4 dt) 60))
-				      (nth 5 dt))
+				      ;; FIXME: Support subseconds.
+				      (time-convert (nth 5 dt) 'integer))
 			    '(float 864 2)))
       date)))
 
@@ -523,7 +526,7 @@ in the Gregorian calendar and the remaining part determines the time."
 
 
 (defun math-this-year ()
-  (nth 5 (decode-time)))
+  (decoded-time-year (decode-time)))
 
 (defun math-leap-year-p (year &optional julian)
   "Non-nil if YEAR is a leap year.
@@ -585,29 +588,15 @@ A DT is a list of the form (YEAR MONTH DAY)."
   "Return the DATE of the day given by the Gregorian day YEAR MONTH DAY.
 Recall that DATE is the number of days since December 31, -1
 in the Gregorian calendar."
-  (if (eq year 0) (setq year -1))
-  (let ((yearm1 (math-sub year 1)))
-    (math-sub
-     ;; Add the number of days of the year and the numbers of days
-     ;; in the previous years (leap year days to be added separately)
-     (math-add (math-day-in-year year month day)
-               (math-add (math-mul 365 yearm1)
-                         ;; Add the number of Julian leap years
-                         (if (math-posp year)
-                             (math-quotient yearm1 4)
-                           (math-sub 365
-                                     (math-quotient (math-sub 3 year)
-                                                    4)))))
-     ;; Subtract the number of Julian leap years which are not
-     ;; Gregorian leap years.  In C=4N+r centuries, there will
-     ;; be 3N+r of these days.  The following will compute
-     ;; 3N+r.
-     (let* ((correction (math-mul (math-quotient yearm1 100) 3))
-            (res (math-idivmod correction 4)))
-       (math-add (if (= (cdr res) 0)
-                     0
-                   1)
-                 (car res))))))
+  (when (zerop year)                    ; Year -1 precedes year 1.
+    (setq year -1))
+  (let* ((y (if (> year 0) year (+ year 1)))  ; Astronomical year (with 0).
+         (y1 (- y 1)))                        ; Previous year.
+    (+ (* y1 365)                    ; Days up to the previous year...
+       (floor y1 4)                  ; ... including leap days.
+       (- (floor y1 100))
+       (floor y1 400)
+       (math-day-in-year year month day))))
 
 (defun math-absolute-from-julian-dt (year month day)
   "Return the DATE of the day given by the Julian day YEAR MONTH DAY.
@@ -618,7 +607,7 @@ in the Gregorian calendar."
     (math-sub
      ;; Add the number of days of the year and the numbers of days
      ;; in the previous years (leap year days to be added separately)
-     (math-add (math-day-in-year year month day)
+     (math-add (math-day-in-year year month day t)
                (math-add (math-mul 365 yearm1)
                          ;; Add the number of Julian leap years
                          (if (math-posp year)
@@ -712,11 +701,11 @@ in the Gregorian calendar."
 	       (setcdr math-fd-dt nil))
 	  fmt))))
 
-(defconst math-julian-date-beginning '(float 17214225 -1)
+(defconst math-julian-date-beginning '(float 17214245 -1)
   "The beginning of the Julian date calendar,
 as measured in the number of days before December 31, 1 BC (Gregorian).")
 
-(defconst math-julian-date-beginning-int 1721423
+(defconst math-julian-date-beginning-int 1721425
   "The beginning of the Julian date calendar,
 as measured in the integer number of days before December 31, 1 BC (Gregorian).")
 
@@ -1339,10 +1328,15 @@ as measured in the integer number of days before December 31, 1 BC (Gregorian)."
           (math-parse-iso-date-validate isoyear isoweek isoweekday hour minute second)))))
 
 (defun calcFunc-now (&optional zone)
-  (let ((date (let ((now (decode-time)))
+  ;; FIXME: Support subseconds.
+  (let ((date (let ((now (decode-time nil nil 'integer)))
 		(list 'date (math-dt-to-date
-			     (list (nth 5 now) (nth 4 now) (nth 3 now)
-				   (nth 2 now) (nth 1 now) (nth 0 now)))))))
+			     (list (decoded-time-year now)
+                                   (decoded-time-month now)
+                                   (decoded-time-day now)
+				   (decoded-time-hour now)
+                                   (decoded-time-minute now)
+                                   (decoded-time-second now)))))))
     (if zone
 	(math-add date (math-div (math-sub (calcFunc-tzone nil date)
 					   (calcFunc-tzone zone date))
@@ -1468,12 +1462,9 @@ as measured in the integer number of days before December 31, 1 BC (Gregorian)."
     ( "PGT" 8 "PST" "PDT" ) ( "PST" 8 0 ) ( "PDT" 8 -1 )  ; Pacific
     ( "YGT" 9 "YST" "YDT" ) ( "YST" 9 0 ) ( "YDT" 9 -1 )  ; Yukon
     )
-  "No doc yet.  See calc manual for now. ")
+  "No doc yet.  See calc manual for now.")
 
 (defvar var-TimeZone nil)
-
-;; From cal-dst
-(defvar calendar-current-time-zone-cache)
 
 (defvar math-calendar-tzinfo
   nil
@@ -1487,11 +1478,9 @@ second, the number of seconds offset for daylight savings."
   (if math-calendar-tzinfo
       math-calendar-tzinfo
     (require 'cal-dst)
-    (let ((tzinfo (progn
-                    (calendar-current-time-zone)
-                    calendar-current-time-zone-cache)))
+    (let ((tzinfo (calendar-current-time-zone)))
       (setq math-calendar-tzinfo
-            (list (* 60 (abs (nth 0 tzinfo)))
+            (list (* 60 (- (nth 0 tzinfo)))
                   (* 60 (nth 1 tzinfo)))))))
 
 (defun calcFunc-tzone (&optional zone date)

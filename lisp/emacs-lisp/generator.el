@@ -374,13 +374,6 @@ don't yield.")
                       `(setf ,cps--value-symbol ,temp-var-symbol
                              ,cps--state-symbol ,next-state))))))))
 
-    ;; Process `prog2'.
-
-    (`(prog2 ,form1 ,form2 . ,body)
-      (cps--transform-1
-       `(progn ,form1 (prog1 ,form2 ,@body))
-       next-state))
-
     ;; Process `unwind-protect': If we're inside an unwind-protect, we
     ;; have a block of code UNWINDFORMS which we would like to run
     ;; whenever control flows away from the main piece of code,
@@ -548,7 +541,7 @@ don't yield.")
 
 (defun cps--replace-variable-references (var new-var form)
   "Replace all non-shadowed references to VAR with NEW-VAR in FORM.
-This routine does not modify FORM. Instead, it returns a
+This routine does not modify FORM.  Instead, it returns a
 modified copy."
   (macroexpand-all
    `(cl-symbol-macrolet ((,var ,new-var)) ,form)
@@ -767,7 +760,7 @@ Return the value with which ITERATOR finished iteration."
        (cps--advance-for ,cs))))
 
 (defun cps--handle-loop-for (var)
-  "Support `iter-by' in `loop'.  "
+  "Support `iter-by' in `loop'."
   ;; N.B. While the cl-loop-for-handler is a documented interface,
   ;; there's no documented way for cl-loop-for-handler callbacks to do
   ;; anything useful!  Additionally, cl-loop currently lexbinds useful

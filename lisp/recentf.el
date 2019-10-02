@@ -67,7 +67,8 @@ You should define the options of your own filters in this group."
 A nil value means to save the whole list.
 See the command `recentf-save-list'."
   :group 'recentf
-  :type 'integer)
+  :type '(choice (integer :tag "Entries" :value 1)
+		 (const :tag "No Limit" nil)))
 
 (defcustom recentf-save-file (locate-user-emacs-file "recentf" ".recentf")
   "File to save the recent list into."
@@ -1183,9 +1184,6 @@ IGNORE other arguments."
            :format "%[%t\n%]"
            :help-echo ,(concat "Open " (cdr menu-element))
            :action recentf-open-files-action
-           ;; Override the (problematic) follow-link property of the
-           ;; `link' widget (bug#22434).
-           :follow-link nil
            ,(cdr menu-element))))
 
 (defun recentf-open-files-items (files)

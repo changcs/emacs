@@ -1071,7 +1071,7 @@ VERSION is of the format (Major . Minor)"
      ;; Supposedly, ISO-Prolog wants \NNN\ for octal and \xNNN\ for hexadecimal
      ;; escape sequences in atoms, so be careful not to let the terminating \
      ;; escape a subsequent quote.
-     ("\\\\[x0-7][0-9a-fA-F]*\\(\\\\\\)" (1 "_"))
+     ("\\\\[x0-7][[:xdigit:]]*\\(\\\\\\)" (1 "_"))
      )))
 
 (defun prolog-mode-variables ()
@@ -2826,7 +2826,7 @@ STRING should be given if the last search was by `string-match' on STRING."
           (progn
             (if (and (eq prolog-system 'mercury)
                      (looking-at
-                      (format ":-[ \t]*\\(pred\\|mode\\)[ \t]+\\(%s+\\)"
+                      (format ":-[ \t]*\\(pred\\|mode\\)[ \t]+\\(\\(?:%s\\)+\\)"
                               prolog-atom-regexp)))
                 ;; Skip predicate declarations
                 (progn
@@ -2950,7 +2950,7 @@ objects (relevant only if `prolog-system' is set to `sicstus')."
            (predname
             (if (looking-at prolog-atom-char-regexp)
                 (progn
-                  (skip-chars-forward "^ (\\.")
+                  (skip-chars-forward "^ (.")
                   (buffer-substring op (point)))
               ""))
            (arity 0))

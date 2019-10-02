@@ -267,6 +267,7 @@
 (load "rfn-eshadow")
 
 (load "menu-bar")
+(load "tab-bar")
 (load "emacs-lisp/lisp")
 (load "textmodes/page")
 (load "register")
@@ -526,8 +527,7 @@ lost after dumping")))
                                 t))))
       (kill-emacs)))
 
-;; For machines with CANNOT_DUMP defined in config.h,
-;; this file must be loaded each time Emacs is run.
+;; This file must be loaded each time Emacs is run from scratch, e.g., temacs.
 ;; So run the startup code now.  First, remove `-l loadup' from args.
 
 (if (and (member (nth 1 command-line-args) '("-l" "--load"))

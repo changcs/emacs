@@ -3,7 +3,6 @@
 ;; Copyright (C) 2001-2019 Free Software Foundation, Inc.
 
 ;; Author: Vinicius Jose Latorre <viniciusjl.gnu@gmail.com>
-;; Maintainer: Vinicius Jose Latorre <viniciusjl.gnu@gmail.com>
 ;; Keywords: wp, ebnf, PostScript
 ;; Old-Version: 1.2
 ;; Package: ebnf2ps
@@ -659,7 +658,7 @@ See documentation for variable `ebnf-ebx-lex'."
       (or no-error
 	  (error "Invalid hexadecimal character"))
     (forward-char)
-    (or (> (skip-chars-forward "0-9A-Fa-f" ebnf-limit) 0)
+    (or (> (skip-chars-forward "[:xdigit:]" ebnf-limit) 0)
 	(error "Invalid hexadecimal character"))))
 
 

@@ -62,8 +62,8 @@ Lisp_Object Vcharset_hash_table;
 
 /* Table of struct charset.  */
 struct charset *charset_table;
-ptrdiff_t charset_table_size;
-int charset_table_used;
+int charset_table_size;
+static int charset_table_used;
 
 /* Special charsets corresponding to symbols.  */
 int charset_ascii;
@@ -415,23 +415,23 @@ load_charset_map (struct charset *charset, struct charset_map_entries *entries, 
 static unsigned
 read_hex (FILE *fp, int lookahead, int *terminator, bool *overflow)
 {
-  int c = lookahead < 0 ? getc_unlocked (fp) : lookahead;
+  int c = lookahead < 0 ? getc (fp) : lookahead;
 
   while (true)
     {
       if (c == '#')
 	do
-	  c = getc_unlocked (fp);
+	  c = getc (fp);
 	while (0 <= c && c != '\n');
       else if (c == '0')
 	{
-	  c = getc_unlocked (fp);
+	  c = getc (fp);
 	  if (c < 0 || c == 'x')
 	    break;
 	}
       if (c < 0)
 	break;
-      c = getc_unlocked (fp);
+      c = getc (fp);
     }
 
   unsigned n = 0;
@@ -440,7 +440,7 @@ read_hex (FILE *fp, int lookahead, int *terminator, bool *overflow)
   if (0 <= c)
     while (true)
       {
-	c = getc_unlocked (fp);
+	c = getc (fp);
 	int digit = char_hexdigit (c);
 	if (digit < 0)
 	  break;
@@ -842,7 +842,7 @@ usage: (define-charset-internal ...)  */)
   /* Charset attr vector.  */
   Lisp_Object attrs;
   Lisp_Object val;
-  EMACS_UINT hash_code;
+  Lisp_Object hash_code;
   struct Lisp_Hash_Table *hash_table = XHASH_TABLE (Vcharset_hash_table);
   int i, j;
   struct charset charset;
@@ -1175,8 +1175,7 @@ usage: (define-charset-internal ...)  */)
       ISO_CHARSET_TABLE (charset.dimension, charset.iso_chars_96,
 			 charset.iso_final) = id;
       if (new_definition_p)
-	Viso_2022_charset_list = nconc2 (Viso_2022_charset_list,
-					 list1 (make_fixnum (id)));
+	Viso_2022_charset_list = nconc2 (Viso_2022_charset_list, list1i (id));
       if (ISO_CHARSET_TABLE (1, 0, 'J') == id)
 	charset_jisx0201_roman = id;
       else if (ISO_CHARSET_TABLE (2, 0, '@') == id)
@@ -1196,15 +1195,14 @@ usage: (define-charset-internal ...)  */)
 	emacs_mule_bytes[charset.emacs_mule_id] = charset.dimension + 2;
       if (new_definition_p)
 	Vemacs_mule_charset_list = nconc2 (Vemacs_mule_charset_list,
-					   list1 (make_fixnum (id)));
+					   list1i (id));
     }
 
   if (new_definition_p)
     {
       Vcharset_list = Fcons (args[charset_arg_name], Vcharset_list);
       if (charset.supplementary_p)
-	Vcharset_ordered_list = nconc2 (Vcharset_ordered_list,
-					list1 (make_fixnum (id)));
+	Vcharset_ordered_list = nconc2 (Vcharset_ordered_list, list1i (id));
       else
 	{
 	  Lisp_Object tail;
@@ -1221,7 +1219,7 @@ usage: (define-charset-internal ...)  */)
 					   Vcharset_ordered_list);
 	  else if (NILP (tail))
 	    Vcharset_ordered_list = nconc2 (Vcharset_ordered_list,
-					    list1 (make_fixnum (id)));
+					    list1i (id));
 	  else
 	    {
 	      val = Fcons (XCAR (tail), XCDR (tail));
@@ -1278,8 +1276,7 @@ define_charset_internal (Lisp_Object name,
   args[charset_arg_unify_map] = Qnil;
 
   args[charset_arg_plist] =
-    listn (CONSTYPE_HEAP, 14,
-	   QCname,
+     list (QCname,
 	   args[charset_arg_name],
 	   intern_c_string (":dimension"),
 	   args[charset_arg_dimension],
@@ -2180,7 +2177,7 @@ usage: (set-charset-priority &rest charsets)  */)
 	}
     }
   Vcharset_non_preferred_head = old_list;
-  Vcharset_ordered_list = CALLN (Fnconc, Fnreverse (new_head), old_list);
+  Vcharset_ordered_list = nconc2 (Fnreverse (new_head), old_list);
 
   charset_ordered_list_tick++;
 
@@ -2295,14 +2292,18 @@ init_charset (void)
     {
       /* This used to be non-fatal (dir_warning), but it should not
          happen, and if it does sooner or later it will cause some
-         obscure problem (eg bug#6401), so better abort.  */
-      fprintf (stderr, "Error: charsets directory not found:\n\
-%s\n\
-Emacs will not function correctly without the character map files.\n%s\
-Please check your installation!\n",
-               SDATA (tempdir),
-               egetenv("EMACSDATA") ? "The EMACSDATA environment \
-variable is set, maybe it has the wrong value?\n" : "");
+         obscure problem (eg bug#6401), so better exit.  */
+      fprintf (stderr,
+	       ("Error: %s: %s\n"
+		"Emacs will not function correctly "
+		"without the character map files.\n"
+		"%s"
+		"Please check your installation!\n"),
+	       SDATA (tempdir), strerror (errno),
+	       (egetenv ("EMACSDATA")
+		? ("The EMACSDATA environment variable is set.  "
+		   "Maybe it has the wrong value?\n")
+		: ""));
       exit (1);
     }
 

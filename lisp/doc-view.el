@@ -3,7 +3,6 @@
 ;; Copyright (C) 2007-2019 Free Software Foundation, Inc.
 ;;
 ;; Author: Tassilo Horn <tsdh@gnu.org>
-;; Maintainer: Tassilo Horn <tsdh@gnu.org>
 ;; Keywords: files, pdf, ps, dvi
 
 ;; This file is part of GNU Emacs.
@@ -153,9 +152,15 @@
   :group 'multimedia
   :prefix "doc-view-")
 
-(defcustom doc-view-ghostscript-program "gs"
+(defcustom doc-view-ghostscript-program
+  (cond
+   ((memq system-type '(windows-nt ms-dos))
+    "gswin32c")
+   (t
+    "gs"))
   "Program to convert PS and PDF files to PNG."
-  :type 'file)
+  :type 'file
+  :version "27.1")
 
 (defcustom doc-view-pdfdraw-program
   (cond
@@ -166,6 +171,11 @@
   "Name of MuPDF's program to convert PDF files to PNG."
   :type 'file
   :version "24.4")
+
+(defcustom doc-view-pdftotext-program-args '("-raw")
+  "Parameters to give to the pdftotext command."
+  :version "27.1"
+  :type '(repeat string))
 
 (defcustom doc-view-pdf->png-converter-function
   (if (executable-find doc-view-pdfdraw-program)
@@ -183,10 +193,15 @@
 (defcustom doc-view-ghostscript-options
   '("-dSAFER" ;; Avoid security problems when rendering files from untrusted
     ;; sources.
-    "-dNOPAUSE" "-sDEVICE=png16m" "-dTextAlphaBits=4"
+    "-dNOPAUSE" "-dTextAlphaBits=4"
     "-dBATCH" "-dGraphicsAlphaBits=4" "-dQUIET")
   "A list of options to give to ghostscript."
   :type '(repeat string))
+
+(defcustom doc-view-ghostscript-device "png16m"
+  "Output device to give to ghostscript."
+  :type 'string
+  :version "27.1")
 
 (defcustom doc-view-resolution 100
   "Dots per inch resolution used to render the documents.
@@ -204,7 +219,7 @@ scaling."
 (defcustom doc-view-image-width 850
   "Default image width.
 Has only an effect if `doc-view-scale-internally' is non-nil and support for
-scaling is compiled into emacs."
+scaling is compiled into Emacs."
   :version "24.1"
   :type 'number)
 
@@ -433,7 +448,12 @@ Typically \"page-%s.png\".")
       (setq-local undo-outer-limit (* 2 (buffer-size))))
   (cl-labels ((revert ()
                       (let ((revert-buffer-preserve-modes t))
-                        (apply orig-fun args))))
+                        (apply orig-fun args)
+                        ;; Update the cached version of the pdf file,
+                        ;; too.  This is the one that's used when
+                        ;; rendering.
+                        (doc-view-make-safe-dir doc-view-cache-directory)
+                        (write-region nil nil doc-view--buffer-file-name))))
     (if (and (eq 'pdf doc-view-doc-type)
              (executable-find "pdfinfo"))
         ;; We don't want to revert if the PDF file is corrupted which
@@ -950,16 +970,31 @@ Should be invoked when the cached images aren't up-to-date."
 			    (list "-o" pdf dvi)
 			    callback)))
 
+(defun doc-view-pdf-password-protected-ghostscript-p (pdf)
+  "Return non-nil if a PDF file is password-protected.
+The test is performed using `doc-view-ghostscript-program'."
+  (with-temp-buffer
+    (apply #'call-process doc-view-ghostscript-program nil (current-buffer)
+           nil `(,@doc-view-ghostscript-options
+                 "-sNODISPLAY"
+                 ,pdf))
+    (goto-char (point-min))
+    (search-forward "This file requires a password for access." nil t)))
+
 (defun doc-view-pdf->png-converter-ghostscript (pdf png page callback)
-  (doc-view-start-process
-   "pdf/ps->png" doc-view-ghostscript-program
-   `(,@doc-view-ghostscript-options
-     ,(format "-r%d" (round doc-view-resolution))
-     ,@(if page `(,(format "-dFirstPage=%d" page)))
-     ,@(if page `(,(format "-dLastPage=%d" page)))
-     ,(concat "-sOutputFile=" png)
-     ,pdf)
-   callback))
+  (let ((pdf-passwd (if (doc-view-pdf-password-protected-ghostscript-p pdf)
+                        (read-passwd "Enter password for PDF file: "))))
+    (doc-view-start-process
+     "pdf/ps->png" doc-view-ghostscript-program
+     `(,@doc-view-ghostscript-options
+       ,(concat "-sDEVICE=" doc-view-ghostscript-device)
+       ,(format "-r%d" (round doc-view-resolution))
+       ,@(if page `(,(format "-dFirstPage=%d" page)))
+       ,@(if page `(,(format "-dLastPage=%d" page)))
+       ,@(if pdf-passwd `(,(format "-sPDFPassword=%s" pdf-passwd)))
+       ,(concat "-sOutputFile=" png)
+       ,pdf)
+     callback)))
 
 (defalias 'doc-view-ps->png-converter-ghostscript
   'doc-view-pdf->png-converter-ghostscript)
@@ -980,17 +1015,36 @@ If PAGE is nil, convert the whole document."
      ,tiff)
    callback))
 
+(defun doc-view-pdfdraw-program-subcommand ()
+  "Return the mutool subcommand replacing mudraw.
+Recent MuPDF distributions replaced 'mudraw' with 'mutool draw'."
+  (when (string-match "mutool[^/\\]*$" doc-view-pdfdraw-program)
+    '("draw")))
+
+(defun doc-view-pdf-password-protected-pdfdraw-p (pdf)
+  "Return non-nil if a PDF file is password-protected.
+The test is performed using `doc-view-pdfdraw-program'."
+  (with-temp-buffer
+    (apply #'call-process doc-view-pdfdraw-program nil (current-buffer) nil
+           `(,@(doc-view-pdfdraw-program-subcommand)
+             ,(concat "-o" null-device)
+             ;; In case PDF isn't password-protected, "draw" only one page.
+             ,pdf "1"))
+    (goto-char (point-min))
+    (search-forward "error: cannot authenticate password" nil t)))
+
 (defun doc-view-pdf->png-converter-mupdf (pdf png page callback)
-  (doc-view-start-process
-   "pdf->png" doc-view-pdfdraw-program
-   ;; FIXME: Ugly hack: recent mupdf distribution replaced "mudraw" with
-   ;; "mutool draw".
-   `(,@(if (string-match "mutool[^/\\]*$" doc-view-pdfdraw-program) '("draw"))
-     ,(concat "-o" png)
-     ,(format "-r%d" (round doc-view-resolution))
-     ,pdf
-     ,@(if page `(,(format "%d" page))))
-   callback))
+  (let ((pdf-passwd (if (doc-view-pdf-password-protected-pdfdraw-p pdf)
+                        (read-passwd "Enter password for PDF file: "))))
+    (doc-view-start-process
+     "pdf->png" doc-view-pdfdraw-program
+     `(,@(doc-view-pdfdraw-program-subcommand)
+       ,(concat "-o" png)
+       ,(format "-r%d" (round doc-view-resolution))
+       ,@(if pdf-passwd `("-p" ,pdf-passwd))
+       ,pdf
+       ,@(if page `(,(format "%d" page))))
+     callback)))
 
 (defun doc-view-odf->pdf-converter-unoconv (odf callback)
   "Convert ODF to PDF asynchronously and call CALLBACK when finished.
@@ -1088,7 +1142,8 @@ Start by converting PAGES, and then the rest."
   (or (executable-find doc-view-pdftotext-program)
       (error "You need the `pdftotext' program to convert a PDF to text"))
   (doc-view-start-process "pdf->txt" doc-view-pdftotext-program
-                          (list "-raw" pdf txt)
+                          (append doc-view-pdftotext-program-args
+                                  (list pdf txt))
                           callback))
 
 (defun doc-view-current-cache-doc-pdf ()
@@ -1437,6 +1492,14 @@ For now these keys are useful:
   (interactive)
   (tooltip-show (doc-view-current-info)))
 
+;; We define an own major mode for DocView's text display so that we
+;; can easily distinguish when we want to toggle back because
+;; text-mode is a likely candidate for a default major-mode
+;; (bug#34451).
+(define-derived-mode doc-view--text-view-mode text-mode "DV/Text"
+  "View mode used in DocView's text buffers."
+  (view-mode))
+
 (defun doc-view-open-text ()
   "Display the current doc's contents as text."
   (interactive)
@@ -1448,15 +1511,22 @@ For now these keys are useful:
 		(buffer-undo-list t)
 		(dv-bfn doc-view--buffer-file-name))
 	    (erase-buffer)
+            ;; FIXME: Replacing the buffer's PDF content with its txt rendering
+            ;; is pretty risky.  We should probably use *another*
+            ;; buffer instead, so there's much less risk of
+            ;; overwriting the PDF file with some text rendering.
 	    (set-buffer-multibyte t)
 	    (insert-file-contents txt)
-	    (text-mode)
+	    (doc-view--text-view-mode)
 	    (setq-local doc-view--buffer-file-name dv-bfn)
 	    (set-buffer-modified-p nil)
 	    (doc-view-minor-mode)
 	    (add-hook 'write-file-functions
 		      (lambda ()
-			(when (eq major-mode 'text-mode)
+                        ;; FIXME: If the user changes major mode and then
+                        ;; saves the buffer, the PDF file will be clobbered
+                        ;; with its txt rendering!
+			(when (eq major-mode 'doc-view--text-view-mode)
 			  (error "Cannot save text contents of document %s"
 				 buffer-file-name)))
 		      nil t))
@@ -1480,7 +1550,7 @@ For now these keys are useful:
     ;; normal mode.
     (doc-view-fallback-mode)
     (doc-view-minor-mode 1))
-   ((eq major-mode 'text-mode)
+   ((eq major-mode 'doc-view--text-view-mode)
     (let ((buffer-undo-list t))
       ;; We're currently viewing the document's text contents, so switch
       ;; back to .
@@ -1645,11 +1715,11 @@ If BACKWARD is non-nil, jump to the previous match."
 	 (substitute-command-keys
 	  (concat "Type \\[doc-view-toggle-display] to toggle between "
 		  "editing or viewing the document."))))
-    (message
-     "%s"
-     (concat "No PNG support is available, or some conversion utility for "
-	     (file-name-extension doc-view--buffer-file-name)
-	     " files is missing."))
+    (if (image-type-available-p 'png)
+        (message "Conversion utility \"%s\" not available for %s"
+                 doc-view-ghostscript-program
+	         (file-name-extension doc-view--buffer-file-name))
+      (message "PNG support not available; can't view document"))
     (if (and (executable-find doc-view-pdftotext-program)
 	     (y-or-n-p
 	      "Unable to render file.  View extracted text instead? "))
@@ -1719,7 +1789,7 @@ If BACKWARD is non-nil, jump to the previous match."
               (error "Cannot determine the document type"))))))
 
 (defun doc-view-set-up-single-converter ()
-  "Find the right single-page converter for the current document type"
+  "Find the right single-page converter for the current document type."
   (pcase-let ((`(,conv-function ,type ,extension)
                (pcase doc-view-doc-type
                  ('djvu (list #'doc-view-djvu->tiff-converter-ddjvu 'tiff "tif"))

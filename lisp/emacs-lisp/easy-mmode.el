@@ -363,18 +363,21 @@ No problems result if this variable is not bound.
 ;;;###autoload
 (defalias 'define-global-minor-mode 'define-globalized-minor-mode)
 ;;;###autoload
-(defmacro define-globalized-minor-mode (global-mode mode turn-on &rest keys)
+(defmacro define-globalized-minor-mode (global-mode mode turn-on &rest body)
   "Make a global mode GLOBAL-MODE corresponding to buffer-local minor MODE.
 TURN-ON is a function that will be called with no args in every buffer
   and that should try to turn MODE on if applicable for that buffer.
-KEYS is a list of CL-style keyword arguments.  As the minor mode
-  defined by this function is always global, any :global keyword is
-  ignored.  Other keywords have the same meaning as in `define-minor-mode',
-  which see.  In particular, :group specifies the custom group.
-  The most useful keywords are those that are passed on to the
-  `defcustom'.  It normally makes no sense to pass the :lighter
-  or :keymap keywords to `define-globalized-minor-mode', since these
-  are usually passed to the buffer-local version of the minor mode.
+Each of KEY VALUE is a pair of CL-style keyword arguments.  As
+  the minor mode defined by this function is always global, any
+  :global keyword is ignored.  Other keywords have the same
+  meaning as in `define-minor-mode', which see.  In particular,
+  :group specifies the custom group.  The most useful keywords
+  are those that are passed on to the `defcustom'.  It normally
+  makes no sense to pass the :lighter or :keymap keywords to
+  `define-globalized-minor-mode', since these are usually passed
+  to the buffer-local version of the minor mode.
+BODY contains code to execute each time the mode is enabled or disabled.
+  It is executed after toggling the mode, and before running GLOBAL-MODE-hook.
 
 If MODE's set-up depends on the major mode in effect when it was
 enabled, then disabling and reenabling MODE should make MODE work
@@ -384,7 +387,9 @@ call another major mode in their body.
 
 When a major mode is initialized, MODE is actually turned on just
 after running the major mode's hook.  However, MODE is not turned
-on if the hook has explicitly disabled it."
+on if the hook has explicitly disabled it.
+
+\(fn GLOBAL-MODE MODE TURN-ON [KEY VALUE]... BODY...)"
   (declare (doc-string 2))
   (let* ((global-mode-name (symbol-name global-mode))
 	 (mode-name (symbol-name mode))
@@ -404,21 +409,16 @@ on if the hook has explicitly disabled it."
 	 keyw)
 
     ;; Check keys.
-    (while (keywordp (setq keyw (car keys)))
-      (setq keys (cdr keys))
+    (while (keywordp (setq keyw (car body)))
+      (pop body)
       (pcase keyw
-	(:group (setq group (nconc group (list :group (pop keys)))))
-	(:global (setq keys (cdr keys)))
-	(_ (push keyw extra-keywords) (push (pop keys) extra-keywords))))
-
-    (unless group
-      ;; We might as well provide a best-guess default group.
-      (setq group
-	    `(:group ',(intern (replace-regexp-in-string
-				"-mode\\'" "" (symbol-name mode))))))
+        (:group (setq group (nconc group (list :group (pop body)))))
+        (:global (pop body))
+        (_ (push keyw extra-keywords) (push (pop body) extra-keywords))))
 
     `(progn
        (progn
+         (put ',global-mode 'globalized-minor-mode t)
          :autoload-end
          (defvar ,MODE-major-mode nil)
          (make-variable-buffer-local ',MODE-major-mode))
@@ -452,7 +452,8 @@ See `%s' for more information on %s."
 	 ;; Go through existing buffers.
 	 (dolist (buf (buffer-list))
 	   (with-current-buffer buf
-	     (if ,global-mode (funcall #',turn-on) (when ,mode (,mode -1))))))
+             (if ,global-mode (funcall #',turn-on) (when ,mode (,mode -1)))))
+         ,@body)
 
        ;; Autoloading define-globalized-minor-mode autoloads everything
        ;; up-to-here.
@@ -624,12 +625,11 @@ BODY is executed after moving to the destination location."
          (when-narrowed
           (lambda (body)
             (if (null narrowfun) body
-              `(let ((was-narrowed
-                      (prog1 (or (< (- (point-max) (point-min)) (buffer-size)))
-                        (widen))))
+              `(let ((was-narrowed (prog1 (buffer-narrowed-p) (widen))))
                  ,body
                  (when was-narrowed (funcall #',narrowfun)))))))
     (unless name (setq name base-name))
+    ;; FIXME: Move most of those functions's bodies to helper functions!
     `(progn
        (defun ,next-sym (&optional count)
 	 ,(format "Go to the next COUNT'th %s.
@@ -651,7 +651,11 @@ Interactively, COUNT is the prefix numeric argument, and defaults to 1." name)
                                         `(re-search-forward ,re nil t 2)))
                                    (point-max))))
                     (unless (pos-visible-in-window-p endpt nil t)
-                      (recenter '(0)))))))
+                      (let ((ws (window-start)))
+                        (recenter '(0))
+                        (if (< (window-start) ws)
+                            ;; recenter scrolled in the wrong direction!
+                            (set-window-start nil ws))))))))
            ,@body))
        (put ',next-sym 'definition-name ',base)
        (defun ,prev-sym (&optional count)
