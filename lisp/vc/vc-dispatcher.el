@@ -1,6 +1,6 @@
 ;;; vc-dispatcher.el -- generic command-dispatcher facility.  -*- lexical-binding: t -*-
 
-;; Copyright (C) 2008-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2008-2020 Free Software Foundation, Inc.
 
 ;; Author: FSF (see below for full credits)
 ;; Keywords: vc tools
@@ -267,6 +267,14 @@ and is passed 3 arguments: the COMMAND, the FILES and the FLAGS.")
   ;; FIXME what about file names with spaces?
   (if (not filelist) "."  (mapconcat 'identity filelist " ")))
 
+(defcustom vc-tor nil
+  "If non-nil, communicate with the repository site via Tor.
+See https://2019.www.torproject.org/about/overview.html.en and
+the man pages for \"torsocks\" for more details about Tor."
+  :type 'boolean
+  :version "27.1"
+  :group 'vc)
+
 ;;;###autoload
 (defun vc-do-command (buffer okstatus command file-or-list &rest flags)
   "Execute a slave command, notifying user and checking for errors.
@@ -295,7 +303,8 @@ case, and the process object in the asynchronous case."
 	 ;; due to potential truncation of long messages.
 	 (message-truncate-lines t)
 	 (full-command
-	  (concat (if (string= (substring command -1) "\n")
+	  (concat (if vc-tor "torsocks " "")
+                  (if (string= (substring command -1) "\n")
 		      (substring command 0 -1)
 		    command)
 		  " " (vc-delistify flags)
@@ -737,7 +746,8 @@ the buffer contents as a comment."
 
 (defun vc-dispatcher-browsing ()
   "Are we in a directory browser buffer?"
-  (derived-mode-p 'vc-dir-mode))
+  (or (derived-mode-p 'vc-dir-mode)
+      (derived-mode-p 'dired-mode)))
 
 ;; These are unused.
 ;; (defun vc-dispatcher-in-fileset-p (fileset)

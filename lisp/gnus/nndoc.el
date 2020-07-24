@@ -1,6 +1,6 @@
 ;;; nndoc.el --- single file access for Gnus
 
-;; Copyright (C) 1995-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1995-2020 Free Software Foundation, Inc.
 
 ;; Author: Lars Magne Ingebrigtsen <larsi@gnus.org>
 ;;	Masanobu UMEDA <umerin@flab.flab.fujitsu.junet>
@@ -347,7 +347,7 @@ from the document.")
 	       (file-exists-p nndoc-address)
 	       (not (file-directory-p nndoc-address))))
       (push (cons group (setq nndoc-current-buffer
-			      (get-buffer-create
+			      (gnus-get-buffer-create
 			       (concat " *nndoc " group "*"))))
 	    nndoc-group-alist)
       (setq nndoc-dissection-alist nil)

@@ -1,6 +1,6 @@
 ;;; dom.el --- XML/HTML (etc.) DOM manipulation and searching functions -*- lexical-binding: t -*-
 
-;; Copyright (C) 2014-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2014-2020 Free Software Foundation, Inc.
 
 ;; Author: Lars Magne Ingebrigtsen <larsi@gnus.org>
 ;; Keywords: xml, html
@@ -66,6 +66,12 @@
     (if old
 	(setcdr old value)
       (setcar (cdr node) (nconc (cadr node) (list (cons attribute value)))))))
+
+(defun dom-remove-attribute (node attribute)
+  "Remove ATTRIBUTE from NODE."
+  (setq node (dom-ensure-node node))
+  (when-let ((old (assoc attribute (cadr node))))
+    (setcar (cdr node) (delq old (cadr node)))))
 
 (defmacro dom-attr (node attr)
   "Return the attribute ATTR from NODE.

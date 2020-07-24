@@ -1,6 +1,6 @@
 ;;; table.el --- create and edit WYSIWYG text based embedded tables  -*- lexical-binding: t -*-
 
-;; Copyright (C) 2000-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2000-2020 Free Software Foundation, Inc.
 
 ;; Keywords: wp, convenience
 ;; Author: Takaaki Ota <Takaaki.Ota@am.sony.com>
@@ -793,6 +793,8 @@ simply by any key input."
   "List of functions to be called after the table is first loaded."
   :type 'hook
   :group 'table-hooks)
+(make-obsolete-variable 'table-load-hook
+                        "use `with-eval-after-load' instead." "28.1")
 
 (defcustom table-point-entered-cell-hook nil
   "List of functions to be called after point entered a table cell."
@@ -957,6 +959,7 @@ This is always set to nil at the entry to `table-with-cache-buffer' before execu
     (completion-separator-self-insert-autofilling . *table--cell-self-insert-command)
     (completion-separator-self-insert-command . *table--cell-self-insert-command)
     (delete-char . *table--cell-delete-char)
+    (delete-forward-char . *table--cell-delete-char)
     (delete-backward-char . *table--cell-delete-backward-char)
     (backward-delete-char . *table--cell-delete-backward-char)
     (backward-delete-char-untabify . *table--cell-delete-backward-char)
@@ -2911,16 +2914,17 @@ WHERE is provided the cell and table at that location is reported."
 (defun table-generate-source (language &optional dest-buffer caption)
   "Generate source of the current table in the specified language.
 LANGUAGE is a symbol that specifies the language to describe the
-structure of the table.  It must be either `html', `latex' or `cals'.
-The resulted source text is inserted into DEST-BUFFER and the buffer
-object is returned.  When DEST-BUFFER is omitted or nil the default
-buffer specified in `table-dest-buffer-name' is used.  In this case
-the content of the default buffer is erased prior to the generation.
-When DEST-BUFFER is non-nil it is expected to be either a destination
-buffer or a name of the destination buffer.  In this case the
-generated result is inserted at the current point in the destination
-buffer and the previously existing contents in the buffer are
-untouched.
+structure of the table.  It must be either `html', `latex', `cals',
+`wiki', or `mediawiki'.
+The function inserts the resulting source text into DEST-BUFFER, and
+returns the buffer object.  When DEST-BUFFER is omitted or nil, the
+function uses the default buffer specified in `table-dest-buffer-name'.
+In this case, the function erases the default buffer prior to the
+source generation.
+When DEST-BUFFER is non-nil, it should be either a destination
+buffer or a name of the destination buffer.  In that case, the
+function inserts the generated result at point in the destination
+buffer, and leaves the previous contents of the buffer untouched.
 
 References used for this implementation:
 
@@ -3205,11 +3209,7 @@ CALS (DocBook DTD):
 	  (while (and (re-search-forward "$" nil t)
 		      (not (eobp)))
 	    (insert "<br />")
-	    (forward-char 1)))
-	(unless (and table-html-delegate-spacing-to-user-agent
-		     (progn
-		       (goto-char (point-min))
-		       (looking-at "\\s *\\'")))))
+	    (forward-char 1))))
        ((eq language 'cals)
 	(table--remove-eol-spaces (point-min) (point-max))
 	(if (re-search-forward "\\s +\\'" nil t)
@@ -4938,7 +4938,8 @@ When optional LOCATION is provided the test is performed at that location."
 	   (save-excursion
 	     (goto-char location)
 	     (table--probe-cell))
-	 (table--probe-cell))))
+	 (table--probe-cell))
+       t))
 
 (defun table--region-in-cell-p (beg end)
   "Return t when location BEG and END are in a valid table cell in the current buffer."
@@ -4949,7 +4950,7 @@ When optional LOCATION is provided the test is performed at that location."
 		(equal cell-beg (progn (goto-char end) (table--probe-cell))))))))
 
 (defun table--at-cell-p (position &optional object at-column)
-  "Returns non-nil if POSITION has table-cell property in OBJECT.
+  "Return non-nil if POSITION has table-cell property in OBJECT.
 OBJECT is optional and defaults to the current buffer.
 If POSITION is at the end of OBJECT, the value is nil."
   (if (and at-column (stringp object))
@@ -5041,7 +5042,7 @@ Focus only on the corner pattern.  Further cell validity check is required."
        (get-text-property (point) 'table-cell)))
 
 (defun table--probe-cell (&optional abort-on-error)
-  "Probes a table cell around the point.
+  "Probe a table cell around the point.
 Searches for the left upper corner and the right bottom corner of a table
 cell which contains the current point location.
 
@@ -5150,7 +5151,7 @@ and the right cell border character."
 
 (defun table--put-cell-face-property (beg end &optional object)
   "Put cell face property."
-  (put-text-property beg end 'face 'table-cell object))
+  (put-text-property beg end 'font-lock-face 'table-cell object))
 
 (defun table--put-cell-keymap-property (beg end &optional object)
   "Put cell keymap property."
@@ -5177,7 +5178,7 @@ instead of the current buffer and returns the OBJECT."
 				   'table-cell nil
 				   'table-justify nil
 				   'table-valign nil
-				   'face nil
+				   'font-lock-face nil
 				   'rear-nonsticky nil
 				   'cursor-sensor-functions nil
 				   'keymap nil)
@@ -5197,11 +5198,11 @@ instead of the current buffer and returns the OBJECT."
       (get-text-property (1- (cdr cell)) property)))
 
 (defun table--get-cell-justify-property (cell)
-  "Get cell's justify property."
+  "Get CELL's justify property."
   (table--get-property cell 'table-justify))
 
 (defun table--get-cell-valign-property (cell)
-  "Get cell's vertical alignment property."
+  "Get CELL's vertical alignment property."
   (table--get-property cell 'table-valign))
 
 (defun table--put-property  (cell property value)
@@ -5212,11 +5213,11 @@ instead of the current buffer and returns the OBJECT."
     (put-text-property (1- end) end property value)))
 
 (defun table--put-cell-justify-property (cell justify)
-  "Put cell's justify property."
+  "Put CELL's JUSTIFY property."
   (table--put-property cell 'table-justify justify))
 
 (defun table--put-cell-valign-property (cell valign)
-  "Put cell's vertical alignment property."
+  "Put CELL's vertical alignment property."
   (table--put-property cell 'table-valign valign))
 
 (defun table--point-entered/left-cell-function (_window _oldpos dir)

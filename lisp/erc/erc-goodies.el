@@ -1,9 +1,9 @@
 ;; erc-goodies.el --- Collection of ERC modules
 
-;; Copyright (C) 2001-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2001-2020 Free Software Foundation, Inc.
 
 ;; Author: Jorgen Schaefer <forcer@forcix.cx>
-;; Maintainer: emacs-devel@gnu.org
+;; Maintainer: Amin Bandali <bandali@gnu.org>
 
 ;; Most code is taken verbatim from erc.el, see there for the original
 ;; authors.
@@ -55,13 +55,20 @@ argument to `recenter'."
 (define-erc-module scrolltobottom nil
   "This mode causes the prompt to stay at the end of the window."
   ((add-hook 'erc-mode-hook 'erc-add-scroll-to-bottom)
+   (add-hook 'erc-insert-done-hook 'erc-possibly-scroll-to-bottom)
    (dolist (buffer (erc-buffer-list))
      (with-current-buffer buffer
        (erc-add-scroll-to-bottom))))
   ((remove-hook 'erc-mode-hook 'erc-add-scroll-to-bottom)
+   (remove-hook 'erc-insert-done-hook 'erc-possibly-scroll-to-bottom)
    (dolist (buffer (erc-buffer-list))
      (with-current-buffer buffer
        (remove-hook 'post-command-hook 'erc-scroll-to-bottom t)))))
+
+(defun erc-possibly-scroll-to-bottom ()
+  "Like `erc-add-scroll-to-bottom', but only if window is selected."
+  (when (eq (selected-window) (get-buffer-window))
+    (erc-scroll-to-bottom)))
 
 (defun erc-add-scroll-to-bottom ()
   "A hook function for `erc-mode-hook' to recenter output at bottom of window.

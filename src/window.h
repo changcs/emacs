@@ -1,5 +1,5 @@
 /* Window definitions for GNU Emacs.
-   Copyright (C) 1985-1986, 1993, 1995, 1997-2019 Free Software
+   Copyright (C) 1985-1986, 1993, 1995, 1997-2020 Free Software
    Foundation, Inc.
 
 This file is part of GNU Emacs.
@@ -429,7 +429,7 @@ struct window
        i.e., always survive Fset_window_buffer.  */
     bool_bf fringes_persistent : 1;
 
-    /* True if this window's croll bar specifications are persistent,
+    /* True if this window's scroll bar specifications are persistent,
        i.e., always survive Fset_window_buffer.  */
     bool_bf scroll_bars_persistent : 1;
 
@@ -608,6 +608,13 @@ wset_next_buffers (struct window *w, Lisp_Object val)
    ? (W)->contents				\
    : Qnil)
 
+/* Local value of variable V in window W's buffer.  Nil if W has no
+   buffer.  */
+#define WINDOW_BUFFER_LOCAL_VALUE(V, W)		\
+  (BUFFERP ((W)->contents)			\
+   ? buffer_local_value(V, (W)->contents)	\
+   : Qnil)
+
 /* Return the canonical column width of the frame of window W.  */
 #define WINDOW_FRAME_COLUMN_WIDTH(W) \
   (FRAME_COLUMN_WIDTH (WINDOW_XFRAME ((W))))
@@ -750,11 +757,11 @@ wset_next_buffers (struct window *w, Lisp_Object val)
 
 /* True if W is a tab bar window.  */
 #if defined (HAVE_WINDOW_SYSTEM)
-#define WINDOW_TAB_BAR_P(W) \
-  (WINDOWP (WINDOW_XFRAME (W)->tab_bar_window) \
-   && (W) == XWINDOW (WINDOW_XFRAME (W)->tab_bar_window))
+# define WINDOW_TAB_BAR_P(W) \
+   (WINDOWP (WINDOW_XFRAME (W)->tab_bar_window) \
+    && (W) == XWINDOW (WINDOW_XFRAME (W)->tab_bar_window))
 #else
-#define WINDOW_TAB_BAR_P(W) false
+# define WINDOW_TAB_BAR_P(W) false
 #endif
 
 /* True if W is a tool bar window.  */
@@ -1177,7 +1184,6 @@ extern Lisp_Object window_list (void);
 extern Lisp_Object window_parameter (struct window *, Lisp_Object parameter);
 extern struct window *decode_live_window (Lisp_Object);
 extern struct window *decode_any_window (Lisp_Object);
-extern bool compare_window_configurations (Lisp_Object, Lisp_Object, bool);
 extern void mark_window_cursors_off (struct window *);
 extern bool window_wants_mode_line (struct window *);
 extern bool window_wants_header_line (struct window *);

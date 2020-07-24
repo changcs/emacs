@@ -1,6 +1,6 @@
 ;;; vc-hg.el --- VC backend for the mercurial version control system  -*- lexical-binding: t -*-
 
-;; Copyright (C) 2006-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2006-2020 Free Software Foundation, Inc.
 
 ;; Author: Ivan Kanis
 ;; Maintainer: emacs-devel@gnu.org
@@ -40,6 +40,7 @@
 ;; FUNCTION NAME                               STATUS
 ;; BACKEND PROPERTIES
 ;; * revision-granularity                      OK
+;; - update-on-retrieve-tag                    OK
 ;; STATE-QUERYING FUNCTIONS
 ;; * registered (file)                         OK
 ;; * state (file)                              OK
@@ -108,6 +109,8 @@
   (require 'vc-dir))
 
 (declare-function vc-compilation-mode "vc-dispatcher" (backend))
+(declare-function vc-read-revision "vc"
+                  (prompt &optional files backend default initial-input))
 
 ;;; Customization options
 
@@ -179,7 +182,7 @@ is the \"--template\" argument string to pass to Mercurial,
 REGEXP is a regular expression matching the resulting Mercurial
 output, and KEYWORDS is a list of `font-lock-keywords' for
 highlighting the Log View buffer."
-  :type '(list string string (repeat sexp))
+  :type '(list string regexp (repeat sexp))
   :group 'vc-hg
   :version "24.5")
 
@@ -194,6 +197,7 @@ highlighting the Log View buffer."
 
 (defun vc-hg-revision-granularity () 'repository)
 (defun vc-hg-checkout-model (_files) 'implicit)
+(defun vc-hg-update-on-retrieve-tag () nil)
 
 ;;; State querying functions
 
@@ -237,6 +241,7 @@ highlighting the Log View buffer."
 			      process-environment)))
 			(process-file
 			 vc-hg-program nil t nil
+                         "--config" "ui.report_untrusted=0"
 			 "--config" "alias.status=status"
 			 "--config" "defaults.status="
 			 "status" "-A" (file-relative-name file)))
@@ -429,6 +434,8 @@ If LIMIT is non-nil, show no more than this many entries."
 	     (nconc
 	      (when start-revision (list (format "-r%s:0" start-revision)))
 	      (when limit (list "-l" (format "%s" limit)))
+              (when (eq vc-log-view-type 'with-diff)
+                (list "-p"))
 	      (if shortlog
                   `(,@(if vc-hg-log-graph '("--graph"))
                     "--template"
@@ -480,6 +487,55 @@ If LIMIT is non-nil, show no more than this many entries."
 
 (autoload 'vc-switches "vc")
 
+(defun vc-hg-region-history (file buffer lfrom lto)
+  "Insert into BUFFER the history of FILE for lines LFROM to LTO.
+This requires hg 4.4 or later, for the \"-L\" option of \"hg log\"."
+  (vc-hg-command buffer 'async nil "log" "-f" "-p" "-L"
+                  (format "%s,%d:%d" (file-relative-name file) lfrom lto)))
+
+(require 'diff-mode)
+
+(defvar vc-hg-region-history-mode-map
+  (let ((map (make-composed-keymap
+              nil (make-composed-keymap
+                   (list diff-mode-map vc-hg-log-view-mode-map)))))
+    map))
+
+(defvar vc-hg--log-view-long-font-lock-keywords nil)
+(defvar font-lock-keywords)
+(defvar vc-hg-region-history-font-lock-keywords
+  '((vc-hg-region-history-font-lock)))
+
+(defun vc-hg-region-history-font-lock (limit)
+  (let ((in-diff (save-excursion
+                   (beginning-of-line)
+                   (or (looking-at "^\\(?:diff\\|changeset\\)\\>")
+                       (re-search-backward "^\\(?:diff\\|changeset\\)\\>"
+                                           nil t))
+                   (eq ?d (char-after (match-beginning 0))))))
+    (while
+        (let ((end (save-excursion
+                     (if (re-search-forward "\n\\(diff\\|changeset\\)\\>"
+                                            limit t)
+                         (match-beginning 1)
+                       limit))))
+          (let ((font-lock-keywords (if in-diff diff-font-lock-keywords
+                                      vc-hg--log-view-long-font-lock-keywords)))
+            (font-lock-fontify-keywords-region (point) end))
+          (goto-char end)
+          (prog1 (< (point) limit)
+            (setq in-diff (eq ?d (char-after))))))
+    nil))
+
+(define-derived-mode vc-hg-region-history-mode
+    vc-hg-log-view-mode "Hg-Region-History"
+  "Major mode to browse Hg's \"log -p\" output."
+  (setq-local vc-hg--log-view-long-font-lock-keywords
+              log-view-font-lock-keywords)
+  (setq-local font-lock-defaults
+              (cons 'vc-hg-region-history-font-lock-keywords
+                    (cdr font-lock-defaults))))
+
 (defun vc-hg-diff (files &optional oldvers newvers buffer _async)
   "Get a difference report using hg between two revisions of FILES."
   (let* ((firstfile (car files))
@@ -512,7 +568,9 @@ If LIMIT is non-nil, show no more than this many entries."
 (defun vc-hg-revision-table (files)
   (let ((default-directory (file-name-directory (car files))))
     (with-temp-buffer
-      (vc-hg-command t nil files "log" "--template" "{rev} ")
+      (vc-hg-command t nil nil "branches" "-q")
+      (vc-hg-command t nil nil "bookmarks" "-q")
+      (vc-hg-command t nil nil "tags" "-q")
       (split-string
        (buffer-substring-no-properties (point-min) (point-max))))))
 
@@ -575,7 +633,8 @@ Optional arg REVISION is a revision to annotate from."
 (defun vc-hg-retrieve-tag (dir name _update)
   "Retrieve the version tagged by NAME of all registered files at or below DIR."
   (let ((default-directory dir))
-    (vc-hg-command nil 0 nil "update" name)
+    (vc-hg-command nil 0 nil "update" (and (not (equal name ""))
+                                           name))
     ;; TODO: update *vc-change-log* buffer so can see @ if --graph
     ))
 
@@ -1293,14 +1352,17 @@ REV is the revision to check out into WORKFILE."
 ;; Follows vc-exec-after.
 (declare-function vc-set-async-update "vc-dispatcher" (process-buffer))
 
-(defun vc-hg-dir-status-files (_dir files update-function)
+(defun vc-hg-dir-status-files (dir files update-function)
   ;; XXX: We can't pass DIR directly to 'hg status' because that
   ;; returns all ignored files if FILES is non-nil (bug#22481).
-  ;; If honoring DIR ever becomes important, try using '-I DIR/'.
-  (vc-hg-command (current-buffer) 'async files
-                 "status"
-                 (concat "-mardu" (if files "i"))
-                 "-C")
+  (let ((default-directory dir))
+    ;; TODO: Use "--config 'status.relative=1'" instead of "re:"
+    ;; when we're allowed to depend on Mercurial 4.2+
+    ;; (it's a bit faster).
+    (vc-hg-command (current-buffer) 'async files
+                   "status" "re:" "-I" "."
+                   (concat "-mardu" (if files "i"))
+                   "-C"))
   (vc-run-delayed
     (vc-hg-after-dir-status update-function)))
 
@@ -1325,10 +1387,12 @@ REV is the revision to check out into WORKFILE."
      )))
 
 (defun vc-hg-log-incoming (buffer remote-location)
+  (vc-setup-buffer buffer)
   (vc-hg-command buffer 1 nil "incoming" "-n" (unless (string= remote-location "")
 						remote-location)))
 
 (defun vc-hg-log-outgoing (buffer remote-location)
+  (vc-setup-buffer buffer)
   (vc-hg-command buffer 1 nil "outgoing" "-n" (unless (string= remote-location "")
 						remote-location)))
 
@@ -1430,13 +1494,16 @@ call \"hg push -r REVS\" to push the specified revisions REVS."
   (vc-hg--pushpull "push" prompt nil (called-interactively-p 'interactive)))
 
 (defun vc-hg-merge-branch ()
-  "Merge incoming changes into the current working directory.
+  "Prompt for revision and merge it into working directory.
 This runs the command \"hg merge\"."
   (let* ((root (vc-hg-root default-directory))
 	 (buffer (format "*vc-hg : %s*" (expand-file-name root)))
          ;; Disable pager.
-         (process-environment (cons "HGPLAIN=1" process-environment)))
-    (apply 'vc-do-async-command buffer root vc-hg-program '("merge"))
+         (process-environment (cons "HGPLAIN=1" process-environment))
+         (branch (vc-read-revision "Revision to merge: ")))
+    (apply 'vc-do-async-command buffer root vc-hg-program
+           (append '("--config" "ui.report_untrusted=0" "merge")
+                   (unless (string= branch "") (list branch))))
     (with-current-buffer buffer (vc-run-delayed (vc-compilation-mode 'hg)))
     (vc-set-async-update buffer)))
 
@@ -1447,7 +1514,8 @@ This runs the command \"hg merge\"."
 This function differs from vc-do-command in that it invokes
 `vc-hg-program', and passes `vc-hg-global-switches' to it before FLAGS."
   ;; Disable pager.
-  (let ((process-environment (cons "HGPLAIN=1" process-environment)))
+  (let ((process-environment (cons "HGPLAIN=1" process-environment))
+        (flags (append '("--config" "ui.report_untrusted=0") flags)))
     (apply 'vc-do-command (or buffer "*vc*") okstatus vc-hg-program file-or-list
            (if (stringp vc-hg-global-switches)
                (cons vc-hg-global-switches flags)
@@ -1456,6 +1524,14 @@ This function differs from vc-do-command in that it invokes
 
 (defun vc-hg-root (file)
   (vc-find-root file ".hg"))
+
+(defun vc-hg-repository-url (file-or-dir &optional remote-name)
+  (let ((default-directory (vc-hg-root file-or-dir)))
+    (with-temp-buffer
+      (vc-hg-command (current-buffer) 0 nil
+                     "config"
+                     (concat "paths." (or remote-name "default")))
+      (buffer-substring-no-properties (point-min) (1- (point-max))))))
 
 (provide 'vc-hg)
 

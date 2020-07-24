@@ -1,6 +1,6 @@
-;;; gnus-start.el --- startup functions for Gnus
+;;; gnus-start.el --- startup functions for Gnus -*- lexical-binding:t -*-
 
-;; Copyright (C) 1996-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1996-2020 Free Software Foundation, Inc.
 
 ;; Author: Lars Magne Ingebrigtsen <larsi@gnus.org>
 ;; Keywords: news
@@ -518,7 +518,7 @@ Can be used to turn version control on or off."
 
 (defun gnus-subscribe-hierarchical-interactive (groups)
   (let ((groups (sort groups 'string<))
-	prefixes prefix start ans group starts real-group)
+	prefixes prefix start ans group starts)
     (while groups
       (setq prefixes (list "^"))
       (while (and groups prefixes)
@@ -730,7 +730,7 @@ the first newsgroup."
   ;; Remove Gnus frames.
   (gnus-kill-gnus-frames))
 
-(defun gnus-no-server-1 (&optional arg slave)
+(defun gnus-no-server-1 (&optional arg child)
   "Read network news.
 If ARG is a positive number, Gnus will use that as the startup
 level.  If ARG is nil, Gnus will be started at level 2
@@ -739,11 +739,11 @@ and not a positive number, Gnus will prompt the user for the name
 of an NNTP server to use.  As opposed to \\[gnus], this command
 will not connect to the local server."
   (let ((val (or arg (1- gnus-level-default-subscribed))))
-    (gnus val t slave)
+    (gnus val t child)
     (make-local-variable 'gnus-group-use-permanent-levels)
     (setq gnus-group-use-permanent-levels val)))
 
-(defun gnus-1 (&optional arg dont-connect slave)
+(defun gnus-1 (&optional arg dont-connect child)
   "Read network news.
 If ARG is non-nil and a positive number, Gnus will use that as the
 startup level.  If ARG is non-nil and not a positive number, Gnus will
@@ -761,7 +761,7 @@ prompt the user for the name of an NNTP server to use."
     (gnus-splash)
     (gnus-run-hooks 'gnus-before-startup-hook)
     (nnheader-init-server-buffer)
-    (setq gnus-slave slave)
+    (setq gnus-child child)
     (gnus-read-init-file)
 
     ;; Add "native" to gnus-predefined-server-alist just to have a
@@ -790,7 +790,7 @@ prompt the user for the name of an NNTP server to use."
 		(gnus-make-newsrc-file gnus-startup-file))
 
 	  ;; Read the dribble file.
-	  (when (or gnus-slave gnus-use-dribble-file)
+	  (when (or gnus-child gnus-use-dribble-file)
 	    (gnus-dribble-read-file))
 
 	  ;; Do the actual startup.
@@ -1008,11 +1008,11 @@ If LEVEL is non-nil, the news will be set up at level LEVEL."
 
     ;; Possibly eval the dribble file.
     (and init
-	 (or gnus-use-dribble-file gnus-slave)
+	 (or gnus-use-dribble-file gnus-child)
 	 (gnus-dribble-eval-file))
 
-    ;; Slave Gnusii should then clear the dribble buffer.
-    (when (and init gnus-slave)
+    ;; Child Gnusii should then clear the dribble buffer.
+    (when (and init gnus-child)
       (gnus-dribble-clear))
 
     (gnus-update-format-specifications)
@@ -1030,7 +1030,7 @@ If LEVEL is non-nil, the news will be set up at level LEVEL."
     ;; Find new newsgroups and treat them.
     (when (and init gnus-check-new-newsgroups (not level)
 	       (gnus-check-server gnus-select-method)
-	       (not gnus-slave)
+	       (not gnus-child)
 	       gnus-plugged)
       (gnus-find-new-newsgroups))
 
@@ -1040,8 +1040,8 @@ If LEVEL is non-nil, the news will be set up at level LEVEL."
 	       (gnus-server-opened gnus-select-method))
       (gnus-check-bogus-newsgroups))
 
-    ;; Read any slave files.
-    (gnus-master-read-slave-newsrc)
+    ;; Read any child files.
+    (gnus-parent-read-child-newsrc)
 
     ;; Find the number of unread articles in each non-dead group.
     (let ((gnus-read-active-file (and (not level) gnus-read-active-file)))
@@ -1101,7 +1101,7 @@ for new groups, and subscribe the new groups as zombies."
         ;; Go though every newsgroup in `gnus-active-hashtb' and compare
         ;; with `gnus-newsrc-hashtb' and `gnus-killed-hashtb'.
         (maphash
-         (lambda (g-name active)
+         (lambda (g-name _active)
            (unless (or (gethash g-name gnus-killed-hashtb)
                        (gethash g-name gnus-newsrc-hashtb))
              (let ((do-sub (gnus-matches-options-n g-name)))
@@ -1256,19 +1256,19 @@ INFO-LIST), otherwise it's a list in the format of the
 `gnus-newsrc-hashtb' entries.  LEVEL is the new level of the
 group, OLDLEVEL is the old level and PREVIOUS is the group (a
 string name) to insert this group before."
-  (let (group info active num)
-    ;; Glean what info we can from the arguments.
-    (if (consp entry)
-	(setq group (if fromkilled (nth 1 entry) (car (nth 1 entry))))
-      (setq group entry))
+  ;; Glean what info we can from the arguments.
+  (let ((group (if (consp entry)
+	           (if fromkilled (nth 1 entry) (car (nth 1 entry)))
+	         entry))
+	info active num)
     (when (and (stringp entry)
 	       oldlevel
 	       (< oldlevel gnus-level-zombie))
       (setq entry (gnus-group-entry entry)))
-    (if (and (not oldlevel)
-	     (consp entry))
-	(setq oldlevel (gnus-info-level (nth 1 entry)))
-      (setq oldlevel (or oldlevel gnus-level-killed)))
+    (setq oldlevel (if (and (not oldlevel)
+	                    (consp entry))
+	               (gnus-info-level (nth 1 entry))
+	             (or oldlevel gnus-level-killed)))
 
     ;; This table is used for completion, so put a dummy entry there.
     (unless (gethash group gnus-active-hashtb)
@@ -1330,14 +1330,10 @@ string name) to insert this group before."
 	    (setq active (gnus-active group))
 	    (setq num
 		  (if active (- (1+ (cdr active)) (car active)) t))
-	    ;; Shorten the select method if possible, if we need to
-	    ;; store it at all (native groups).
 	    (let ((method (gnus-method-simplify
 			   (or gnus-override-subscribe-method
 			       (gnus-group-method group)))))
-	      (if method
-		  (setq info (list group level nil nil method))
-		(setq info (list group level nil)))))
+	      (setq info (gnus-info-make group level nil nil method))))
 	  ;; Add group.  The exact ordering only matters for
 	  ;; `gnus-group-list', though we need to keep the dummy group
 	  ;; at the head of `gnus-newsrc-alist'.
@@ -1585,6 +1581,7 @@ backend check whether the group actually exists."
 (defun gnus-get-unread-articles (&optional level dont-connect one-level)
   (setq gnus-server-method-cache nil)
   (require 'gnus-agent)
+  (defvar gnus-agent-article-local-times)
   (let* ((newsrc (cdr gnus-newsrc-alist))
 	 (alevel (or level gnus-activate-level (1+ gnus-level-subscribed)))
 	 (foreign-level
@@ -1602,7 +1599,7 @@ backend check whether the group actually exists."
 	 (type-cache nil)
 	 (gnus-agent-article-local-times 0)
 	 (archive-method (gnus-server-to-method "archive"))
-	 infos info group active method cmethod
+	 info group active method cmethod
 	 method-type method-group-list entry)
     (gnus-message 6 "Checking new news...")
 
@@ -1666,7 +1663,7 @@ backend check whether the group actually exists."
     ;; aren't equal (and that need extension; i.e., they are async).
     (let ((methods nil))
       (dolist (elem type-cache)
-	(cl-destructuring-bind (method method-type infos dummy) elem
+	(cl-destructuring-bind (method _method-type infos _dummy) elem
 	  (let ((gnus-opened-servers methods))
 	    (when (and (gnus-similar-server-opened method)
 		       (gnus-check-backend-function
@@ -1689,7 +1686,7 @@ backend check whether the group actually exists."
 
     ;; Clear out all the early methods.
     (dolist (elem type-cache)
-      (cl-destructuring-bind (method method-type infos dummy) elem
+      (cl-destructuring-bind (method _method-type infos _dummy) elem
 	(when (and method
 		   infos
 		   (gnus-check-backend-function
@@ -1706,7 +1703,7 @@ backend check whether the group actually exists."
     (let ((done-methods nil)
 	  sanity-spec)
       (dolist (elem type-cache)
-	(cl-destructuring-bind (method method-type infos dummy) elem
+	(cl-destructuring-bind (method _method-type infos _dummy) elem
 	  (setq sanity-spec (list (car method) (cadr method)))
 	  (when (and method infos
 		     (not (gnus-method-denied-p method)))
@@ -1737,7 +1734,7 @@ backend check whether the group actually exists."
 
     ;; Do the rest of the retrieval.
     (dolist (elem type-cache)
-      (cl-destructuring-bind (method method-type infos early-data) elem
+      (cl-destructuring-bind (method _method-type infos early-data) elem
 	(when (and method infos
 		   (not (gnus-method-denied-p method)))
 	  (let ((updatep (gnus-check-backend-function
@@ -1822,19 +1819,19 @@ The info element is shared with the same element of
 		(if (equal (caar gnus-newsrc-alist)
 			   "dummy.group")
 		    gnus-newsrc-alist
-		  (cons (list "dummy.group" 0 nil) alist))))
+		  (cons (gnus-info-make "dummy.group" 0 nil) alist))))
     (while alist
       (setq info (car alist))
       ;; Make the same select-methods identical Lisp objects.
       (when (setq method (gnus-info-method info))
 	(if (setq rest (member method methods))
-	    (gnus-info-set-method info (car rest))
+	    (setf (gnus-info-method info) (car rest))
 	  (push method methods)))
       ;; Check for encoded group names and decode them.
-      (when (string-match-p "[^[:ascii:]]" (setq gname (car info)))
+      (when (string-match-p "[^[:ascii:]]" (setq gname (gnus-info-group info)))
 	(let ((decoded (gnus-group-decoded-name gname)))
 	 (setf gname decoded
-	       (car info) decoded)))
+	       (gnus-info-group info) decoded)))
       ;; Check for duplicates.
       (if (gethash gname gnus-newsrc-hashtb)
 	  ;; Remove this entry from the alist.
@@ -1857,15 +1854,13 @@ The info element is shared with the same element of
 
 (defun gnus-make-hashtable-from-killed ()
   "Create a hash table from the killed and zombie lists."
-  (let ((lists '(gnus-killed-list gnus-zombie-list))
-	list)
-    (setq gnus-killed-hashtb
-	  (gnus-make-hashtable
-	   (+ (length gnus-killed-list) (length gnus-zombie-list))))
-    (dolist (g (append gnus-killed-list gnus-zombie-list))
-      ;; NOTE: We have lost the ordering that used to be kept in this
-      ;; variable.
-      (puthash g t gnus-killed-hashtb))))
+  (setq gnus-killed-hashtb
+	(gnus-make-hashtable
+	 (+ (length gnus-killed-list) (length gnus-zombie-list))))
+  (dolist (g (append gnus-killed-list gnus-zombie-list))
+    ;; NOTE: We have lost the ordering that used to be kept in this
+    ;; variable.
+    (puthash g t gnus-killed-hashtb)))
 
 (defun gnus-parse-active ()
   "Parse active info in the nntp server buffer."
@@ -1890,8 +1885,8 @@ The info element is shared with the same element of
 	(push article news)))
     (when news
       ;; Enter this list into the group info.
-      (gnus-info-set-read
-       info (gnus-remove-from-range (gnus-info-read info) (nreverse news)))
+      (setf (gnus-info-read info)
+            (gnus-remove-from-range (gnus-info-read info) (nreverse news)))
 
       ;; Set the number of unread articles in gnus-newsrc-hashtb.
       (gnus-get-unread-articles-in-group info (gnus-active group))
@@ -1958,7 +1953,7 @@ The info element is shared with the same element of
       (when (eq modified 'remove-null)
         (setq r (delq nil r)))
       ;; Enter this list into the group info.
-      (gnus-info-set-read info r)
+      (setf (gnus-info-read info) r)
 
       ;; Set the number of unread articles in gnus-newsrc-hashtb.
       (gnus-get-unread-articles-in-group info (gnus-active group))
@@ -1982,7 +1977,7 @@ The info element is shared with the same element of
     (gnus-make-hashtable-from-killed))
   ;; Go through all newsgroups that are known to Gnus - enlarge kill list.
   (maphash
-   (lambda (g-name active)
+   (lambda (g-name _active)
      (let ((groups 0))
        (unless (or (gethash g-name gnus-killed-hashtb)
 		   (gethash g-name gnus-newsrc-hashtb))
@@ -2116,6 +2111,7 @@ The info element is shared with the same element of
      ((string= gnus-ignored-newsgroups "")
       (delete-matching-lines "^to\\."))
      (t
+      ;; relint suppression: Duplicated alternative branch
       (delete-matching-lines (concat "^to\\.\\|" gnus-ignored-newsgroups))))
 
     (goto-char (point-min))
@@ -2262,7 +2258,7 @@ If FORCE is non-nil, the .newsrc file is read."
       (gnus-convert-old-newsrc)
       (gnus-clean-old-newsrc))))
 
-(defun gnus-clean-old-newsrc (&optional force)
+(defun gnus-clean-old-newsrc (&optional _force)
   ;; Currently no cleanups.
   )
 
@@ -2354,7 +2350,7 @@ If FORCE is non-nil, the .newsrc file is read."
 	     no-prompt
 	   (funcall no-prompt)))))
 
-(defun gnus-convert-old-ticks (converting-to)
+(defun gnus-convert-old-ticks (_converting-to)
   (let ((newsrc (cdr gnus-newsrc-alist))
 	marks info dormant ticked)
     (while (setq info (pop newsrc))
@@ -2362,12 +2358,11 @@ If FORCE is non-nil, the .newsrc file is read."
 	(setq dormant (cdr (assq 'dormant marks))
 	      ticked (cdr (assq 'tick marks)))
 	(when (or dormant ticked)
-	  (gnus-info-set-read
-	   info
-	   (gnus-add-to-range
-	    (gnus-info-read info)
-	    (nconc (gnus-uncompress-range dormant)
-		   (gnus-uncompress-range ticked)))))))))
+	  (setf (gnus-info-read info)
+	        (gnus-add-to-range
+	         (gnus-info-read info)
+	         (nconc (gnus-uncompress-range dormant)
+		        (gnus-uncompress-range ticked)))))))))
 
 (defun gnus-load (file)
   "Load FILE, but in such a way that read errors can be reported."
@@ -2376,7 +2371,7 @@ If FORCE is non-nil, the .newsrc file is read."
     (while (not (eobp))
       (condition-case type
 	  (let ((form (read (current-buffer))))
-	    (eval form))
+	    (eval form t))
 	(error
 	 (unless (eq (car type) 'end-of-file)
 	   (let ((errmsg (format "Error in %s line %d" file
@@ -2438,9 +2433,9 @@ If FORCE is non-nil, the .newsrc file is read."
       (while (setq group (pop newsrc))
 	(if (setq info (gnus-get-info (car group)))
 	    (progn
-	      (gnus-info-set-read info (cddr group))
-	      (gnus-info-set-level
-	       info (if (nth 1 group) gnus-level-default-subscribed
+	      (setf (gnus-info-read info) (cddr group))
+	      (setf (gnus-info-level info)
+		    (if (nth 1 group) gnus-level-default-subscribed
 		      gnus-level-default-unsubscribed))
 	      (push info gnus-newsrc-alist))
 	  (push (setq info
@@ -2453,9 +2448,9 @@ If FORCE is non-nil, the .newsrc file is read."
 	(when (setq m (assoc (car group) marked))
 	  (unless (nthcdr 3 info)
 	    (nconc info (list nil)))
-	  (gnus-info-set-marks
-	   info (list (cons 'tick (gnus-compress-sequence
-				   (sort (cdr m) '<) t))))))
+	  (setf (gnus-info-marks info)
+		(list (cons 'tick (gnus-compress-sequence
+				   (sort (cdr m) #'<) t))))))
       (setq newsrc killed)
       (while newsrc
 	(setcar newsrc (caar newsrc))
@@ -2609,7 +2604,7 @@ If FORCE is non-nil, the .newsrc file is read."
 		;; There is an entry for this file in
 		;; `gnus-newsrc-hashtb'.
 		(progn
-		  (gnus-info-set-read info (nreverse reads))
+		  (setf (gnus-info-read info) (nreverse reads))
 		  ;; We update the level very gently.  In fact, we
 		  ;; only change it if there's been a status change
 		  ;; from subscribed to unsubscribed, or vice versa.
@@ -2621,7 +2616,7 @@ If FORCE is non-nil, the .newsrc file is read."
 				       (1+ gnus-level-default-unsubscribed))))
 			((and (> level gnus-level-subscribed) subscribed)
 			 (setq level gnus-level-default-subscribed)))
-		  (gnus-info-set-level info level))
+		  (setf (gnus-info-level info) level))
 	      ;; This is a new group.
 	      (setq info (list group
 			       (if subscribed
@@ -2743,15 +2738,15 @@ values from `gnus-newsrc-hashtb', and write a new value of
       (gnus-agent-save-local force))
 
     (save-excursion
-      (if (and (or gnus-use-dribble-file gnus-slave)
+      (if (and (or gnus-use-dribble-file gnus-child)
 	       (not force)
                (or (not (buffer-live-p gnus-dribble-buffer))
 		   (zerop (with-current-buffer gnus-dribble-buffer
 			    (buffer-size)))))
 	  (gnus-message 4 "(No changes need to be saved)")
 	(gnus-run-hooks 'gnus-save-newsrc-hook)
-	(if gnus-slave
-	    (gnus-slave-save-newsrc)
+	(if gnus-child
+	    (gnus-child-save-newsrc)
 	  ;; Save .newsrc only if the select method is an NNTP method.
 	  ;; The .newsrc file is for interoperability with other
 	  ;; newsreaders, so saving non-NNTP groups there doesn't make
@@ -2818,7 +2813,7 @@ values from `gnus-newsrc-hashtb', and write a new value of
                               (file-exists-p working-file)))
 
 		(unwind-protect
-                    (progn
+		    (with-file-modes (file-modes startup-file)
                       (gnus-with-output-to-file working-file
 			(gnus-gnus-to-quick-newsrc-format)
 			(gnus-run-hooks 'gnus-save-quick-newsrc-hook))
@@ -2828,14 +2823,12 @@ values from `gnus-newsrc-hashtb', and write a new value of
                       ;; file.
                       (let ((buffer-backed-up nil)
                             (buffer-file-name startup-file)
-                            (file-precious-flag t)
-                            (setmodes (file-modes startup-file)))
+			    (file-precious-flag t))
 			;; Backup the current version of the startup file.
 			(backup-buffer)
 
 			;; Replace the existing startup file with the temp file.
 			(rename-file working-file startup-file t)
-			(gnus-set-file-modes startup-file setmodes)
 			(setq gnus-save-newsrc-file-last-timestamp
 			      (file-attribute-modification-time
 			       (file-attributes startup-file)))))
@@ -2859,9 +2852,9 @@ Variables printed are either the variables specified in
 SPECIFIC-VARIABLES, or those in `gnus-variable-list'."
     (princ (format ";; -*- mode:emacs-lisp; coding: %s; -*-\n"
 		   gnus-ding-file-coding-system))
-    (if name
-	(princ (format ";; %s\n" name))
-      (princ ";; Gnus startup file.\n"))
+    (princ (if name
+	       (format ";; %s\n" name)
+	     ";; Gnus startup file.\n"))
 
     (unless minimal
       (princ "\
@@ -2877,7 +2870,6 @@ SPECIFIC-VARIABLES, or those in `gnus-variable-list'."
 		    (nth 1 (gethash g gnus-newsrc-hashtb)))
 		  (delete "dummy.group" gnus-group-list)))
     (let* ((print-quoted t)
-           (print-readably t)
            (print-escape-multibyte nil)
            (print-escape-nonascii t)
            (print-length nil)
@@ -2997,55 +2989,61 @@ SPECIFIC-VARIABLES, or those in `gnus-variable-list'."
 
 
 ;;;
-;;; Slave functions.
+;;; Child functions.
 ;;;
 
-(defvar gnus-slave-mode nil)
+(defvar gnus-child-mode nil)
 
-(defun gnus-slave-mode ()
-  "Minor mode for slave Gnusae."
-  ;; FIXME: gnus-slave-mode appears to never be set (i.e. it'll always be nil):
+(defun gnus-child-mode ()
+  "Minor mode for child Gnusae."
+  ;; FIXME: gnus-child-mode appears to never be set (i.e. it'll always be nil):
   ;; Remove, or fix and use define-minor-mode.
-  (add-minor-mode 'gnus-slave-mode " Slave" (make-sparse-keymap))
-  (gnus-run-hooks 'gnus-slave-mode-hook))
+  (add-minor-mode 'gnus-child-mode " Child" (make-sparse-keymap))
+  (gnus-run-hooks 'gnus-child-mode-hook))
 
-(defun gnus-slave-save-newsrc ()
+(define-obsolete-function-alias 'gnus-slave-mode #'gnus-child-mode "28.1")
+(define-obsolete-variable-alias 'gnus-slave-mode-hook 'gnus-child-mode-hook
+  "28.1")
+
+(defun gnus-child-save-newsrc ()
   (with-current-buffer gnus-dribble-buffer
-    (let ((slave-name
-	   (make-temp-file (concat gnus-current-startup-file "-slave-")))
-	  (modes (ignore-errors
-		   (file-modes (concat gnus-current-startup-file ".eld")))))
-      (let ((coding-system-for-write gnus-ding-file-coding-system))
-	(gnus-write-buffer slave-name))
-      (when modes
-	(gnus-set-file-modes slave-name modes)))))
+    (with-file-modes (or (ignore-errors
+			   (file-modes
+			    (concat gnus-current-startup-file ".eld")))
+			 (default-file-modes))
+      (let ((child-name
+	     (make-temp-file (concat gnus-current-startup-file "-child-"))))
+	(let ((coding-system-for-write gnus-ding-file-coding-system))
+	  (gnus-write-buffer child-name))))))
 
-(defun gnus-master-read-slave-newsrc ()
-  (let ((slave-files
+(defun gnus-parent-read-child-newsrc ()
+  (let ((child-files
 	 (directory-files
 	  (file-name-directory gnus-current-startup-file)
 	  t (concat
 	     "^" (regexp-quote
-		  (concat
-		   (file-name-nondirectory gnus-current-startup-file)
-		   "-slave-")))
+		  (file-name-nondirectory gnus-current-startup-file))
+	     ;; When the obsolete variables like
+	     ;; `gnus-slave-mode-hook' etc are removed, the "slave"
+	     ;; bit of this regexp should also be removed.
+	     "\\(-child-\\|-slave-\\)")
 	  t))
 	file)
-    (if (not slave-files)
-	()				; There are no slave files to read.
-      (gnus-message 7 "Reading slave newsrcs...")
-      (with-current-buffer (gnus-get-buffer-create " *gnus slave*")
-	(setq slave-files
+    (if (not child-files)
+	()				; There are no child files to read.
+      (gnus-message 7 "Reading child newsrcs...")
+      (with-current-buffer (gnus-get-buffer-create " *gnus child*")
+	(setq child-files
 	      (sort (mapcar (lambda (file)
 			      (list (file-attribute-modification-time
 				     (file-attributes file))
 				    file))
-			    slave-files)
+			    child-files)
 		    (lambda (f1 f2)
 		      (time-less-p (car f1) (car f2)))))
-	(while slave-files
+	(while child-files
 	  (erase-buffer)
-	  (setq file (nth 1 (car slave-files)))
+	  (setq file (nth 1 (car child-files)))
 	  (nnheader-insert-file-contents file)
 	  (when (condition-case ()
 		    (progn
@@ -3054,12 +3052,12 @@ SPECIFIC-VARIABLES, or those in `gnus-variable-list'."
 		  (error
 		   (gnus-error 3.2 "Possible error in %s" file)
 		   nil))
-	    (unless gnus-slave		; Slaves shouldn't delete these files.
+	    (unless gnus-child		; Children shouldn't delete these files.
 	      (ignore-errors
 		(delete-file file))))
-	  (setq slave-files (cdr slave-files))))
+	  (setq child-files (cdr child-files))))
       (gnus-dribble-touch)
-      (gnus-message 7 "Reading slave newsrcs...done"))))
+      (gnus-message 7 "Reading child newsrcs...done"))))
 
 
 ;;;

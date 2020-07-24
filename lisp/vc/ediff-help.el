@@ -1,6 +1,6 @@
 ;;; ediff-help.el --- Code related to the contents of Ediff help buffers  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1996-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1996-2020 Free Software Foundation, Inc.
 
 ;; Author: Michael Kifer <kifer@cs.stonybrook.edu>
 ;; Package: ediff
@@ -166,7 +166,7 @@ the value of this variable and the variables `ediff-help-message-*' in
       (setq beg (match-beginning 1)
 	    end (match-end 0)
 	    cmd (buffer-substring (match-beginning 1) (match-end 1)))
-      (setq overl (ediff-make-overlay beg end))
+      (setq overl (make-overlay beg end))
       (ediff-overlay-put overl 'mouse-face 'highlight)
       (ediff-overlay-put overl 'ediff-help-info cmd))))
 

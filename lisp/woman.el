@@ -1,12 +1,12 @@
 ;;; woman.el --- browse UN*X manual pages `wo (without) man'
 
-;; Copyright (C) 2000-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2000-2020 Free Software Foundation, Inc.
 
 ;; Author: Francis J. Wright <F.J.Wright@qmul.ac.uk>
 ;; Maintainer: emacs-devel@gnu.org
 ;; Keywords: help, unix
 ;; Adapted-By: Eli Zaretskii <eliz@gnu.org>
-;; Version: 0.551
+;; Old-Version: 0.551
 ;; URL: http://centaur.maths.qmul.ac.uk/Emacs/WoMan/
 
 ;; This file is part of GNU Emacs.
@@ -138,7 +138,7 @@
 ;; Customization, Hooks and Imenu
 ;; ==============================
 
-;; WoMan supports the GNU Emacs 20+ customization facility, and puts
+;; WoMan supports the GNU Emacs customization facility, and puts
 ;; a customization group called `WoMan' in the `Help' group under the
 ;; top-level `Emacs' group.  In order to be able to customize WoMan
 ;; without first loading it, add the following sexp to your .emacs:
@@ -401,6 +401,7 @@
 ;;; Code:
 
 (defvar woman-version "0.551 (beta)" "WoMan version information.")
+(make-obsolete-variable 'woman-version nil "28.1")
 
 (require 'man)
 (require 'button)
@@ -674,7 +675,7 @@ These normally have names of the form `man?'.  Its default value is
 \"[Mm][Aa][Nn]\", which is case-insensitive mainly for the benefit of
 Microsoft platforms.  Its purpose is to avoid `cat?', `.', `..', etc."
   ;; Based on a suggestion by Wei-Xue Shi.
-  :type 'string
+  :type 'regexp
   :group 'woman-interface)
 
 (defcustom woman-path
@@ -753,7 +754,7 @@ Default is t."
 An alist with elements of the form (MENU-TITLE REGEXP INDEX) --
 see the documentation for `imenu-generic-expression'."
   :type '(alist :key-type (choice :tag "Title" (const nil) string)
-                :value-type (group (choice (string :tag "Regexp")
+                :value-type (group (choice (regexp :tag "Regexp")
                                            function)
                                    integer))
   :group 'woman-interface)
@@ -1830,7 +1831,6 @@ Argument EVENT is the invoking mouse event."
    ["Mini Help" woman-mini-help t]
    ,@(if (fboundp 'customize-group)
 	 '(["Customize..." (customize-group 'woman) t]))
-   ["Show Version" (message "WoMan %s" woman-version) t]
    "--"
    ("Advanced"
     ["View Source" (view-file woman-last-file-name) woman-last-file-name]
@@ -1878,7 +1878,6 @@ Argument EVENT is the invoking mouse event."
 WoMan is an ELisp emulation of much of the functionality of the Emacs
 `man' command running the standard UN*X man and ?roff programs.
 WoMan author: F.J.Wright@Maths.QMW.ac.uk
-WoMan version: see `woman-version'.
 See `Man-mode' for additional details.
 \\{woman-mode-map}"
   (let ((Man-build-page-list (symbol-function 'Man-build-page-list))

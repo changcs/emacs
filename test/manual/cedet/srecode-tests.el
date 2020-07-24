@@ -1,6 +1,6 @@
 ;;; srecode-tests.el --- Some tests for CEDET's srecode
 
-;; Copyright (C) 2008-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2008-2020 Free Software Foundation, Inc.
 
 ;; Author: Eric M. Ludlam <zappo@gnu.org>
 
@@ -39,9 +39,7 @@ It is filled with some text."
 (defun srecode-field-utest ()
   "Test the srecode field manager."
   (interactive)
-  (if (featurep 'xemacs)
-      (message "There is no XEmacs support for SRecode Fields.")
-    (srecode-field-utest-impl)))
+  (srecode-field-utest-impl))
 
 (defun srecode-field-utest-impl ()
   "Implementation of the SRecode field utest."
@@ -245,7 +243,7 @@ It is filled with some text."
 
 ;;; From srecode-document:
 
-(require 'srecode/doc)
+(require 'srecode/document)
 
 (defun srecode-document-function-comment-extract-test ()
   "Test old comment extraction.

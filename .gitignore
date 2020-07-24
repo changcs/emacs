@@ -1,6 +1,6 @@
 # Files that Git should ignore in the Emacs source directory.
 
-# Copyright 2009-2019 Free Software Foundation, Inc.
+# Copyright 2009-2020 Free Software Foundation, Inc.
 
 # This file is part of GNU Emacs.
 
@@ -60,6 +60,7 @@ lib/execinfo.h
 lib/fcntl.h
 lib/getopt.h
 lib/getopt-cdefs.h
+lib/gmp.h
 lib/ieee754.h
 lib/inttypes.h
 lib/libgnu.a
@@ -135,6 +136,7 @@ src/gl-stamp
 *.o
 *.res
 *.so
+*.dylib
 core
 core.*[0-9]
 gmon.out
@@ -251,7 +253,6 @@ gnustmp*
 
 # Version control and locks.
 *.orig
-*.rej
 *.swp
 *~
 .#*

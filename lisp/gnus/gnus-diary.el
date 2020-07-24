@@ -1,6 +1,6 @@
 ;;; gnus-diary.el --- Wrapper around the NNDiary Gnus back end
 
-;; Copyright (C) 1999-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1999-2020 Free Software Foundation, Inc.
 
 ;; Author:        Didier Verna <didier@didierverna.net>
 ;; Created:       Tue Jul 20 10:42:55 1999
@@ -64,7 +64,7 @@ Please refer to `format-time-string' for information on possible values."
   "Function called to format a diary delay string.
 It is passed two arguments.  The first one is non-nil if the delay is in
 the past.  The second one is of the form ((NUM . UNIT) ...) where NUM is
-an integer and UNIT is one of 'year 'month 'week 'day 'hour or 'minute.
+an integer and UNIT is one of `year' `month' `week' `day' `hour' or `minute'.
 It should return strings like \"In 2 months, 3 weeks\", \"3 hours,
 1 minute ago\" and so on.
 

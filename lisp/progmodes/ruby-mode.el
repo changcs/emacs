@@ -1,6 +1,6 @@
 ;;; ruby-mode.el --- Major mode for editing Ruby files -*- lexical-binding: t -*-
 
-;; Copyright (C) 1994-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1994-2020 Free Software Foundation, Inc.
 
 ;; Authors: Yukihiro Matsumoto
 ;;	Nobuyoshi Nakada
@@ -801,7 +801,7 @@ The style of the comment is controlled by `ruby-encoding-magic-comment-style'."
       (let ((coding-system (ruby--detect-encoding)))
         (when coding-system
           (if (looking-at "^#!") (beginning-of-line 2))
-          (cond ((looking-at "\\s *#\\s *.*\\(en\\)?coding\\s *:\\s *\\([-a-z0-9_]*\\)")
+          (cond ((looking-at "\\s *#.*\\(en\\)?coding\\s *:\\s *\\([-a-z0-9_]*\\)")
                  ;; update existing encoding comment if necessary
                  (unless (string= (match-string 2) coding-system)
                    (goto-char (match-beginning 2))
@@ -1807,9 +1807,9 @@ If the result is do-end block, it will always be multiline."
 (defun ruby-find-library-file (&optional feature-name)
   "Visit a library file denoted by FEATURE-NAME.
 FEATURE-NAME is a relative file name, file extension is optional.
-This commands delegates to 'gem which', which searches both
+This commands delegates to `gem which', which searches both
 installed gems and the standard library.  When called
-interactively, defaults to the feature name in the 'require'
+interactively, defaults to the feature name in the `require'
 statement around point."
   (interactive)
   (unless feature-name

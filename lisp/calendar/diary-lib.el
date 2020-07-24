@@ -1,6 +1,6 @@
 ;;; diary-lib.el --- diary functions  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1989-1990, 1992-1995, 2001-2019 Free Software
+;; Copyright (C) 1989-1990, 1992-1995, 2001-2020 Free Software
 ;; Foundation, Inc.
 
 ;; Author: Edward M. Reingold <reingold@cs.uiuc.edu>
@@ -98,7 +98,7 @@ specifies which face attribute (e.g. `:foreground') to modify, or
 that this is a face (`:face') to apply.  TYPE is the type of
 attribute being applied.  Available TYPES (see `diary-attrtype-convert')
 are: `string', `symbol', `int', `tnil', `stringtnil'."
-  :type '(repeat (list (string :tag "Regular expression")
+  :type '(repeat (list (regexp :tag "Regular expression")
                        (integer :tag "Sub-expression")
                        (symbol :tag "Attribute (e.g. :foreground)")
                        (choice (const string :tag "A string")
@@ -214,7 +214,10 @@ you will probably also want to add `diary-include-other-diary-files' to
 This hook runs after `diary-nongregorian-marking-hook'.  These two hooks
 differ only if you are using included diary files.  In that case,
 `diary-nongregorian-marking-hook' runs for each file, whereas
-`diary-mark-entries-hook' only runs once, for the main diary file."
+`diary-mark-entries-hook' only runs once, for the main diary file.
+
+`displayed-year' and `displayed-month' are dynamically bound when
+this hook is called."
   :type 'hook
   :options '(diary-mark-included-diary-files)
   :group 'diary)

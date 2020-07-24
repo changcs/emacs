@@ -1,6 +1,6 @@
 ;;; custom.el --- tools for declaring and initializing options  -*- lexical-binding: t -*-
 ;;
-;; Copyright (C) 1996-1997, 1999, 2001-2019 Free Software Foundation,
+;; Copyright (C) 1996-1997, 1999, 2001-2020 Free Software Foundation,
 ;; Inc.
 ;;
 ;; Author: Per Abrahamsen <abraham@dina.kvl.dk>
@@ -339,7 +339,7 @@ _outside_ any bindings for these variables.  (`defvar' and
 This macro calls `custom-declare-variable'.  If you want to
 programmatically alter a customizable variable (for instance, to
 write a package that extends the syntax of a variable), you can
-call that functcion directly.
+call that function directly.
 
 See Info node `(elisp) Customization' in the Emacs Lisp manual
 for more information."
@@ -886,7 +886,10 @@ See `custom-known-themes' for a list of known themes."
 	(put theme 'theme-settings
 	     (cons (list prop symbol theme value)
 		   (delq res theme-settings)))
-	(setcar (cdr setting) value)))
+        ;; It's tempting to use setcar here, but that could
+        ;; inadvertently modify other properties in SYMBOL's proplist,
+        ;; if those just happen to share elements with the value of PROP.
+        (put symbol prop (cons (list theme value) (delq setting old)))))
      ;; Add a new setting:
      (t
       (when (custom--should-apply-setting theme)
@@ -1378,7 +1381,7 @@ function runs.  To disable other themes, use `disable-theme'."
 	    (custom-theme-recalc-variable symbol)))))))
   (unless (eq theme 'user)
     (setq custom-enabled-themes
-	  (cons theme (delq theme custom-enabled-themes)))
+	  (cons theme (remq theme custom-enabled-themes)))
     ;; Give the `user' theme the highest priority.
     (enable-theme 'user)))
 

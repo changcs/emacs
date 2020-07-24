@@ -1,6 +1,6 @@
 ;;; reftex-ref.el --- code to create labels and references with RefTeX
 
-;; Copyright (C) 1997-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1997-2020 Free Software Foundation, Inc.
 
 ;; Author: Carsten Dominik <dominik@science.uva.nl>
 ;; Maintainer: auctex-devel@gnu.org
@@ -841,7 +841,8 @@ Replace any occurrences of \"\\ref\" with REFSTYLE."
   ;; Replace instances of \ref in `fmt' with the special reference
   ;; style selected by the user.
   (cond
-   ((while (string-match "\\(\\\\ref\\)[ \t]*{" fmt)
+   ((while (let ((case-fold-search nil))
+             (string-match "\\(\\\\ref\\)[ \t]*{" fmt))
       (setq fmt (replace-match refstyle t t fmt 1))))
    ((string-match "\\(\\\\[[:alpha:]]+\\)[ \t]*{" fmt)
     (setq fmt (replace-match refstyle t t fmt 1))))

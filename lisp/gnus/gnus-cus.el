@@ -1,6 +1,6 @@
 ;;; gnus-cus.el --- customization commands for Gnus
 
-;; Copyright (C) 1996, 1999-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1996, 1999-2020 Free Software Foundation, Inc.
 
 ;; Author: Per Abrahamsen <abraham@dina.kvl.dk>
 ;; Keywords: news
@@ -257,7 +257,7 @@ Server-assigned value attached to IMAP groups, used to maintain consistency.")
     (modseq (choice :tag "modseq"
 		    (const :tag "None" nil)
 		    (string :tag "Sequence number"))
-	    "Modification seqence number")
+	    "Modification sequence number")
     (active (cons :tag "active" (integer :tag "min") (integer :tag "max"))
 	    "active")
     (permanent-flags (repeat :tag "Permanent Flags" (symbol :tag "Flag"))
@@ -421,11 +421,6 @@ category."))
 	    (delq elem tmp))
 	  (setq tmp (cdr tmp))))
 
-      ;; Decode values posting-style holds.
-      (dolist (style (cdr (assq 'posting-style values)))
-	(when (stringp (cadr style))
-	  (setcdr style (list (decode-coding-string (cadr style) 'utf-8)))))
-
       (setq gnus-custom-params
             (apply 'widget-create 'group
                    :value values
@@ -497,10 +492,6 @@ form, but who cares?"
   "Apply changes and bury the buffer."
   (interactive)
   (let ((params (widget-value gnus-custom-params)))
-    ;; Encode values posting-style holds.
-    (dolist (style (cdr (assq 'posting-style params)))
-      (when (stringp (cadr style))
-	(setcdr style (list (encode-coding-string (cadr style) 'utf-8)))))
     (if gnus-custom-topic
 	(gnus-topic-set-parameters gnus-custom-topic params)
       (gnus-group-edit-group-done 'params gnus-custom-group params)

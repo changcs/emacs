@@ -1,6 +1,6 @@
 ;;; align.el --- align text to a specific column, by regexp -*- lexical-binding:t -*-
 
-;; Copyright (C) 1999-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1999-2020 Free Software Foundation, Inc.
 
 ;; Author: John Wiegley <johnw@gnu.org>
 ;; Maintainer: emacs-devel@gnu.org
@@ -129,6 +129,8 @@
   "Hook that gets run after the aligner has been loaded."
   :type 'hook
   :group 'align)
+(make-obsolete-variable 'align-load-hook
+                        "use `with-eval-after-load' instead." "28.1")
 
 (defcustom align-indent-before-aligning nil
   "If non-nil, indent the marked region before aligning it."
@@ -206,7 +208,7 @@ If nil, then no messages will ever be printed to the minibuffer."
 
 (defcustom align-dq-string-modes
   (append align-lisp-modes align-c++-modes align-perl-modes
-	  '(python-mode))
+          '(python-mode vhdl-mode))
   "A list of modes where double quoted strings should be excluded."
   :type '(repeat symbol)
   :group 'align)
@@ -219,7 +221,7 @@ If nil, then no messages will ever be printed to the minibuffer."
 
 (defcustom align-open-comment-modes
   (append align-lisp-modes align-c++-modes align-perl-modes
-	  '(python-mode makefile-mode))
+          '(python-mode makefile-mode vhdl-mode))
   "A list of modes with a single-line comment syntax.
 These are comments as in Lisp, which have a beginning, but end with
 the line (i.e., `comment-end' is an empty string)."
@@ -259,7 +261,7 @@ The possible settings for `align-region-separate' are:
  `group'   Each contiguous set of lines where a specific alignment
 	   occurs is considered a section for that alignment rule.
 	   Note that each rule may have any entirely different set
-           of section divisions than another.
+           of section divisions from another.
 
 	     int    alpha = 1; /* one */
 	     double beta  = 2.0;
@@ -805,9 +807,7 @@ See the variable `align-exclude-rules-list' for more details.")
 (defvar align-regexp-history nil
   "Input history for the full user-entered regex in `align-regexp'")
 
-;; Sample extension rule set, for vhdl-mode.  This should properly be
-;; in vhdl-mode.el itself.
-
+;; Sample extension rule set for vhdl-mode.  This is now obsolete.
 (defcustom align-vhdl-rules-list
   `((vhdl-declaration
      (regexp   . "\\(signal\\|variable\\|constant\\)\\(\\s-+\\)\\S-")
@@ -842,17 +842,13 @@ See the variable `align-exclude-rules-list' for more details.")
   "Alignment rules for `vhdl-mode'.  See `align-rules-list' for more info."
   :type align-rules-list-type
   :group 'align)
-
 (put 'align-vhdl-rules-list 'risky-local-variable t)
+(make-obsolete-variable 'align-vhdl-rules-list "no longer used." "27.1")
 
 (defun align-set-vhdl-rules ()
   "Setup the `align-mode-rules-list' variable for `vhdl-mode'."
+  (declare (obsolete nil "27.1"))
   (setq align-mode-rules-list align-vhdl-rules-list))
-
-(add-hook 'vhdl-mode-hook 'align-set-vhdl-rules)
-
-(add-to-list 'align-dq-string-modes 'vhdl-mode)
-(add-to-list 'align-open-comment-modes 'vhdl-mode)
 
 ;;; User Functions:
 

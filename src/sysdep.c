@@ -1,5 +1,5 @@
 /* Interfaces to system-dependent kernel and library entries.
-   Copyright (C) 1985-1988, 1993-1995, 1999-2019 Free Software
+   Copyright (C) 1985-1988, 1993-1995, 1999-2020 Free Software
    Foundation, Inc.
 
 This file is part of GNU Emacs.
@@ -27,6 +27,7 @@ along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 #endif /* HAVE_PWD_H */
 #include <limits.h>
 #include <stdlib.h>
+#include <sys/random.h>
 #include <unistd.h>
 
 #include <c-ctype.h>
@@ -115,16 +116,6 @@ along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 #include "process.h"
 #include "cm.h"
 
-#include "gnutls.h"
-/* MS-Windows loads GnuTLS at run time, if available; we don't want to
-   do that during startup just to call gnutls_rnd.  */
-#if defined HAVE_GNUTLS && !defined WINDOWSNT
-# include <gnutls/crypto.h>
-#else
-# define emacs_gnutls_global_init() Qnil
-# define gnutls_rnd(level, data, len) (-1)
-#endif
-
 #ifdef WINDOWSNT
 # include <direct.h>
 /* In process.h which conflicts with the local copy.  */
@@ -133,11 +124,6 @@ int _cdecl _spawnlp (int, const char *, const char *, ...);
 /* The following is needed for O_CLOEXEC, F_SETFD, FD_CLOEXEC, and
    several prototypes of functions called below.  */
 # include <sys/socket.h>
-#endif
-
-/* ULLONG_MAX is missing on Red Hat Linux 7.3; see Bug#11781.  */
-#ifndef ULLONG_MAX
-#define ULLONG_MAX TYPE_MAXIMUM (unsigned long long int)
 #endif
 
 /* Declare here, including term.h is problematic on some systems.  */
@@ -158,14 +144,17 @@ static int exec_personality;
 /* Try to disable randomization if the current process needs it and
    does not appear to have it already.  */
 int
-maybe_disable_address_randomization (bool dumping, int argc, char **argv)
+maybe_disable_address_randomization (int argc, char **argv)
 {
   /* Undocumented Emacs option used only by this function.  */
   static char const aslr_disabled_option[] = "--__aslr-disabled";
 
   if (argc < 2 || strcmp (argv[1], aslr_disabled_option) != 0)
     {
-      bool disable_aslr = dumping;
+      /* If dumping via unexec, ASLR must be disabled, as otherwise
+	 data may be scattered and undumpable as a simple executable.
+	 If pdumping, disabling ASLR lessens differences in the .pdmp file.  */
+      bool disable_aslr = will_dump_p ();
 # ifdef __PPC64__
       disable_aslr = true;
 # endif
@@ -201,6 +190,7 @@ maybe_disable_address_randomization (bool dumping, int argc, char **argv)
 }
 #endif
 
+#ifndef WINDOWSNT
 /* Execute the program in FILE, with argument vector ARGV and environ
    ENVP.  Return an error number if unsuccessful.  This is like execve
    except it reenables ASLR in the executed program if necessary, and
@@ -216,6 +206,8 @@ emacs_exec_file (char const *file, char *const *argv, char *const *envp)
   execve (file, argv, envp);
   return errno;
 }
+
+#endif	/* !WINDOWSNT */
 
 /* If FD is not already open, arrange for it to be open with FLAGS.  */
 static void
@@ -314,8 +306,8 @@ get_current_dir_name_or_unreachable (void)
   if (pwd
       && (pwdlen = strnlen (pwd, bufsize_max)) < bufsize_max
       && IS_DIRECTORY_SEP (pwd[pwdlen && IS_DEVICE_SEP (pwd[1]) ? 2 : 0])
-      && stat (pwd, &pwdstat) == 0
-      && stat (".", &dotstat) == 0
+      && emacs_fstatat (AT_FDCWD, pwd, &pwdstat, 0) == 0
+      && emacs_fstatat (AT_FDCWD, ".", &dotstat, 0) == 0
       && dotstat.st_ino == pwdstat.st_ino
       && dotstat.st_dev == pwdstat.st_dev)
     {
@@ -2277,9 +2269,7 @@ init_signals (void)
 typedef unsigned int random_seed;
 static void set_random_seed (random_seed arg) { srandom (arg); }
 #elif defined HAVE_LRAND48
-/* Although srand48 uses a long seed, this is unsigned long to avoid
-   undefined behavior on signed integer overflow in init_random.  */
-typedef unsigned long int random_seed;
+typedef long int random_seed;
 static void set_random_seed (random_seed arg) { srand48 (arg); }
 #else
 typedef unsigned int random_seed;
@@ -2306,23 +2296,14 @@ init_random (void)
   /* First, try seeding the PRNG from the operating system's entropy
      source.  This approach is both fast and secure.  */
 #ifdef WINDOWSNT
+  /* FIXME: Perhaps getrandom can be used here too?  */
   success = w32_init_random (&v, sizeof v) == 0;
 #else
-  int fd = emacs_open ("/dev/urandom", O_RDONLY, 0);
-  if (0 <= fd)
-    {
-      success = emacs_read (fd, &v, sizeof v) == sizeof v;
-      close (fd);
-    }
+  verify (sizeof v <= 256);
+  success = getrandom (&v, sizeof v, 0) == sizeof v;
 #endif
 
-  /* If that didn't work, try using GnuTLS, which is secure, but on
-     some systems, can be somewhat slow.  */
-  if (!success)
-    success = EQ (emacs_gnutls_global_init (), Qt)
-      && gnutls_rnd (GNUTLS_RND_NONCE, &v, sizeof v) == 0;
-
-  /* If _that_ didn't work, just use the current time value and PID.
+  /* If that didn't work, just use the current time value and PID.
      It's at least better than XKCD 221.  */
   if (!success)
     {
@@ -2451,7 +2432,27 @@ emacs_abort (void)
 }
 #endif
 
-/* Open FILE for Emacs use, using open flags OFLAG and mode MODE.
+/* Assuming the directory DIRFD, store information about FILENAME into *ST,
+   using FLAGS to control how the status is obtained.
+   Do not fail merely because fetching info was interrupted by a signal.
+   Allow the user to quit.
+
+   The type of ST is void * instead of struct stat * because the
+   latter type would be problematic in lisp.h.  Some platforms may
+   play tricks like "#define stat stat64" in <sys/stat.h>, and lisp.h
+   does not include <sys/stat.h>.  */
+
+int
+emacs_fstatat (int dirfd, char const *filename, void *st, int flags)
+{
+  int r;
+  while ((r = fstatat (dirfd, filename, st, flags)) != 0 && errno == EINTR)
+    maybe_quit ();
+  return r;
+}
+
+/* Assuming the directory DIRFD, open FILE for Emacs use,
+   using open flags OFLAGS and mode MODE.
    Use binary I/O on systems that care about text vs binary I/O.
    Arrange for subprograms to not inherit the file descriptor.
    Prefer a method that is multithread-safe, if available.
@@ -2459,15 +2460,21 @@ emacs_abort (void)
    Allow the user to quit.  */
 
 int
-emacs_open (const char *file, int oflags, int mode)
+emacs_openat (int dirfd, char const *file, int oflags, int mode)
 {
   int fd;
   if (! (oflags & O_TEXT))
     oflags |= O_BINARY;
   oflags |= O_CLOEXEC;
-  while ((fd = open (file, oflags, mode)) < 0 && errno == EINTR)
+  while ((fd = openat (dirfd, file, oflags, mode)) < 0 && errno == EINTR)
     maybe_quit ();
   return fd;
+}
+
+int
+emacs_open (char const *file, int oflags, int mode)
+{
+  return emacs_openat (AT_FDCWD, file, oflags, mode);
 }
 
 /* Open FILE as a stream for Emacs use, with mode MODE.
@@ -2728,21 +2735,6 @@ emacs_perror (char const *message)
   errno = err;
 }
 
-/* Set the access and modification time stamps of FD (a.k.a. FILE) to be
-   ATIME and MTIME, respectively.
-   FD must be either negative -- in which case it is ignored --
-   or a file descriptor that is open on FILE.
-   If FD is nonnegative, then FILE can be NULL.  */
-int
-set_file_times (int fd, const char *filename,
-		struct timespec atime, struct timespec mtime)
-{
-  struct timespec timespec[2];
-  timespec[0] = atime;
-  timespec[1] = mtime;
-  return fdutimens (fd, filename, timespec);
-}
-
 /* Rename directory SRCFD's entry SRC to directory DSTFD's entry DST.
    This is like renameat except that it fails if DST already exists,
    or if this operation is not supported atomically.  Return 0 if
@@ -3138,7 +3130,7 @@ make_lisp_timeval (struct timeval t)
 
 #endif
 
-#if defined GNU_LINUX && defined HAVE_LONG_LONG_INT
+#ifdef GNU_LINUX
 static struct timespec
 time_from_jiffies (unsigned long long tval, long hz)
 {
@@ -4124,14 +4116,20 @@ str_collate (Lisp_Object s1, Lisp_Object s2,
   len = SCHARS (s1); i = i_byte = 0;
   SAFE_NALLOCA (p1, 1, len + 1);
   while (i < len)
-    FETCH_STRING_CHAR_ADVANCE (*(p1+i-1), s1, i, i_byte);
-  *(p1+len) = 0;
+    {
+      wchar_t *p = &p1[i];
+      *p = fetch_string_char_advance (s1, &i, &i_byte);
+    }
+  p1[len] = 0;
 
   len = SCHARS (s2); i = i_byte = 0;
   SAFE_NALLOCA (p2, 1, len + 1);
   while (i < len)
-    FETCH_STRING_CHAR_ADVANCE (*(p2+i-1), s2, i, i_byte);
-  *(p2+len) = 0;
+    {
+      wchar_t *p = &p2[i];
+      *p = fetch_string_char_advance (s2, &i, &i_byte);
+    }
+  p2[len] = 0;
 
   if (STRINGP (locale))
     {

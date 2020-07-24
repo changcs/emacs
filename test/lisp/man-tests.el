@@ -1,6 +1,6 @@
-;;; man-tests.el --- Test suite for man.
+;;; man-tests.el --- Test suite for man.  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2013-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2013-2020 Free Software Foundation, Inc.
 
 ;; Author: Wolfgang Jenkner <wjenkner@inode.at>
 ;; Keywords: help, internal, unix
@@ -114,7 +114,7 @@ in the cdr of the element.")
   (dolist (test man-tests-parse-man-k-tests)
     (should (man-tests-parse-man-k-test-case test))))
 
-(defun man-tests-filter-strings (buffer strings)
+(defun man-tests-filter-strings (_buffer strings)
   "Run `Man-bgproc-filter' on each of STRINGS.
 The formatted result will be inserted into BUFFER."
   (let ((proc (start-process "dummy man-tests proc" (current-buffer) "cat")))

@@ -1,5 +1,5 @@
 /* Coding system handler (conversion, detection, etc).
-   Copyright (C) 2001-2019 Free Software Foundation, Inc.
+   Copyright (C) 2001-2020 Free Software Foundation, Inc.
    Copyright (C) 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004,
      2005, 2006, 2007, 2008, 2009, 2010, 2011
      National Institute of Advanced Industrial Science and Technology (AIST)
@@ -643,7 +643,7 @@ growable_destination (struct coding_system *coding)
 	else						\
 	  {						\
 	    src--;					\
-	    c = - string_char (src, &src, NULL);	\
+	    c = - string_char_advance (&src);		\
 	    record_conversion_result			\
 	      (coding, CODING_RESULT_INVALID_SRC);	\
 	  }						\
@@ -728,7 +728,7 @@ growable_destination (struct coding_system *coding)
 	unsigned ch = (c);		\
 	if (ch >= 0x80)			\
 	  ch = BYTE8_TO_CHAR (ch);	\
-	CHAR_STRING_ADVANCE (ch, dst);	\
+	dst += CHAR_STRING (ch, dst);	\
       }					\
     else				\
       *dst++ = (c);			\
@@ -747,11 +747,11 @@ growable_destination (struct coding_system *coding)
 	ch = (c1);			\
 	if (ch >= 0x80)			\
 	  ch = BYTE8_TO_CHAR (ch);	\
-	CHAR_STRING_ADVANCE (ch, dst);	\
+	dst += CHAR_STRING (ch, dst);	\
 	ch = (c2);			\
 	if (ch >= 0x80)			\
 	  ch = BYTE8_TO_CHAR (ch);	\
-	CHAR_STRING_ADVANCE (ch, dst);	\
+	dst += CHAR_STRING (ch, dst);	\
       }					\
     else				\
       {					\
@@ -884,18 +884,18 @@ record_conversion_result (struct coding_system *coding,
 
 
 /* Store multibyte form of the character C in P, and advance P to the
-   end of the multibyte form.  This used to be like CHAR_STRING_ADVANCE
+   end of the multibyte form.  This used to be like adding CHAR_STRING
    without ever calling MAYBE_UNIFY_CHAR, but nowadays we don't call
-   MAYBE_UNIFY_CHAR in CHAR_STRING_ADVANCE.  */
+   MAYBE_UNIFY_CHAR in CHAR_STRING.  */
 
-#define CHAR_STRING_ADVANCE_NO_UNIFY(c, p)  CHAR_STRING_ADVANCE(c, p)
+#define CHAR_STRING_ADVANCE_NO_UNIFY(c, p) ((p) += CHAR_STRING (c, p))
 
 /* Return the character code of character whose multibyte form is at
    P, and advance P to the end of the multibyte form.  This used to be
-   like STRING_CHAR_ADVANCE without ever calling MAYBE_UNIFY_CHAR, but
-   nowadays STRING_CHAR_ADVANCE doesn't call MAYBE_UNIFY_CHAR.  */
+   like string_char_advance without ever calling MAYBE_UNIFY_CHAR, but
+   nowadays string_char_advance doesn't call MAYBE_UNIFY_CHAR.  */
 
-#define STRING_CHAR_ADVANCE_NO_UNIFY(p) STRING_CHAR_ADVANCE(p)
+#define STRING_CHAR_ADVANCE_NO_UNIFY(p) string_char_advance (&(p))
 
 /* Set coding->source from coding->src_object.  */
 
@@ -5131,7 +5131,7 @@ decode_coding_ccl (struct coding_system *coding)
 	  while (i < 1024 && p < src_end)
 	    {
 	      source_byteidx[i] = p - src;
-	      source_charbuf[i++] = STRING_CHAR_ADVANCE (p);
+	      source_charbuf[i++] = string_char_advance (&p);
 	    }
 	  source_byteidx[i] = p - src;
 	}
@@ -5308,15 +5308,10 @@ encode_coding_raw_text (struct coding_system *coding)
 	      }
 	    else
 	      {
-		unsigned char str[MAX_MULTIBYTE_LENGTH], *p0 = str, *p1 = str;
-
-		CHAR_STRING_ADVANCE (c, p1);
-		do
-		  {
-		    EMIT_ONE_BYTE (*p0);
-		    p0++;
-		  }
-		while (p0 < p1);
+		unsigned char str[MAX_MULTIBYTE_LENGTH];
+		int len = CHAR_STRING (c, str);
+		for (int i = 0; i < len; i++)
+		  EMIT_ONE_BYTE (str[i]);
 	      }
 	  }
       else
@@ -5342,7 +5337,7 @@ encode_coding_raw_text (struct coding_system *coding)
 	      else if (CHAR_BYTE8_P (c))
 		*dst++ = CHAR_TO_BYTE8 (c);
 	      else
-		CHAR_STRING_ADVANCE (c, dst);
+		dst += CHAR_STRING (c, dst);
 	    }
 	}
       else
@@ -6353,11 +6348,15 @@ utf8_string_p (Lisp_Object string)
 }
 
 /* Like make_string, but always returns a multibyte Lisp string, and
-   avoids decoding if TEXT encoded in UTF-8.  */
-
+   avoids decoding if TEXT is encoded in UTF-8.  */
 Lisp_Object
 make_string_from_utf8 (const char *text, ptrdiff_t nbytes)
 {
+#if 0
+  /* This method is on average 2 times slower than if we use
+     decode_string_utf_8.  However, please leave the slower
+     implementation in the code for now, in case it needs to be reused
+     in some situations.  */
   ptrdiff_t chars, bytes;
   parse_str_as_multibyte ((const unsigned char *) text, nbytes,
 			  &chars, &bytes);
@@ -6374,6 +6373,9 @@ make_string_from_utf8 (const char *text, ptrdiff_t nbytes)
       decode_coding_object (&coding, Qnil, 0, 0, nbytes, nbytes, Qt);
       return coding.dst_object;
     }
+#else
+  return decode_string_utf_8 (Qnil, text, nbytes, Qnil, false, Qt, Qt);
+#endif
 }
 
 /* Detect how end-of-line of a text of length SRC_BYTES pointed by
@@ -7326,7 +7328,7 @@ produce_annotation (struct coding_system *coding, ptrdiff_t pos)
    the text from the end of the gap (and GPT must be equal to PT).
 
    When the text is taken from the gap, it can't be at the beginning
-   of the gap because the new decoded text is progressively acumulated
+   of the gap because the new decoded text is progressively accumulated
    at the beginning of the gap before it gets inserted at PT (this way,
    as the output grows, the input shrinks, so we only need to allocate
    enough space for `max(IN, OUT)` instead of `IN + OUT`).
@@ -7450,7 +7452,7 @@ decode_coding (struct coding_system *coding)
 	      if (coding->src_multibyte
 		  && CHAR_BYTE8_HEAD_P (*src) && nbytes > 0)
 		{
-		  c = STRING_CHAR_ADVANCE (src);
+		  c = string_char_advance (&src);
 		  nbytes--;
 		}
 	      else
@@ -7544,10 +7546,8 @@ handle_composition_annotation (ptrdiff_t pos, ptrdiff_t limit,
 		  len = SCHARS (components);
 		  i = i_byte = 0;
 		  while (i < len)
-		    {
-		      FETCH_STRING_CHAR_ADVANCE (*buf, components, i, i_byte);
-		      buf++;
-		    }
+		    *buf++ = fetch_string_char_advance (components,
+							&i, &i_byte);
 		}
 	      else if (FIXNUMP (components))
 		{
@@ -7670,15 +7670,17 @@ consume_chars (struct coding_system *coding, Lisp_Object translation_table,
 
       if (! multibytep)
 	{
-	  int bytes;
-
 	  if (coding->encoder == encode_coding_raw_text
 	      || coding->encoder == encode_coding_ccl)
 	    c = *src++, pos++;
-	  else if ((bytes = MULTIBYTE_LENGTH (src, src_end)) > 0)
-	    c = STRING_CHAR_ADVANCE_NO_UNIFY (src), pos += bytes;
 	  else
-	    c = BYTE8_TO_CHAR (*src), src++, pos++;
+	    {
+	      int bytes = multibyte_length (src, src_end, true, true);
+	      if (0 < bytes)
+		c = STRING_CHAR_ADVANCE_NO_UNIFY (src), pos += bytes;
+	      else
+		c = BYTE8_TO_CHAR (*src), src++, pos++;
+	    }
 	}
       else
 	c = STRING_CHAR_ADVANCE_NO_UNIFY (src), pos++;
@@ -7708,7 +7710,7 @@ consume_chars (struct coding_system *coding, Lisp_Object translation_table,
 
 	  lookup_buf[0] = c;
 	  for (i = 1; i < max_lookup && p < src_end; i++)
-	    lookup_buf[i] = STRING_CHAR_ADVANCE (p);
+	    lookup_buf[i] = string_char_advance (&p);
 	  lookup_buf_end = lookup_buf + i;
 	  trans = get_translation (trans, lookup_buf, lookup_buf_end,
 				   &from_nchars);
@@ -7727,7 +7729,7 @@ consume_chars (struct coding_system *coding, Lisp_Object translation_table,
 	  for (i = 1; i < to_nchars; i++)
 	    *buf++ = XFIXNUM (AREF (trans, i));
 	  for (i = 1; i < from_nchars; i++, pos++)
-	    src += MULTIBYTE_LENGTH_NO_CHECK (src);
+	    src += multibyte_length (src, NULL, false, true);
 	}
     }
 
@@ -9016,23 +9018,23 @@ DEFUN ("find-coding-systems-region-internal",
     }
   else
     {
-      CHECK_FIXNUM_COERCE_MARKER (start);
-      CHECK_FIXNUM_COERCE_MARKER (end);
-      if (XFIXNUM (start) < BEG || XFIXNUM (end) > Z || XFIXNUM (start) > XFIXNUM (end))
+      EMACS_INT s = fix_position (start);
+      EMACS_INT e = fix_position (end);
+      if (! (BEG <= s && s <= e && e <= Z))
 	args_out_of_range (start, end);
       if (NILP (BVAR (current_buffer, enable_multibyte_characters)))
 	return Qt;
-      start_byte = CHAR_TO_BYTE (XFIXNUM (start));
-      end_byte = CHAR_TO_BYTE (XFIXNUM (end));
-      if (XFIXNUM (end) - XFIXNUM (start) == end_byte - start_byte)
+      start_byte = CHAR_TO_BYTE (s);
+      end_byte = CHAR_TO_BYTE (e);
+      if (e - s == end_byte - start_byte)
 	return Qt;
 
-      if (XFIXNUM (start) < GPT && XFIXNUM (end) > GPT)
+      if (s < GPT && GPT < e)
 	{
-	  if ((GPT - XFIXNUM (start)) < (XFIXNUM (end) - GPT))
-	    move_gap_both (XFIXNUM (start), start_byte);
+	  if (GPT - s < e - GPT)
+	    move_gap_both (s, start_byte);
 	  else
-	    move_gap_both (XFIXNUM (end), end_byte);
+	    move_gap_both (e, end_byte);
 	}
     }
 
@@ -9068,7 +9070,7 @@ DEFUN ("find-coding-systems-region-internal",
 	p++;
       else
 	{
-	  c = STRING_CHAR_ADVANCE (p);
+	  c = string_char_advance (&p);
 	  if (!NILP (char_table_ref (work_table, c)))
 	    /* This character was already checked.  Ignore it.  */
 	    continue;
@@ -9201,7 +9203,7 @@ to the string and treated as in `substring'.  */)
 	  p = GAP_END_ADDR;
 	}
 
-      c = STRING_CHAR_ADVANCE (p);
+      c = string_char_advance (&p);
       if (! (ASCII_CHAR_P (c) && ascii_compatible)
 	  && ! char_charset (translate_char (translation_table, c),
 			     charset_list, NULL))
@@ -9270,32 +9272,35 @@ is nil.  */)
     }
   else
     {
-      CHECK_FIXNUM_COERCE_MARKER (start);
-      CHECK_FIXNUM_COERCE_MARKER (end);
-      if (XFIXNUM (start) < BEG || XFIXNUM (end) > Z || XFIXNUM (start) > XFIXNUM (end))
+      EMACS_INT s = fix_position (start);
+      EMACS_INT e = fix_position (end);
+      if (! (BEG <= s && s <= e && e <= Z))
 	args_out_of_range (start, end);
       if (NILP (BVAR (current_buffer, enable_multibyte_characters)))
 	return Qnil;
-      start_byte = CHAR_TO_BYTE (XFIXNUM (start));
-      end_byte = CHAR_TO_BYTE (XFIXNUM (end));
-      if (XFIXNUM (end) - XFIXNUM (start) == end_byte - start_byte)
+      start_byte = CHAR_TO_BYTE (s);
+      end_byte = CHAR_TO_BYTE (e);
+      if (e - s == end_byte - start_byte)
 	return Qnil;
 
-      if (XFIXNUM (start) < GPT && XFIXNUM (end) > GPT)
+      if (s < GPT && GPT < e)
 	{
-	  if ((GPT - XFIXNUM (start)) < (XFIXNUM (end) - GPT))
-	    move_gap_both (XFIXNUM (start), start_byte);
+	  if (GPT - s < e - GPT)
+	    move_gap_both (s, start_byte);
 	  else
-	    move_gap_both (XFIXNUM (end), end_byte);
+	    move_gap_both (e, end_byte);
 	}
-      pos = XFIXNUM (start);
+      pos = s;
     }
 
   list = Qnil;
   for (tail = coding_system_list; CONSP (tail); tail = XCDR (tail))
     {
       elt = XCAR (tail);
-      attrs = AREF (CODING_SYSTEM_SPEC (elt), 0);
+      Lisp_Object spec = CODING_SYSTEM_SPEC (elt);
+      if (!VECTORP (spec))
+        xsignal1 (Qcoding_system_error, elt);
+      attrs = AREF (spec, 0);
       ASET (attrs, coding_attr_trans_tbl,
 	    get_translation_table (attrs, 1, NULL));
       list = Fcons (list2 (elt, attrs), list);
@@ -9316,7 +9321,7 @@ is nil.  */)
 	p++;
       else
 	{
-	  c = STRING_CHAR_ADVANCE (p);
+	  c = string_char_advance (&p);
 
 	  charset_map_loaded = 0;
 	  for (tail = list; CONSP (tail); tail = XCDR (tail))
@@ -9408,6 +9413,13 @@ code_convert_region (Lisp_Object start, Lisp_Object end,
 DEFUN ("decode-coding-region", Fdecode_coding_region, Sdecode_coding_region,
        3, 4, "r\nzCoding system: ",
        doc: /* Decode the current region from the specified coding system.
+
+What's meant by \"decoding\" is transforming bytes into text
+(characters).  If, for instance, you have a region that contains data
+that represents the two bytes #xc2 #xa9, after calling this function
+with the utf-8 coding system, the region will contain the single
+character ?\\N{COPYRIGHT SIGN}.
+
 When called from a program, takes four arguments:
 	START, END, CODING-SYSTEM, and DESTINATION.
 START and END are buffer positions.
@@ -9431,6 +9443,13 @@ not fully specified.)  */)
 DEFUN ("encode-coding-region", Fencode_coding_region, Sencode_coding_region,
        3, 4, "r\nzCoding system: ",
        doc: /* Encode the current region by specified coding system.
+
+What's meant by \"encoding\" is transforming textual data (characters)
+into bytes.  If, for instance, you have a region that contains the
+single character ?\\N{COPYRIGHT SIGN}, after calling this function with
+the utf-8 coding system, the data in the region will represent the two
+bytes #xc2 #xa9.
+
 When called from a program, takes four arguments:
         START, END, CODING-SYSTEM and DESTINATION.
 START and END are buffer positions.
@@ -9450,6 +9469,17 @@ not fully specified.)  */)
   return code_convert_region (start, end, coding_system, destination, 1, 0);
 }
 
+/* Whether STRING only contains chars in the 0..127 range.  */
+static bool
+string_ascii_p (Lisp_Object string)
+{
+  ptrdiff_t nbytes = SBYTES (string);
+  for (ptrdiff_t i = 0; i < nbytes; i++)
+    if (SREF (string, i) > 127)
+      return false;
+  return true;
+}
+
 Lisp_Object
 code_convert_string (Lisp_Object string, Lisp_Object coding_system,
 		     Lisp_Object dst_object, bool encodep, bool nocopy,
@@ -9464,7 +9494,7 @@ code_convert_string (Lisp_Object string, Lisp_Object coding_system,
       if (! norecord)
 	Vlast_coding_system_used = Qno_conversion;
       if (NILP (dst_object))
-	return (nocopy ? Fcopy_sequence (string) : string);
+	return nocopy ? string : Fcopy_sequence (string);
     }
 
   if (NILP (coding_system))
@@ -9481,7 +9511,28 @@ code_convert_string (Lisp_Object string, Lisp_Object coding_system,
   chars = SCHARS (string);
   bytes = SBYTES (string);
 
-  if (BUFFERP (dst_object))
+  if (EQ (dst_object, Qt))
+    {
+      /* Fast path for ASCII-only input and an ASCII-compatible coding:
+         act as identity if no EOL conversion is needed.  */
+      Lisp_Object attrs = CODING_ID_ATTRS (coding.id);
+      if (! NILP (CODING_ATTR_ASCII_COMPAT (attrs))
+          && (STRING_MULTIBYTE (string)
+              ? (chars == bytes) : string_ascii_p (string))
+          && (EQ (CODING_ID_EOL_TYPE (coding.id), Qunix)
+              || inhibit_eol_conversion
+              || ! memchr (SDATA (string), encodep ? '\n' : '\r', bytes)))
+        {
+          if (! norecord)
+            Vlast_coding_system_used = coding_system;
+          return (nocopy
+                  ? string
+                  : (encodep
+                     ? make_unibyte_string (SSDATA (string), bytes)
+                     : make_multibyte_string (SSDATA (string), bytes, bytes)));
+        }
+    }
+  else if (BUFFERP (dst_object))
     {
       struct buffer *buf = XBUFFER (dst_object);
       ptrdiff_t buf_pt = BUF_PT (buf);
@@ -9503,10 +9554,7 @@ code_convert_string (Lisp_Object string, Lisp_Object coding_system,
 
 
 /* Encode or decode STRING according to CODING_SYSTEM.
-   Do not set Vlast_coding_system_used.
-
-   This function is called only from macros DECODE_FILE and
-   ENCODE_FILE, thus we ignore character composition.  */
+   Do not set Vlast_coding_system_used.  */
 
 Lisp_Object
 code_convert_string_norecord (Lisp_Object string, Lisp_Object coding_system,
@@ -9537,7 +9585,7 @@ get_buffer_gap_address (Lisp_Object buffer, ptrdiff_t nbytes)
   return BUF_GPT_ADDR (buf);
 }
 
-/* Return a pointer to the byte sequence for C, and set the length in
+/* Return a pointer to the byte sequence for C, and its byte length in
    LEN.  This function is used to get a byte sequence for HANDLE_8_BIT
    and HANDLE_OVER_UNI arguments of encode_string_utf_8 and
    decode_string_utf_8 when those arguments are given by
@@ -9572,11 +9620,16 @@ get_char_bytes (int c, int *len)
 
 /* Encode STRING by the coding system utf-8-unix.
 
+   This function is optimized for speed when the input string is
+   already a valid sequence of Unicode codepoints in the internal
+   representation, i.e. there are neither 8-bit raw bytes nor
+   characters beyond the Unicode range in the string's contents.
+
    Ignore any :pre-write-conversion and :encode-translation-table
-   properties of that coding system.
+   properties.
 
    Assume that arguments have values as described below.
-   The validity must be assured by callers.
+   The validity must be enforced and ensured by the caller.
 
    STRING is a multibyte string or an ASCII-only unibyte string.
 
@@ -9587,17 +9640,24 @@ get_char_bytes (int c, int *len)
    inserted characters.  The caller should have made BUFFER ready for
    modifying in advance (e.g., by calling invalidate_buffer_caches).
 
-   If BUFFER is Qnil, return a unibyte string from the encoded result.
-   If NOCOPY, and if STRING contains only Unicode characters (i.e.,
-   the encoding does not change the byte sequence), return STRING even
-   if it is multibyte.
+   If BUFFER is nil, return a unibyte string from the encoded result.
+
+   If NOCOPY is non-zero, and if STRING contains only Unicode
+   characters (i.e., the encoding does not change the byte sequence),
+   return STRING even if it is multibyte.  WARNING: This will return a
+   _multibyte_ string, something that callers might not expect, especially
+   if STRING is not pure-ASCII; only use NOCOPY non-zero if the caller
+   will only use the byte sequence of the encoded result accessed by
+   SDATA or SSDATA, and the original STRING will _not_ be modified after
+   the encoding.  When in doubt, always pass NOCOPY as zero.  You _have_
+   been warned!
 
    HANDLE-8-BIT and HANDLE-OVER-UNI specify how to handle a non-Unicode
-   character.  The former is for an eight-bit character (represented
+   character in STRING.  The former is for an eight-bit character (represented
    by a 2-byte overlong sequence in a multibyte STRING).  The latter is
-   for an over-Unicode character (a character whose code is greater
-   than the maximum Unicode character 0x10FFFF, represented by a 4 or
-   5-byte sequence in a multibyte STRING).
+   for a codepoint beyond the end of the Unicode range (a character whose
+   code is greater than the maximum Unicode character 0x10FFFF, represented
+   by a 4 or 5-byte sequence in a multibyte STRING).
 
    If these two arguments are unibyte strings (typically
    "\357\277\275", the UTF-8 sequence for the Unicode REPLACEMENT
@@ -9605,18 +9665,20 @@ get_char_bytes (int c, int *len)
    unibyte sequence.
 
    If the two arguments are characters, encode a non-Unicode
-   character as if it was the argument.
+   character as the respective argument characters.
 
    If they are Qignored, skip a non-Unicode character.
 
-   If HANDLE-8-BIT is Qt, encode an eight-bit character into one
-   byte of the same value.
+   If HANDLE-8-BIT is Qt, encode eight-bit characters into single bytes
+   of the same value, like the usual Emacs encoding does.
 
-   If HANDLE-OVER-UNI is Qt, encode an over-unicode character
-   into the the same 4 or 5-byte sequence.
+   If HANDLE-OVER-UNI is Qt, encode characters beyond the Unicode
+   range into the same 4 or 5-byte sequence as used by Emacs
+   internally, like the usual Emacs encoding does.
 
    If the two arguments are Qnil, return Qnil if STRING has a
-   non-Unicode character.  */
+   non-Unicode character.  This allows the caller to signal an error
+   if such input strings are not allowed.  */
 
 Lisp_Object
 encode_string_utf_8 (Lisp_Object string, Lisp_Object buffer,
@@ -9624,15 +9686,15 @@ encode_string_utf_8 (Lisp_Object string, Lisp_Object buffer,
 		     Lisp_Object handle_over_uni)
 {
   ptrdiff_t nchars = SCHARS (string), nbytes = SBYTES (string);
-  if (NILP (buffer) && nchars == nbytes)
-    /* STRING contains only ASCII characters. */
+  if (NILP (buffer) && nchars == nbytes && nocopy)
+    /* STRING contains only ASCII characters.  */
     return string;
 
   ptrdiff_t num_8_bit = 0;   /* number of eight-bit chars in STRING */
   /* The following two vars are counted only if handle_over_uni is not Qt.  */
   ptrdiff_t num_over_4 = 0; /* number of 4-byte non-Unicode chars in STRING */
   ptrdiff_t num_over_5 = 0; /* number of 5-byte non-Unicode chars in STRING */
-  ptrdiff_t outbytes;	     /* number of bytes of decoding result. */
+  ptrdiff_t outbytes;	     /* number of bytes of decoding result */
   unsigned char *p = SDATA (string);
   unsigned char *pend = p + nbytes;
   unsigned char *src = NULL, *dst = NULL;
@@ -9661,17 +9723,17 @@ encode_string_utf_8 (Lisp_Object string, Lisp_Object buffer,
 	      || (len == 2 ? ! CHAR_BYTE8_HEAD_P (c)
 		  : (EQ (handle_over_uni, Qt)
 		     || (len == 4
-			 && string_char (p, NULL, NULL) <= MAX_UNICODE_CHAR))))
+			 && STRING_CHAR (p) <= MAX_UNICODE_CHAR))))
 	    {
 	      p += len;
 	      continue;
 	    }
 
 	  /* A character to change the byte sequence on encoding was
-	     found.  A rare case. */
+	     found.  A rare case.  */
 	  if (len == 2)
 	    {
-	      /* Handle an eight-bit character by handle_8_bit. */
+	      /* Handle an eight-bit character by handle_8_bit.  */
 	      if (scan_count == 0)
 		{
 		  if (NILP (handle_8_bit))
@@ -9699,7 +9761,7 @@ encode_string_utf_8 (Lisp_Object string, Lisp_Object buffer,
 	    }
 	  else			/* len == 4 or 5 */
 	    {
-	      /* Handle an over-unicode character by handle_over_uni. */
+	      /* Handle an over-unicode character by handle_over_uni.  */
 	      if (scan_count == 0)
 		{
 		  if (NILP (handle_over_uni))
@@ -9729,19 +9791,20 @@ encode_string_utf_8 (Lisp_Object string, Lisp_Object buffer,
 
       if (scan_count == 0)
 	{
-	  /* End of the first scane */
+	  /* End of the first scan.  */
 	  outbytes = nbytes;
 	  if (num_8_bit == 0
 	      && (num_over_4 + num_over_5 == 0 || EQ (handle_over_uni, Qt)))
 	    {
 	      /* We can break the loop because there is no need of
 		 changing the byte sequence.  This is the typical
-		 case. */
+		 case.  */
 	      scan_count = 1;
 	    }
 	  else
 	    {
-	      /* Prepare for the next scan to handle non-Unicode characters. */
+	      /* Prepare for handling non-Unicode characters during
+		 the next scan.  */
 	      if (num_8_bit > 0)
 		{
 		  if (CHARACTERP (handle_8_bit))
@@ -9792,7 +9855,7 @@ encode_string_utf_8 (Lisp_Object string, Lisp_Object buffer,
 		}
 	    }
 
-	  /* Prepare a return value and a space to store the encoded bytes. */
+	  /* Prepare return value and space to store the encoded bytes.  */
 	  if (BUFFERP (buffer))
 	    {
 	      val = make_fixnum (outbytes);
@@ -9822,38 +9885,51 @@ encode_string_utf_8 (Lisp_Object string, Lisp_Object buffer,
   return val;
 }
 
-/* Decode STRING by the coding system utf-8-unix.
+/* Decode input string by the coding system utf-8-unix.
 
-   Ignore any :pre-write-conversion and :encode-translation-table
-   properties of that coding system.
+   This function is optimized for speed when the input string is
+   already a valid UTF-8 sequence, i.e. there are neither 8-bit raw
+   bytes nor any UTF-8 sequences longer than 4 bytes in the string's
+   contents.
 
-   Assumes that arguments have values as described below.
-   The validity must be assured by callers.
+   Ignore any :post-read-conversion and :decode-translation-table
+   properties.
 
-   STRING is a unibyte string or an ASCII-only multibyte string.
+   Assume that arguments have values as described below.
+   The validity must be enforced and ensured by the caller.
+
+   STRING is a unibyte string, an ASCII-only multibyte string, or Qnil.
+   If STRING is Qnil, the input is a C string pointed by STR whose
+   length in bytes is in STR_LEN.
 
    BUFFER is a multibyte buffer or Qnil.
-
    If BUFFER is a multibyte buffer, insert the decoding result of
    Unicode characters after point of the buffer, and return the number
    of inserted characters.  The caller should have made BUFFER ready
    for modifying in advance (e.g., by calling invalidate_buffer_caches).
 
    If BUFFER is Qnil, return a multibyte string from the decoded result.
-   As a special case, return STRING itself in the following cases:
-   1. STRING contains only ASCII characters.
-   2. NOCOPY is true, and STRING contains only valid UTF-8 sequences.
 
-   For maximum speed, always specify NOCOPY true when STRING is
-   guaranteed to contain only valid UTF-8 sequences.
+   NOCOPY non-zero means it is OK to return the input STRING if it
+   contains only ASCII characters or only valid UTF-8 sequences of 2
+   to 4 bytes.  WARNING: This will return a _unibyte_ string, something
+   that callers might not expect, especially if STRING is not
+   pure-ASCII; only use NOCOPY non-zero if the caller will only use
+   the byte sequence of the decoded result accessed via SDATA or
+   SSDATA, and if the original STRING will _not_ be modified after the
+   decoding.  When in doubt, always pass NOCOPY as zero.  You _have_
+   been warned!
+
+   If STRING is Qnil, and the original string is passed via STR, NOCOPY
+   is ignored.
 
    HANDLE-8-BIT and HANDLE-OVER-UNI specify how to handle a invalid
-   byte sequence.  The former is for an 1-byte invalid sequence that
-   violates the fundamental UTF-8 encoding rule.  The latter is for a
-   4 or 5-byte invalid sequence that Emacs internally uses to
-   represent an over-unicode character (a character of code greater
-   than #x10FFFF).  Note that this function does not treat an overlong
-   UTF-8 sequence as invalid.
+   byte sequence.  The former is for a 1-byte invalid sequence that
+   violates the fundamental UTF-8 encoding rules.  The latter is for a
+   4 or 5-byte overlong sequences that Emacs internally uses to
+   represent characters beyond the Unicode range (characters whose
+   codepoints are greater than #x10FFFF).  Note that this function does
+   not in general treat such overlong UTF-8 sequences as invalid.
 
    If these two arguments are strings (typically a 1-char string of
    the Unicode REPLACEMENT CHARACTER #xFFFD), decode an invalid byte
@@ -9862,24 +9938,28 @@ encode_string_utf_8 (Lisp_Object string, Lisp_Object buffer,
 
    If the two arguments are characters, decode an invalid byte
    sequence into the corresponding multibyte representation of the
-   characters.
+   respective character.
 
-   If they are Qignored, skip an invalid byte sequence.
+   If they are Qignored, skip an invalid byte sequence without
+   producing anything in the decoded string.
 
-   If HANDLE-8-BIT is Qt, decode a 1-byte invalid sequence into
-   the corresponding eight-bit character.
+   If HANDLE-8-BIT is Qt, decode a 1-byte invalid sequence into the
+   corresponding eight-bit multibyte representation, like the usual
+   Emacs decoding does.
 
-   If HANDLE-OVER-UNI is Qt, decode a 4 or 5-byte invalid sequence
-   that follows Emacs' representation for an over-unicode character
-   into the corresponding character.
+   If HANDLE-OVER-UNI is Qt, decode a 4 or 5-byte overlong sequence
+   that follows Emacs' internal representation for a character beyond
+   Unicode range into the corresponding character, like the usual
+   Emacs decoding does.
 
-   If the two arguments are Qnil, return Qnil if STRING has an invalid
-   sequence.  */
+   If the two arguments are Qnil, return Qnil if the input string has
+   raw bytes or overlong sequences.  This allows the caller to signal
+   an error if such inputs are not allowed.  */
 
 Lisp_Object
-decode_string_utf_8 (Lisp_Object string, Lisp_Object buffer,
-		     bool nocopy, Lisp_Object handle_8_bit,
-		     Lisp_Object handle_over_uni)
+decode_string_utf_8 (Lisp_Object string, const char *str, ptrdiff_t str_len,
+		     Lisp_Object buffer, bool nocopy,
+		     Lisp_Object handle_8_bit, Lisp_Object handle_over_uni)
 {
   /* This is like BYTES_BY_CHAR_HEAD, but it is assured that C >= 0x80
      and it returns 0 for an invalid sequence.  */
@@ -9891,24 +9971,26 @@ decode_string_utf_8 (Lisp_Object string, Lisp_Object buffer,
    : (c) == 0xF8 ? 5			\
    : 0)
 
-  ptrdiff_t nbytes = SBYTES (string);
-  unsigned char *p = SDATA (string), *pend = p + nbytes;
-  ptrdiff_t num_8_bit = 0;   /* number of invalid 1-byte sequences. */
-  ptrdiff_t num_over_4 = 0;  /* number of invalid 4-byte sequences. */
-  ptrdiff_t num_over_5 = 0;  /* number of invalid 5-byte sequences. */
-  ptrdiff_t outbytes = nbytes;	/* number of decoded bytes. */
-  ptrdiff_t outchars = 0;    /* number of decoded characters. */
+  ptrdiff_t nbytes = STRINGP (string) ? SBYTES (string) : str_len;
+  unsigned char *p = STRINGP (string) ? SDATA (string) : (unsigned char *) str;
+  unsigned char *str_orig = p;
+  unsigned char *pend = p + nbytes;
+  ptrdiff_t num_8_bit = 0;   /* number of invalid 1-byte sequences */
+  ptrdiff_t num_over_4 = 0;  /* number of invalid 4-byte sequences */
+  ptrdiff_t num_over_5 = 0;  /* number of invalid 5-byte sequences */
+  ptrdiff_t outbytes = nbytes;	/* number of decoded bytes */
+  ptrdiff_t outchars = 0;    /* number of decoded characters */
   unsigned char *src = NULL, *dst = NULL;
   bool change_byte_sequence = false;
 
-  /* Scan bytes in STRING twice.  The first scan is to count invalid
-     sequences, and the second scan is to decode STRING.  If the
+  /* Scan input bytes twice.  The first scan is to count invalid
+     sequences, and the second scan is to decode input.  If the
      decoding is trivial (no need of changing the byte sequence),
      the second scan is avoided.  */
   while (p < pend)
     {
       src = p;
-      /* Try short cut for an ASCII-only case. */
+      /* Try short cut for an ASCII-only case.  */
       while (p < pend && *p < 0x80) p++;
       outchars += (p - src);
       if (p == pend)
@@ -9916,21 +9998,20 @@ decode_string_utf_8 (Lisp_Object string, Lisp_Object buffer,
       int c = *p;
       outchars++;
       int len = UTF_8_SEQUENCE_LENGTH (c);
-      /* len == 0, 2, 3, 4, 5 */
+      /* len == 0, 2, 3, 4, 5.  */
       if (UTF_8_EXTRA_OCTET_P (p[1])
 	  && (len == 2
 	      || (UTF_8_EXTRA_OCTET_P (p[2])
 		  && (len == 3
 		      || (UTF_8_EXTRA_OCTET_P (p[3])
 			  && len == 4
-			  && (string_char (p, NULL, NULL)
-			      <= MAX_UNICODE_CHAR))))))
+			  && STRING_CHAR (p) <= MAX_UNICODE_CHAR)))))
 	{
 	  p += len;
 	  continue;
 	}
 
-      /* A sequence to change on decoding was found.  A rare case. */
+      /* A sequence to change on decoding was found.  A rare case.  */
       if (len == 0)
 	{
 	  if (NILP (handle_8_bit))
@@ -9951,19 +10032,19 @@ decode_string_utf_8 (Lisp_Object string, Lisp_Object buffer,
       p += len;
     }
 
-  Lisp_Object val;	     /* the return value. */
+  Lisp_Object val;	     /* the return value */
 
   if (! change_byte_sequence
       && NILP (buffer))
     {
-      if (nocopy)
+      if (nocopy && STRINGP (string))
 	return string;
       val = make_uninit_multibyte_string (outchars, outbytes);
-      memcpy (SDATA (val), SDATA (string), pend - SDATA (string));
+      memcpy (SDATA (val), str_orig, pend - str_orig);
       return val;
     }
 
-  /* Count the number of resulting chars and bytes. */
+  /* Count the number of resulting chars and bytes.  */
   unsigned char *replace_8_bit = NULL, *replace_over_uni = NULL;
   int replace_8_bit_len = 0, replace_over_uni_len = 0;
 
@@ -10022,7 +10103,7 @@ decode_string_utf_8 (Lisp_Object string, Lisp_Object buffer,
 	}
     }
 
-  /* Prepare a return value and a space to store the decoded bytes. */
+  /* Prepare return value and  space to store the decoded bytes.  */
   if (BUFFERP (buffer))
     {
       val = make_fixnum (outchars);
@@ -10030,19 +10111,20 @@ decode_string_utf_8 (Lisp_Object string, Lisp_Object buffer,
     }
   else
     {
-      if (nocopy && (num_8_bit + num_over_4 + num_over_5) == 0)
+      if (nocopy && (num_8_bit + num_over_4 + num_over_5) == 0
+	  && STRINGP (string))
 	return string;
       val = make_uninit_multibyte_string (outchars, outbytes);
       dst = SDATA (val);
     }
 
-  src = SDATA (string);
+  src = str_orig;
   if (change_byte_sequence)
     {
       p = src;
       while (p < pend)
 	{
-	  /* Try short cut for an ASCII-only case. */
+	  /* Try short cut for an ASCII-only case.  */
 	  /* while (p < pend && *p < 0x80) p++; */
 	  /* if (p == pend) */
 	  /*   break; */
@@ -10060,8 +10142,7 @@ decode_string_utf_8 (Lisp_Object string, Lisp_Object buffer,
 		   mlen++);
 	      if (mlen == len
 		  && (len <= 3
-		      || (len == 4
-			  && string_char (p, NULL, NULL) <= MAX_UNICODE_CHAR)
+		      || (len == 4 && STRING_CHAR (p) <= MAX_UNICODE_CHAR)
 		      || EQ (handle_over_uni, Qt)))
 		{
 		  p += len;
@@ -10089,7 +10170,7 @@ decode_string_utf_8 (Lisp_Object string, Lisp_Object buffer,
 	    }
 	  else			/* len == 4 or 5 */
 	    {
-	      /* Handle p[0]... by handle_over_uni */
+	      /* Handle p[0]... by handle_over_uni.  */
 	      if (replace_over_uni)
 		{
 		  memcpy (dst, replace_over_uni, replace_over_uni_len);
@@ -10138,7 +10219,7 @@ DEFUN ("internal-encode-string-utf-8", Finternal_encode_string_utf_8,
   int repeat_count;
   Lisp_Object val;
 
-  /* Check arguments.  Return Qnil when an argmement is invalid.  */
+  /* Check arguments.  Return Qnil when an argument is invalid.  */
   if (! STRINGP (string))
     return Qnil;
   if (! NILP (buffer)
@@ -10194,7 +10275,7 @@ DEFUN ("internal-decode-string-utf-8", Finternal_decode_string_utf_8,
   int repeat_count;
   Lisp_Object val;
 
-  /* Check arguments.  Return Qnil when an argmement is invalid.  */
+  /* Check arguments.  Return Qnil when an argument is invalid.  */
   if (! STRINGP (string))
     return Qnil;
   if (! NILP (buffer)
@@ -10241,6 +10322,16 @@ DEFUN ("internal-decode-string-utf-8", Finternal_decode_string_utf_8,
 
 #endif	/* ENABLE_UTF_8_CONVERTER_TEST */
 
+/* Encode or decode STRING using CODING_SYSTEM, with the possibility of
+   returning STRING itself if it equals the result.
+   Do not set Vlast_coding_system_used.  */
+static Lisp_Object
+convert_string_nocopy (Lisp_Object string, Lisp_Object coding_system,
+                       bool encodep)
+{
+  return code_convert_string (string, coding_system, Qt, encodep, 1, 1);
+}
+
 /* Encode or decode a file name, to or from a unibyte string suitable
    for passing to C library functions.  */
 Lisp_Object
@@ -10251,14 +10342,13 @@ decode_file_name (Lisp_Object fname)
      converts the file names either to UTF-16LE or to the system ANSI
      codepage internally, depending on the underlying OS; see w32.c.  */
   if (! NILP (Fcoding_system_p (Qutf_8)))
-    return code_convert_string_norecord (fname, Qutf_8, 0);
+    return convert_string_nocopy (fname, Qutf_8, 0);
   return fname;
 #else  /* !WINDOWSNT */
   if (! NILP (Vfile_name_coding_system))
-    return code_convert_string_norecord (fname, Vfile_name_coding_system, 0);
+    return convert_string_nocopy (fname, Vfile_name_coding_system, 0);
   else if (! NILP (Vdefault_file_name_coding_system))
-    return code_convert_string_norecord (fname,
-					 Vdefault_file_name_coding_system, 0);
+    return convert_string_nocopy (fname, Vdefault_file_name_coding_system, 0);
   else
     return fname;
 #endif
@@ -10278,14 +10368,13 @@ encode_file_name (Lisp_Object fname)
      converts the file names either to UTF-16LE or to the system ANSI
      codepage internally, depending on the underlying OS; see w32.c.  */
   if (! NILP (Fcoding_system_p (Qutf_8)))
-    return code_convert_string_norecord (fname, Qutf_8, 1);
+    return convert_string_nocopy (fname, Qutf_8, 1);
   return fname;
 #else  /* !WINDOWSNT */
   if (! NILP (Vfile_name_coding_system))
-    return code_convert_string_norecord (fname, Vfile_name_coding_system, 1);
+    return convert_string_nocopy (fname, Vfile_name_coding_system, 1);
   else if (! NILP (Vdefault_file_name_coding_system))
-    return code_convert_string_norecord (fname,
-					 Vdefault_file_name_coding_system, 1);
+    return convert_string_nocopy (fname, Vdefault_file_name_coding_system, 1);
   else
     return fname;
 #endif
@@ -10306,7 +10395,7 @@ representation of the decoded text.
 
 This function sets `last-coding-system-used' to the precise coding system
 used (which may be different from CODING-SYSTEM if CODING-SYSTEM is
-not fully specified.)  */)
+not fully specified.)  The function does not change the match data.  */)
   (Lisp_Object string, Lisp_Object coding_system, Lisp_Object nocopy, Lisp_Object buffer)
 {
   return code_convert_string (string, coding_system, buffer,
@@ -10326,7 +10415,7 @@ case, the return value is the length of the encoded text.
 
 This function sets `last-coding-system-used' to the precise coding system
 used (which may be different from CODING-SYSTEM if CODING-SYSTEM is
-not fully specified.)  */)
+not fully specified.)  The function does not change the match data.  */)
   (Lisp_Object string, Lisp_Object coding_system, Lisp_Object nocopy, Lisp_Object buffer)
 {
   return code_convert_string (string, coding_system, buffer,
@@ -11005,10 +11094,8 @@ usage: (define-coding-system-internal ...)  */)
 	  else
 	    {
 	      CHECK_CONS (val);
-	      CHECK_RANGED_INTEGER (XCAR (val), 0, 255);
-	      from = XFIXNUM (XCAR (val));
-	      CHECK_RANGED_INTEGER (XCDR (val), from, 255);
-	      to = XFIXNUM (XCDR (val));
+	      from = check_integer_range (XCAR (val), 0, 255);
+	      to = check_integer_range (XCDR (val), from, 255);
 	    }
 	  for (int i = from; i <= to; i++)
 	    SSET (valids, i, 1);
@@ -11093,7 +11180,7 @@ usage: (define-coding-system-internal ...)  */)
 	  val = XCAR (tail);
 	  CHECK_CONS (val);
 	  CHECK_CHARSET_GET_ID (XCAR (val), id);
-	  CHECK_RANGED_INTEGER (XCDR (val), 0, 3);
+	  check_integer_range (XCDR (val), 0, 3);
 	  XSETCAR (val, make_fixnum (id));
 	}
 
@@ -11688,6 +11775,8 @@ syms_of_coding (void)
   DEFSYM (Qcoding_system_define_form, "coding-system-define-form");
 
   DEFSYM (Qignored, "ignored");
+
+  DEFSYM (Qutf_8_string_p, "utf-8-string-p");
 
   defsubr (&Scoding_system_p);
   defsubr (&Sread_coding_system);

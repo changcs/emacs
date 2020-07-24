@@ -1,6 +1,6 @@
 ;;; cc-defs.el --- compile time definitions for CC Mode
 
-;; Copyright (C) 1985, 1987, 1992-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1985, 1987, 1992-2020 Free Software Foundation, Inc.
 
 ;; Authors:    2003- Alan Mackenzie
 ;;             1998- Martin Stjernholm
@@ -87,7 +87,7 @@
 
 ;;; Variables also used at compile time.
 
-(defconst c-version "5.34"
+(defconst c-version "5.34.2"
   "CC Mode version number.")
 
 (defconst c-version-sym (intern c-version))
@@ -218,6 +218,13 @@ This variant works around bugs in `eval-when-compile' in various
     (if (eq c--cl-library 'cl-lib)
 	`(cl-delete-duplicates ,cl-seq ,@cl-keys)
       `(delete-duplicates ,cl-seq ,@cl-keys))))
+
+(defmacro c-font-lock-flush (beg end)
+  "Declare the region BEG...END's fontification as out-of-date.
+On XEmacs and older Emacsen, this refontifies that region immediately."
+  (if (fboundp 'font-lock-flush)
+      `(font-lock-flush ,beg ,end)
+    `(font-lock-fontify-region ,beg ,end)))
 
 (defmacro c-point (position &optional point)
   "Return the value of certain commonly referenced POSITIONs relative to POINT.
@@ -438,6 +445,15 @@ to it is returned.  This function does not modify the point or the mark."
     ;; Emacs and earlier XEmacs
     `(next-single-property-change ,position ,prop ,object ,limit)))
 
+(defmacro c-previous-single-property-change (position prop &optional object limit)
+  ;; See the doc string for either of the defuns expanded to.
+  (if (and c-use-extents
+	   (fboundp 'previous-single-char-property-change))
+      ;; XEmacs >= 2005-01-25
+      `(previous-single-char-property-change ,position ,prop ,object ,limit)
+    ;; Emacs and earlier XEmacs
+    `(previous-single-property-change ,position ,prop ,object ,limit)))
+
 (defmacro c-region-is-active-p ()
   ;; Return t when the region is active.  The determination of region
   ;; activeness is different in both Emacs and XEmacs.
@@ -566,11 +582,11 @@ known to be writable.  That way, these text properties remain set
 even if the user undoes the command which set them.
 
 This macro should ALWAYS be placed around \"temporary\" internal buffer
-changes \(like adding a newline to calculate a text-property then
+changes (like adding a newline to calculate a text-property then
 deleting it again), so that the user never sees them on his
 `buffer-undo-list'.  See also `c-tentative-buffer-changes'.
 
-However, any user-visible changes to the buffer \(like auto-newlines)
+However, any user-visible changes to the buffer (like auto-newlines)
 must not be within a `c-save-buffer-state', since the user then
 wouldn't be able to undo them.
 
@@ -597,7 +613,7 @@ was in before BODY.  Any changes are kept if the last form in BODY
 returns non-nil.  Otherwise it's undone using the undo facility, and
 various other buffer state that might be affected by the changes is
 restored.  That includes the current buffer, point, mark, mark
-activation \(similar to `save-excursion'), and the modified state.
+activation (similar to `save-excursion'), and the modified state.
 The state is also restored if BODY exits nonlocally.
 
 If BODY makes a change that unconditionally is undone then wrap this
@@ -1040,15 +1056,6 @@ MODE is either a mode symbol or a list of mode symbols."
 ;; properties set on a single character and that never spread to any
 ;; other characters.
 
-(defmacro c-put-syn-tab (pos value)
-  ;; Set both the syntax-table and the c-fl-syn-tab text properties at POS to
-  ;; VALUE (which should not be nil).
-  `(let ((-pos- ,pos)
-	 (-value- ,value))
-     (c-put-char-property -pos- 'syntax-table -value-)
-     (c-put-char-property -pos- 'c-fl-syn-tab -value-)
-     (c-truncate-lit-pos-cache -pos-)))
-
 (eval-and-compile
   ;; Constant used at compile time to decide whether or not to use
   ;; XEmacs extents.  Check all the extent functions we'll use since
@@ -1176,13 +1183,6 @@ MODE is either a mode symbol or a list of mode symbols."
 	 ;; Emacs < 21.
 	 `(c-clear-char-property-fun ,pos ',property))))
 
-(defmacro c-clear-syn-tab (pos)
-  ;; Remove both the 'syntax-table and `c-fl-syn-tab properties at POS.
-  `(let ((-pos- ,pos))
-     (c-clear-char-property -pos- 'syntax-table)
-     (c-clear-char-property -pos- 'c-fl-syn-tab)
-     (c-truncate-lit-pos-cache -pos-)))
-
 (defmacro c-min-property-position (from to property)
   ;; Return the first position in the range [FROM to) where the text property
   ;; PROPERTY is set, or `most-positive-fixnum' if there is no such position.
@@ -1228,8 +1228,18 @@ MODE is either a mode symbol or a list of mode symbols."
   ;; Remove all occurrences of the `syntax-table' and `c-fl-syn-tab' text
   ;; properties between FROM and TO.
   `(let ((-from- ,from) (-to- ,to))
-     (c-clear-char-properties -from- -to- 'syntax-table)
-     (c-clear-char-properties -from- -to- 'c-fl-syn-tab)))
+     (when (and
+	    c-min-syn-tab-mkr c-max-syn-tab-mkr
+	    (< -from- c-max-syn-tab-mkr)
+	    (> -to- c-min-syn-tab-mkr))
+       (let ((pos -from-))
+	 (while (and
+		 (< pos -to-)
+		 (setq pos (c-min-property-position pos -to- 'c-fl-syn-tab))
+		 (< pos -to-))
+	   (c-clear-syn-tab pos)
+	   (setq pos (1+ pos)))))
+     (c-clear-char-properties -from- -to- 'syntax-table)))
 
 (defmacro c-search-forward-char-property (property value &optional limit)
   "Search forward for a text-property PROPERTY having value VALUE.
@@ -1271,7 +1281,7 @@ point is then left undefined."
 		    place ,property nil ,(or limit '(point-min)))))
      (when (> place ,(or limit '(point-min)))
        (goto-char place)
-       (search-backward-regexp "\\(n\\|.\\)")	; to set the match-data.
+       (search-backward-regexp "\\(\n\\|.\\)")	; to set the match-data.
        (point))))
 
 (defun c-clear-char-property-with-value-function (from to property value)
@@ -1331,6 +1341,29 @@ nil; point is then left undefined."
        (forward-char))
      (when (< (point) -limit-)
        (search-forward-regexp "\\(\n\\|.\\)")	; to set the match-data.
+       (point))))
+
+(defmacro c-search-backward-char-property-with-value-on-char
+    (property value char &optional limit)
+  "Search backward for a text-property PROPERTY having value VALUE on a
+character with value CHAR.
+LIMIT bounds the search.  The value comparison is done with `equal'.
+PROPERTY must be a constant.
+
+Leave point just before the character, and set the match data on
+this character, and return point.  If the search fails, return
+nil; point is then left undefined."
+  `(let ((char-skip (concat "^" (char-to-string ,char)))
+	 (-limit- (or ,limit (point-min)))
+	 (-value- ,value))
+     (while
+	 (and
+	  (progn (skip-chars-backward char-skip -limit-)
+		 (> (point) -limit-))
+	  (not (equal (c-get-char-property (1- (point)) ,property) -value-)))
+       (backward-char))
+     (when (> (point) -limit-)
+       (search-backward-regexp "\\(\n\\|.\\)")	; to set the match-data.
        (point))))
 
 (defmacro c-search-forward-char-property-without-value-on-char
@@ -1426,28 +1459,6 @@ with value CHAR in the region [FROM to)."
 	 (c-put-char-property (point) ,property ,value)
 	 (forward-char)))))
 
-(defmacro c-with-extended-string-fences (beg end &rest body)
-  ;; If needed, extend the region with "mirrored" c-fl-syn-tab properties to
-  ;; contain the region (BEG END), then evaluate BODY.  If this mirrored
-  ;; region was initially empty, restore it afterwards.
-  `(let ((-beg- ,beg)
-	 (-end- ,end)
-	 )
-     (cond
-      ((null c-fl-syn-tab-region)
-       (unwind-protect
-	   (progn
-	     (c-restore-string-fences -beg- -end-)
-	     ,@body)
-	 (c-clear-string-fences)))
-      ((and (>= -beg- (car c-fl-syn-tab-region))
-	    (<= -end- (cdr c-fl-syn-tab-region)))
-       ,@body)
-      (t				; Crudely extend the mirrored region.
-       (setq -beg- (min -beg- (car c-fl-syn-tab-region))
-	     -end- (max -end- (cdr c-fl-syn-tab-region)))
-       (c-restore-string-fences -beg- -end-)
-       ,@body))))
 
 ;; Macros to put overlays (Emacs) or extents (XEmacs) on buffer text.
 ;; For our purposes, these are characterized by being possible to
@@ -2360,7 +2371,7 @@ VAL is not evaluated right away but rather when the value is requested
 with `c-lang-const'.  Thus it's possible to use `c-lang-const' inside
 VAL to refer to language constants that haven't been defined yet.
 However, if the definition of a language constant is in another file
-then that file must be loaded \(at compile time) before it's safe to
+then that file must be loaded (at compile time) before it's safe to
 reference the constant.
 
 The assignments in ARGS are processed in sequence like `setq', so

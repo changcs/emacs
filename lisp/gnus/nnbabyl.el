@@ -1,6 +1,6 @@
 ;;; nnbabyl.el --- rmail mbox access for Gnus
 
-;; Copyright (C) 1995-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1995-2020 Free Software Foundation, Inc.
 
 ;; Author: Lars Magne Ingebrigtsen <larsi@gnus.org>
 ;;	Masanobu UMEDA <umerin@flab.flab.fujitsu.junet>
@@ -29,10 +29,7 @@
 ;;; Code:
 
 (require 'nnheader)
-(condition-case nil
-    (require 'rmail)
-  (error (nnheader-message
-      5 "Ignore rmail errors from this file, you don't have rmail")))
+(require 'rmail)
 (require 'nnmail)
 (require 'nnoo)
 (eval-when-compile (require 'cl-lib))
@@ -296,7 +293,7 @@
 
 (deffoo nnbabyl-request-move-article
     (article group server accept-form &optional last move-is-internal)
-  (let ((buf (get-buffer-create " *nnbabyl move*"))
+  (let ((buf (gnus-get-buffer-create " *nnbabyl move*"))
 	result)
     (and
      (nnbabyl-request-article article group server)
@@ -547,7 +544,7 @@
       (setq buffer-file-name nnbabyl-mbox-file)
       (insert "BABYL OPTIONS:\n\n\^_")
       (nnmail-write-region
-       (point-min) (point-max) nnbabyl-mbox-file t 'nomesg))))
+       (point-min) (point-max) nnbabyl-mbox-file t 'nomesg nil 'excl))))
 
 (defun nnbabyl-read-mbox ()
   (nnmail-activate 'nnbabyl)

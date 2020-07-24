@@ -1,6 +1,6 @@
 /* Lisp object printing and output streams.
 
-Copyright (C) 1985-1986, 1988, 1993-1995, 1997-2019 Free Software
+Copyright (C) 1985-1986, 1988, 1993-1995, 1997-2020 Free Software
 Foundation, Inc.
 
 This file is part of GNU Emacs.
@@ -368,8 +368,8 @@ strout (const char *ptr, ptrdiff_t size, ptrdiff_t size_byte,
 	  int len;
 	  for (ptrdiff_t i = 0; i < size_byte; i += len)
 	    {
-	      int ch = STRING_CHAR_AND_LENGTH ((const unsigned char *) ptr + i,
-					       len);
+	      int ch = string_char_and_length ((const unsigned char *) ptr + i,
+					       &len);
 	      printchar_to_stream (ch, stdout);
 	    }
 	}
@@ -400,8 +400,8 @@ strout (const char *ptr, ptrdiff_t size, ptrdiff_t size_byte,
 	  int len;
 	  for (i = 0; i < size_byte; i += len)
 	    {
-	      int ch = STRING_CHAR_AND_LENGTH ((const unsigned char *) ptr + i,
-					       len);
+	      int ch = string_char_and_length ((const unsigned char *) ptr + i,
+					       &len);
 	      insert_char (ch);
 	    }
 	}
@@ -426,9 +426,8 @@ strout (const char *ptr, ptrdiff_t size, ptrdiff_t size_byte,
 	      /* Here, we must convert each multi-byte form to the
 		 corresponding character code before handing it to
 		 PRINTCHAR.  */
-	      int len;
-	      int ch = STRING_CHAR_AND_LENGTH ((const unsigned char *) ptr + i,
-					       len);
+	      int len, ch = (string_char_and_length
+			     ((const unsigned char *) ptr + i, &len));
 	      printchar (ch, printcharfun);
 	      i += len;
 	    }
@@ -510,8 +509,7 @@ print_string (Lisp_Object string, Lisp_Object printcharfun)
 	  {
 	    /* Here, we must convert each multi-byte form to the
 	       corresponding character code before handing it to PRINTCHAR.  */
-	    int len;
-	    int ch = STRING_CHAR_AND_LENGTH (SDATA (string) + i, len);
+	    int len, ch = string_char_and_length (SDATA (string) + i, &len);
 	    printchar (ch, printcharfun);
 	    i += len;
 	  }
@@ -966,13 +964,12 @@ print_error_message (Lisp_Object data, Lisp_Object stream, const char *context,
     else
       sep = NULL;
 
-    for (; CONSP (tail); tail = XCDR (tail), sep = ", ")
+    FOR_EACH_TAIL (tail)
       {
-	Lisp_Object obj;
-
 	if (sep)
 	  write_string (sep, stream);
-	obj = XCAR (tail);
+	sep = ", ";
+	Lisp_Object obj = XCAR (tail);
 	if (!NILP (file_error)
 	    || EQ (errname, Qend_of_file) || EQ (errname, Quser_error))
 	  Fprinc (obj, stream);
@@ -1308,15 +1305,13 @@ print_check_string_charset_prop (INTERVAL interval, Lisp_Object string)
     }
   if (! (print_check_string_result & PRINT_STRING_UNSAFE_CHARSET_FOUND))
     {
-      int i, c;
       ptrdiff_t charpos = interval->position;
       ptrdiff_t bytepos = string_char_to_byte (string, charpos);
-      Lisp_Object charset;
+      Lisp_Object charset = XCAR (XCDR (val));
 
-      charset = XCAR (XCDR (val));
-      for (i = 0; i < LENGTH (interval); i++)
+      for (ptrdiff_t i = 0; i < LENGTH (interval); i++)
 	{
-	  FETCH_STRING_CHAR_ADVANCE (c, string, charpos, bytepos);
+	  int c = fetch_string_char_advance (string, &charpos, &bytepos);
 	  if (! ASCII_CHAR_P (c)
 	      && ! EQ (CHARSET_NAME (CHAR_CHARSET (c)), charset))
 	    {
@@ -1365,6 +1360,22 @@ data_from_funcptr (void (*funcptr) (void))
      assume that function and data pointers are represented
      interchangeably, so it's OK to assume that here too.  */
   return (void const *) funcptr;
+}
+
+/* Print the value of the pointer PTR.  */
+
+static void
+print_pointer (Lisp_Object printcharfun, char *buf, const char *prefix,
+               const void *ptr)
+{
+  uintptr_t ui = (uintptr_t) ptr;
+
+  /* In theory this assignment could lose info on pre-C99 hosts, but
+     in practice it doesn't.  */
+  uintmax_t up = ui;
+
+  int len = sprintf (buf, "%s 0x%" PRIxMAX, prefix, up);
+  strout (buf, len, len, printcharfun);
 }
 #endif
 
@@ -1797,26 +1808,22 @@ print_vectorlike (Lisp_Object obj, Lisp_Object printcharfun, bool escapeflag,
     case PVEC_MODULE_FUNCTION:
       {
 	print_c_string ("#<module function ", printcharfun);
-        module_funcptr ptr = module_function_address (XMODULE_FUNCTION (obj));
+        const struct Lisp_Module_Function *function = XMODULE_FUNCTION (obj);
+        module_funcptr ptr = module_function_address (function);
 	char const *file;
 	char const *symbol;
 	dynlib_addr (ptr, &file, &symbol);
 
 	if (symbol == NULL)
-	  {
-	    uintptr_t ui = (uintptr_t) data_from_funcptr (ptr);
-
-	    /* In theory this assignment could lose info on pre-C99
-	       hosts, but in practice it doesn't.  */
-	    uintmax_t up = ui;
-
-	    int len = sprintf (buf, "at 0x%"PRIxMAX, up);
-	    strout (buf, len, len, printcharfun);
-	  }
-	else
+          print_pointer (printcharfun, buf, "at", data_from_funcptr (ptr));
+        else
 	  print_c_string (symbol, printcharfun);
 
-	if (file != NULL)
+        void *data = module_function_data (function);
+        if (data != NULL)
+          print_pointer (printcharfun, buf, " with data", data);
+
+        if (file != NULL)
 	  {
 	    print_c_string (" from ", printcharfun);
 	    print_c_string (file, printcharfun);
@@ -1839,7 +1846,7 @@ print_object (Lisp_Object obj, Lisp_Object printcharfun, bool escapeflag)
 {
   char buf[max (sizeof "from..to..in " + 2 * INT_STRLEN_BOUND (EMACS_INT),
 		max (sizeof " . #" + INT_STRLEN_BOUND (intmax_t),
-		     max ((sizeof "at 0x"
+		     max ((sizeof " with data 0x"
 			   + (sizeof (uintmax_t) * CHAR_BIT + 4 - 1) / 4),
 			  40)))];
   current_thread->stack_top = buf;
@@ -1932,9 +1939,7 @@ print_object (Lisp_Object obj, Lisp_Object printcharfun, bool escapeflag)
 	    {
 	      /* Here, we must convert each multi-byte form to the
 		 corresponding character code before handing it to printchar.  */
-	      int c;
-
-	      FETCH_STRING_CHAR_ADVANCE (c, obj, i, i_byte);
+	      int c = fetch_string_char_advance (obj, &i, &i_byte);
 
 	      maybe_quit ();
 
@@ -2025,8 +2030,7 @@ print_object (Lisp_Object obj, Lisp_Object printcharfun, bool escapeflag)
 	  {
 	    /* Here, we must convert each multi-byte form to the
 	       corresponding character code before handing it to PRINTCHAR.  */
-	    int c;
-	    FETCH_STRING_CHAR_ADVANCE (c, name, i, i_byte);
+	    int c = fetch_string_char_advance (name, &i, &i_byte);
 	    maybe_quit ();
 
 	    if (escapeflag)
@@ -2036,8 +2040,7 @@ print_object (Lisp_Object obj, Lisp_Object printcharfun, bool escapeflag)
 		    || c == ',' || c == '.' || c == '`'
 		    || c == '[' || c == ']' || c == '?' || c <= 040
 		    || c == NO_BREAK_SPACE
-                    || confusing
-		    || (i == 1 && confusable_symbol_character_p (c)))
+                    || confusing)
 		  {
 		    printchar ('\\', printcharfun);
 		    confusing = false;
@@ -2087,45 +2090,32 @@ print_object (Lisp_Object obj, Lisp_Object printcharfun, bool escapeflag)
 	{
 	  printchar ('(', printcharfun);
 
-	  Lisp_Object halftail = obj;
-
 	  /* Negative values of print-length are invalid in CL.
 	     Treat them like nil, as CMUCL does.  */
 	  intmax_t print_length = (FIXNATP (Vprint_length)
 				   ? XFIXNAT (Vprint_length)
 				   : INTMAX_MAX);
-
+	  Lisp_Object objtail = Qnil;
 	  intmax_t i = 0;
-	  while (CONSP (obj))
+	  FOR_EACH_TAIL_SAFE (obj)
 	    {
-	      /* Detect circular list.  */
-	      if (NILP (Vprint_circle))
+	      if (i != 0)
 		{
-		  /* Simple but incomplete way.  */
-		  if (i != 0 && EQ (obj, halftail))
+		  printchar (' ', printcharfun);
+
+		  if (!NILP (Vprint_circle))
 		    {
-		      int len = sprintf (buf, " . #%"PRIdMAX, i >> 1);
-		      strout (buf, len, len, printcharfun);
-		      goto end_of_list;
-		    }
-		}
-	      else
-		{
-		  /* With the print-circle feature.  */
-		  if (i != 0)
-		    {
-		      Lisp_Object num = Fgethash (obj, Vprint_number_table, Qnil);
+		      /* With the print-circle feature.  */
+		      Lisp_Object num = Fgethash (obj, Vprint_number_table,
+						  Qnil);
 		      if (FIXNUMP (num))
 			{
-			  print_c_string (" . ", printcharfun);
+			  print_c_string (". ", printcharfun);
 			  print_object (obj, printcharfun, escapeflag);
 			  goto end_of_list;
 			}
 		    }
 		}
-
-	      if (i)
-		printchar (' ', printcharfun);
 
 	      if (print_length <= i)
 		{
@@ -2135,17 +2125,23 @@ print_object (Lisp_Object obj, Lisp_Object printcharfun, bool escapeflag)
 
 	      i++;
 	      print_object (XCAR (obj), printcharfun, escapeflag);
+	      objtail = XCDR (obj);
+	    }
 
-	      obj = XCDR (obj);
-	      if (!(i & 1))
-		halftail = XCDR (halftail);
-	  }
-
-	  /* OBJ non-nil here means it's the end of a dotted list.  */
-	  if (!NILP (obj))
+	  /* OBJTAIL non-nil here means it's the end of a dotted list
+	     or FOR_EACH_TAIL_SAFE detected a circular list.  */
+	  if (!NILP (objtail))
 	    {
 	      print_c_string (" . ", printcharfun);
-	      print_object (obj, printcharfun, escapeflag);
+
+	      if (CONSP (objtail) && NILP (Vprint_circle))
+		{
+		  int len = sprintf (buf, "#%"PRIdMAX, i >> 1);
+		  strout (buf, len, len, printcharfun);
+		  goto end_of_list;
+		}
+
+	      print_object (objtail, printcharfun, escapeflag);
 	    }
 
 	end_of_list:

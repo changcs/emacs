@@ -1,6 +1,6 @@
 ;;; xwidget.el --- api functions for xwidgets  -*- lexical-binding: t -*-
 ;;
-;; Copyright (C) 2011-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2011-2020 Free Software Foundation, Inc.
 ;;
 ;; Author: Joakim Verona (joakim@verona.se)
 ;;
@@ -92,6 +92,9 @@ Interactively, URL defaults to the string looking like a url around point."
   (or (featurep 'xwidget-internal)
       (user-error "Your Emacs was not compiled with xwidgets support"))
   (when (stringp url)
+    ;; If it's a "naked url", just try adding https: to it.
+    (unless (string-match "\\`[A-Za-z]+:" url)
+      (setq url (concat "https://" url)))
     (if new-session
         (xwidget-webkit-new-session url)
       (xwidget-webkit-goto-url url))))

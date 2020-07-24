@@ -1,6 +1,6 @@
 ;;; gnus-icalendar.el --- reply to iCalendar meeting requests  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2013-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2013-2020 Free Software Foundation, Inc.
 
 ;; Author: Jan Tatarik <Jan.Tatarik@gmail.com>
 ;; Keywords: mail, icalendar, org
@@ -485,7 +485,7 @@ Return nil for non-recurring EVENT."
         (narrow-to-region (point) (point))
         (insert (gnus-icalendar-event:org-timestamp event)
                 "\n\n"
-                description)
+                (or description "No description"))
         (indent-region (point-min) (point-max) 2)
         (fill-region (point-min) (point-max)))
 
@@ -778,6 +778,7 @@ These will be used to retrieve the RSVP information from ical events."
        ,callback
        keymap ,gnus-mime-button-map
        face ,gnus-article-button-face
+       follow-link t
        button t
        gnus-data ,data))))
 
@@ -813,7 +814,7 @@ These will be used to retrieve the RSVP information from ical events."
         (let ((subject (concat (capitalize (symbol-name status))
                                ": " (gnus-icalendar-event:summary event))))
 
-          (with-current-buffer (get-buffer-create gnus-icalendar-reply-bufname)
+          (with-current-buffer (gnus-get-buffer-create gnus-icalendar-reply-bufname)
             (delete-region (point-min) (point-max))
             (insert reply)
             (fold-icalendar-buffer)

@@ -1,6 +1,6 @@
 ;;; wid-edit.el --- Functions for creating and using widgets -*- lexical-binding:t -*-
 ;;
-;; Copyright (C) 1996-1997, 1999-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1996-1997, 1999-2020 Free Software Foundation, Inc.
 ;;
 ;; Author: Per Abrahamsen <abraham@dina.kvl.dk>
 ;; Maintainer: emacs-devel@gnu.org
@@ -57,6 +57,10 @@
 ;;; Code:
 (require 'cl-lib)
 (eval-when-compile (require 'subr-x)) 	; when-let
+
+;; The `string' widget completion uses this.
+(declare-function ispell-get-word "ispell"
+                  (following &optional extra-otherchars))
 
 ;;; Compatibility.
 
@@ -122,15 +126,19 @@ This exists as a variable so it can be set locally in certain buffers.")
 ;; background, at least on light-background TTYs.
 (defface widget-field '((((type tty))
 			 :background "yellow3"
-			 :foreground "black")
+			 :foreground "black"
+			 :extend t)
 			(((class grayscale color)
 			  (background light))
-			 :background "gray85")
+			 :background "gray85"
+			 :extend t)
 			(((class grayscale color)
 			  (background dark))
-			 :background "dim gray")
+			 :background "dim gray"
+			 :extend t)
 			(t
-			 :slant italic))
+			 :slant italic
+			 :extend t))
   "Face used for editable fields."
   :group 'widget-faces)
 
@@ -228,8 +236,7 @@ minibuffer."
 	 ;; Construct a menu of the choices
 	 ;; and then use it for prompting for a single character.
 	 (let* ((next-digit ?0)
-		(map (make-sparse-keymap))
-                choice some-choice-enabled value)
+		alist choice some-choice-enabled value)
 	   (with-current-buffer (get-buffer-create " widget-choose")
 	     (erase-buffer)
 	     (insert "Available choices:\n\n")
@@ -239,7 +246,7 @@ minibuffer."
                  (let* ((name (substitute-command-keys (car choice)))
                         (function (cdr choice)))
                    (insert (format "%c = %s\n" next-digit name))
-                   (define-key map (vector next-digit) function)
+                   (push (cons next-digit function) alist)
                    (setq some-choice-enabled t)))
 	       ;; Allocate digits to disabled alternatives
 	       ;; so that the digit of a given alternative never varies.
@@ -249,33 +256,17 @@ minibuffer."
 	     (forward-line))
 	   (or some-choice-enabled
 	       (error "None of the choices is currently meaningful"))
-	   (define-key map [?\M-\C-v] 'scroll-other-window)
-	   (define-key map [?\M--] 'negative-argument)
 	   (save-window-excursion
-	     (let ((buf (get-buffer " widget-choose")))
-	       (display-buffer buf
-			       '(display-buffer-in-direction
-				 (direction . bottom)
-				 (window-height . fit-window-to-buffer)))
-	       (let ((cursor-in-echo-area t)
-		     (arg 1))
-                 (while (not value)
-                   (setq value (lookup-key map (read-key-sequence (format "%s: " title))))
-                   (unless value
-                     (user-error "Canceled"))
-                   (when
-                       (cond ((eq value 'scroll-other-window)
-                               (let ((minibuffer-scroll-window
-                                      (get-buffer-window buf)))
-                                 (if (> 0 arg)
-                                     (scroll-other-window-down
-                                      (window-height minibuffer-scroll-window))
-                                   (scroll-other-window))
-                                 (setq arg 1)))
-                              ((eq value 'negative-argument)
-                               (setq arg -1)))
-                     (setq value nil))))))
-	   value))))
+             ;; Select window to be able to scroll it from minibuffer
+             (with-selected-window
+                 (display-buffer (get-buffer " widget-choose")
+                                 '(display-buffer-in-direction
+                                   (direction . bottom)
+                                   (window-height . fit-window-to-buffer)))
+               (setq value (read-char-from-minibuffer
+                            (format "%s: " title)
+                            (mapcar #'car alist)))))
+	   (cdr (assoc value alist))))))
 
 ;;; Widget text specifications.
 ;;
@@ -1166,7 +1157,7 @@ When not inside a field, signal an error."
                               (plist-get completion-extra-properties
                                          :predicate))))
      (t
-      (error "Not in an editable field")))))
+      (error "No completions available for this field")))))
 ;; We may want to use widget completion in buffers where the major mode
 ;; hasn't added widget-completions-at-point to completion-at-point-functions,
 ;; so it's not really obsolete (yet).
@@ -1174,8 +1165,9 @@ When not inside a field, signal an error."
 
 (defun widget-completions-at-point ()
   (let ((field (widget-field-find (point))))
-    (when field
-      (widget-apply field :completions-function))))
+    (if field
+        (widget-apply field :completions-function)
+      (error "Not in an editable field"))))
 
 ;;; Setting up the buffer.
 
@@ -1658,7 +1650,8 @@ The value of the :type attribute should be an unconverted widget type."
       (and (not (widget-get widget :inactive))
 	   (let ((parent (widget-get widget :parent)))
 	     (or (null parent)
-		 (widget-apply parent :active))))))
+		 (widget-apply parent :active)))
+           t)))
 
 (defun widget-default-deactivate (widget)
   "Make WIDGET inactive for user modifications."
@@ -3073,7 +3066,12 @@ as the value."
   "A string."
   :tag "String"
   :format "%{%t%}: %v"
-  :complete-function 'ispell-complete-word
+  :complete (lambda (widget)
+              (require 'ispell)
+              (let ((start (save-excursion (nth 1 (ispell-get-word nil)))))
+                (if (< start (widget-field-start widget))
+                    (message "No word to complete inside field")
+                  (ispell-complete-word))))
   :prompt-history 'widget-string-prompt-value-history)
 
 (define-widget 'regexp 'string
@@ -3501,7 +3499,7 @@ To use this type, you must define :match or :match-alternatives."
 The `lazy' widget will, when instantiated, contain a single inferior
 widget, of the widget type specified by the :type parameter.  The
 value of the `lazy' widget is the same as the value of the inferior
-widget.  When deriving a new widget from the 'lazy' widget, the :type
+widget.  When deriving a new widget from the `lazy' widget, the :type
 parameter is allowed to refer to the widget currently being defined,
 thus allowing recursive data structures to be described.
 

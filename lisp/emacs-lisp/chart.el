@@ -1,6 +1,6 @@
 ;;; chart.el --- Draw charts (bar charts, etc)  -*- lexical-binding: t -*-
 
-;; Copyright (C) 1996, 1998-1999, 2001, 2004-2005, 2007-2019 Free
+;; Copyright (C) 1996, 1998-1999, 2001, 2004-2005, 2007-2020 Free
 ;; Software Foundation, Inc.
 
 ;; Author: Eric M. Ludlam <zappo@gnu.org>
@@ -607,6 +607,8 @@ SORT-PRED if desired."
   (chart-bar-quickie 'vertical "Test Bar Chart"
 		     '( "U1" "ME2" "C3" "B4" "QT" "EZ") "Items"
 		     '( 5 -10 23 20 30 -3) "Values")
+  (if (not (called-interactively-p 'any))
+      (kill-buffer "*Test Bar Chart*"))
   )
 
 ;;; Sample utility function

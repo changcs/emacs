@@ -1,6 +1,6 @@
 ;;; semantic/tag-ls.el --- Language Specific override functions for tags
 
-;; Copyright (C) 1999-2004, 2006-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1999-2004, 2006-2020 Free Software Foundation, Inc.
 
 ;; Author: Eric M. Ludlam <zappo@gnu.org>
 
@@ -199,7 +199,7 @@ Other languages qualify names within a Namespace (such as C++) which
 result in a different package like structure.
 
 Languages which do not override this function will just search the
-stream for a tag of class 'package, and return that."
+stream for a tag of class `package', and return that."
   (let ((stream (semantic-something-to-tag-table
                  (or stream-or-buffer tag))))
     (:override-with-args (tag stream))))

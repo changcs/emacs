@@ -1,6 +1,6 @@
 ;;; cc-align.el --- custom indentation functions for CC Mode
 
-;; Copyright (C) 1985, 1987, 1992-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1985, 1987, 1992-2020 Free Software Foundation, Inc.
 
 ;; Authors:    2004- Alan Mackenzie
 ;;             1998- Martin Stjernholm
@@ -322,7 +322,7 @@ if (  x < 10
 
 Since this function doesn't do anything for lines without an infix
 operator you typically want to use it together with some other line-up
-settings, e.g. as follows \(the arglist-close setting is just a
+settings, e.g. as follows (the arglist-close setting is just a
 suggestion to get a consistent style):
 
 \(c-set-offset \\='arglist-cont \\='(c-lineup-arglist-operators 0))
@@ -790,6 +790,38 @@ arglist-cont-nonempty."
   (or (c-lineup-assignments langelem)
       c-basic-offset))
 
+(defun c-lineup-ternary-bodies (langelem)
+  "Line up true and false branches of a ternary operator (i.e. `?:').
+More precisely, if the line starts with a colon which is a part of
+a said operator, align it with corresponding question mark; otherwise
+return nil.  For example:
+
+    return arg % 2 == 0 ? arg / 2
+                        : (3 * arg + 1);    <- c-lineup-ternary-bodies
+
+Works with: arglist-cont, arglist-cont-nonempty and statement-cont."
+  (save-excursion
+    (back-to-indentation)
+    (when (and (eq ?: (char-after))
+               (not (eq ?: (char-after (1+ (point))))))
+      (let ((limit (c-langelem-pos langelem)) (depth 1))
+        (catch 'done
+          (while (and (c-syntactic-skip-backward "^?:" limit t)
+		      (not (bobp)))
+            (backward-char)
+            (cond ((eq (char-after) ??)
+                   ;; If we've found a question mark, decrease depth.  If we've
+                   ;; reached zero, we've found the one we were looking for.
+                   (when (zerop (setq depth (1- depth)))
+                     (throw 'done (vector (current-column)))))
+                  ((or (eq ?: (char-before)) (eq ?? (char-before)))
+                   ;; Step over `::' and `?:' operators.  We don't have to
+                   ;; handle `?:' here but doing so saves an iteration.
+                   (if (eq (point) limit)
+                       (throw 'done nil)
+                     (goto-char (1- (point)))))
+                  ((setq depth (1+ depth)))))))))) ; Otherwise increase depth.
+
 (defun c-lineup-cascaded-calls (langelem)
   "Line up \"cascaded calls\" under each other.
 If the line begins with \"->\" or \".\" and the preceding line ends
@@ -1246,7 +1278,7 @@ That is useful in a list expression to specify the default indentation
 on the top level.
 
 If `c-syntactic-indentation-in-macros' is nil then this function keeps
-the current indentation, except for empty lines \(ignoring the ending
+the current indentation, except for empty lines (ignoring the ending
 backslash) where it takes the indentation from the closest preceding
 nonempty line in the macro.  If there's no such line in the macro then
 the indentation is taken from the construct preceding it, as described

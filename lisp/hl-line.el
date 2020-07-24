@@ -1,6 +1,6 @@
 ;;; hl-line.el --- highlight the current line  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1998, 2000-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1998, 2000-2020 Free Software Foundation, Inc.
 
 ;; Author: Dave Love <fx@gnu.org>
 ;; Maintainer: emacs-devel@gnu.org
@@ -78,7 +78,7 @@ when `global-hl-line-sticky-flag' is non-nil.")
   :group 'convenience)
 
 (defface hl-line
-  '((t :inherit highlight))
+  '((t :inherit highlight :extend t))
   "Default face for highlighting the current line in Hl-Line mode."
   :version "22.1"
   :group 'hl-line)

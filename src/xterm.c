@@ -1,6 +1,6 @@
 /* X Communication module for terminals which understand the X protocol.
 
-Copyright (C) 1989, 1993-2019 Free Software Foundation, Inc.
+Copyright (C) 1989, 1993-2020 Free Software Foundation, Inc.
 
 This file is part of GNU Emacs.
 
@@ -1291,11 +1291,7 @@ x_clear_under_internal_border (struct frame *f)
       int border = FRAME_INTERNAL_BORDER_WIDTH (f);
       int width = FRAME_PIXEL_WIDTH (f);
       int height = FRAME_PIXEL_HEIGHT (f);
-#ifdef USE_GTK
-      int margin = 0;
-#else
       int margin = FRAME_TOP_MARGIN_HEIGHT (f);
-#endif
       int face_id =
 	!NILP (Vface_remapping_alist)
 	? lookup_basic_face (NULL, f, INTERNAL_BORDER_FACE_ID)
@@ -1754,7 +1750,7 @@ x_draw_glyph_string_background (struct glyph_string *s, bool force_p)
      shouldn't be drawn in the first place.  */
   if (!s->background_filled_p)
     {
-      int box_line_width = max (s->face->box_line_width, 0);
+      int box_line_width = max (s->face->box_horizontal_line_width, 0);
 
       if (s->stippled_p)
 	{
@@ -1799,7 +1795,7 @@ x_draw_glyph_string_foreground (struct glyph_string *s)
      of S to the right of that box line.  */
   if (s->face->box != FACE_NO_BOX
       && s->first_glyph->left_box_line_p)
-    x = s->x + eabs (s->face->box_line_width);
+    x = s->x + max (s->face->box_vertical_line_width, 0);
   else
     x = s->x;
 
@@ -1849,7 +1845,7 @@ x_draw_glyph_string_foreground (struct glyph_string *s)
 	  if (!(s->for_overlaps
 		|| (s->background_filled_p && s->hl != DRAW_CURSOR)))
 	    {
-	      int box_line_width = max (s->face->box_line_width, 0);
+	      int box_line_width = max (s->face->box_horizontal_line_width, 0);
 
 	      if (s->stippled_p)
 		{
@@ -1893,7 +1889,7 @@ x_draw_composite_glyph_string_foreground (struct glyph_string *s)
      of S to the right of that box line.  */
   if (s->face && s->face->box != FACE_NO_BOX
       && s->first_glyph->left_box_line_p)
-    x = s->x + eabs (s->face->box_line_width);
+    x = s->x + max (s->face->box_vertical_line_width, 0);
   else
     x = s->x;
 
@@ -2004,7 +2000,7 @@ x_draw_glyphless_glyph_string_foreground (struct glyph_string *s)
      of S to the right of that box line.  */
   if (s->face && s->face->box != FACE_NO_BOX
       && s->first_glyph->left_box_line_p)
-    x = s->x + eabs (s->face->box_line_width);
+    x = s->x + max (s->face->box_vertical_line_width, 0);
   else
     x = s->x;
 
@@ -2099,7 +2095,6 @@ x_frame_of_widget (Widget widget)
     {
       f = XFRAME (frame);
       if (FRAME_X_P (f)
-	  && f->output_data.nothing != 1
 	  && FRAME_DISPLAY_INFO (f) == dpyinfo
 	  && f->output_data.x->widget == widget)
 	return f;
@@ -2381,8 +2376,6 @@ x_query_frame_background_color (struct frame *f, XColor *bgcolor)
   x_query_colors (f, bgcolor, 1);
 }
 
-#define HEX_COLOR_NAME_LENGTH 32
-
 /* On frame F, translate the color name to RGB values.  Use cached
    information, if possible.
 
@@ -2394,44 +2387,23 @@ x_query_frame_background_color (struct frame *f, XColor *bgcolor)
 Status x_parse_color (struct frame *f, const char *color_name,
 		      XColor *color)
 {
+  /* Don't pass #RGB strings directly to XParseColor, because that
+     follows the X convention of zero-extending each channel
+     value: #f00 means #f00000.  We want the convention of scaling
+     channel values, so #f00 means #ff0000, just as it does for
+     HTML, SVG, and CSS.  */
+  unsigned short r, g, b;
+  if (parse_color_spec (color_name, &r, &g, &b))
+    {
+      color->red = r;
+      color->green = g;
+      color->blue = b;
+      return 1;
+    }
+
   Display *dpy = FRAME_X_DISPLAY (f);
   Colormap cmap = FRAME_X_COLORMAP (f);
   struct color_name_cache_entry *cache_entry;
-
-  if (color_name[0] == '#')
-    {
-      /* Don't pass #RGB strings directly to XParseColor, because that
-	 follows the X convention of zero-extending each channel
-	 value: #f00 means #f00000.  We want the convention of scaling
-	 channel values, so #f00 means #ff0000, just as it does for
-	 HTML, SVG, and CSS.
-
-	 So we translate #f00 to rgb:f/0/0, which X handles
-	 differently. */
-      char rgb_color_name[HEX_COLOR_NAME_LENGTH];
-      int len = strlen (color_name);
-      int digits_per_channel;
-      if (len == 4)
-	digits_per_channel = 1;
-      else if (len == 7)
-	digits_per_channel = 2;
-      else if (len == 10)
-	digits_per_channel = 3;
-      else if (len == 13)
-	digits_per_channel = 4;
-      else
-	return 0;
-
-      snprintf (rgb_color_name, sizeof rgb_color_name, "rgb:%.*s/%.*s/%.*s",
-		digits_per_channel, color_name + 1,
-		digits_per_channel, color_name + digits_per_channel + 1,
-		digits_per_channel, color_name + 2 * digits_per_channel + 1);
-
-      /* The rgb form is parsed directly by XParseColor without
-	 talking to the X server.  No need for caching.  */
-      return XParseColor (dpy, cmap, rgb_color_name, color);
-    }
-
   for (cache_entry = FRAME_DISPLAY_INFO (f)->color_names; cache_entry;
        cache_entry = cache_entry->next)
     {
@@ -2770,7 +2742,7 @@ x_setup_relief_colors (struct glyph_string *s)
 static void
 x_draw_relief_rect (struct frame *f,
 		    int left_x, int top_y, int right_x, int bottom_y,
-		    int width, bool raised_p, bool top_p, bool bot_p,
+		    int hwidth, int vwidth, bool raised_p, bool top_p, bool bot_p,
 		    bool left_p, bool right_p,
 		    XRectangle *clip_rect)
 {
@@ -2795,7 +2767,7 @@ x_draw_relief_rect (struct frame *f,
   if (left_p)
     {
       x_fill_rectangle (f, top_left_gc, left_x, top_y,
-			width, bottom_y + 1 - top_y);
+			vwidth, bottom_y + 1 - top_y);
       if (top_p)
 	corners |= 1 << CORNER_TOP_LEFT;
       if (bot_p)
@@ -2803,8 +2775,8 @@ x_draw_relief_rect (struct frame *f,
     }
   if (right_p)
     {
-      x_fill_rectangle (f, bottom_right_gc, right_x + 1 - width, top_y,
-			width, bottom_y + 1 - top_y);
+      x_fill_rectangle (f, bottom_right_gc, right_x + 1 - vwidth, top_y,
+			vwidth, bottom_y + 1 - top_y);
       if (top_p)
 	corners |= 1 << CORNER_TOP_RIGHT;
       if (bot_p)
@@ -2814,25 +2786,25 @@ x_draw_relief_rect (struct frame *f,
     {
       if (!right_p)
 	x_fill_rectangle (f, top_left_gc, left_x, top_y,
-			  right_x + 1 - left_x, width);
+			  right_x + 1 - left_x, hwidth);
       else
 	x_fill_trapezoid_for_relief (f, top_left_gc, left_x, top_y,
-				     right_x + 1 - left_x, width, 1);
+				     right_x + 1 - left_x, hwidth, 1);
     }
   if (bot_p)
     {
       if (!left_p)
-	x_fill_rectangle (f, bottom_right_gc, left_x, bottom_y + 1 - width,
-			  right_x + 1 - left_x, width);
+	x_fill_rectangle (f, bottom_right_gc, left_x, bottom_y + 1 - hwidth,
+			  right_x + 1 - left_x, hwidth);
       else
 	x_fill_trapezoid_for_relief (f, bottom_right_gc,
-				     left_x, bottom_y + 1 - width,
-				     right_x + 1 - left_x, width, 0);
+				     left_x, bottom_y + 1 - hwidth,
+				     right_x + 1 - left_x, hwidth, 0);
     }
-  if (left_p && width != 1)
+  if (left_p && vwidth > 1)
     x_fill_rectangle (f, bottom_right_gc, left_x, top_y,
 		      1, bottom_y + 1 - top_y);
-  if (top_p && width != 1)
+  if (top_p && hwidth > 1)
     x_fill_rectangle (f, bottom_right_gc, left_x, top_y,
 		      right_x + 1 - left_x, 1);
   if (corners)
@@ -2866,12 +2838,12 @@ x_draw_relief_rect (struct frame *f,
   /* Top.  */
   if (top_p)
     {
-      if (width == 1)
+      if (hwidth == 1)
         XDrawLine (dpy, drawable, gc,
 		   left_x + left_p, top_y,
 		   right_x + !right_p, top_y);
 
-      for (i = 1; i < width; ++i)
+      for (i = 1; i < hwidth; ++i)
         XDrawLine (dpy, drawable, gc,
 		   left_x  + i * left_p, top_y + i,
 		   right_x + 1 - i * right_p, top_y + i);
@@ -2880,13 +2852,10 @@ x_draw_relief_rect (struct frame *f,
   /* Left.  */
   if (left_p)
     {
-      if (width == 1)
+      if (vwidth == 1)
         XDrawLine (dpy, drawable, gc, left_x, top_y + 1, left_x, bottom_y);
 
-      x_clear_area(f, left_x, top_y, 1, 1);
-      x_clear_area(f, left_x, bottom_y, 1, 1);
-
-      for (i = (width > 1 ? 1 : 0); i < width; ++i)
+      for (i = 1; i < vwidth; ++i)
         XDrawLine (dpy, drawable, gc,
 		   left_x + i, top_y + (i + 1) * top_p,
 		   left_x + i, bottom_y + 1 - (i + 1) * bot_p);
@@ -2899,26 +2868,25 @@ x_draw_relief_rect (struct frame *f,
     gc = f->output_data.x->white_relief.gc;
   XSetClipRectangles (dpy, gc, 0, 0, clip_rect, 1, Unsorted);
 
-  if (width > 1)
-    {
-      /* Outermost top line.  */
-      if (top_p)
-        XDrawLine (dpy, drawable, gc,
-		   left_x  + left_p, top_y,
-		   right_x + !right_p, top_y);
+  /* Outermost top line.  */
+  if (top_p && hwidth > 1)
+    XDrawLine (dpy, drawable, gc,
+	       left_x  + left_p, top_y,
+	       right_x + !right_p, top_y);
 
-      /* Outermost left line.  */
-      if (left_p)
-        XDrawLine (dpy, drawable, gc, left_x, top_y + 1, left_x, bottom_y);
-    }
+  /* Outermost left line.  */
+  if (left_p && vwidth > 1)
+    XDrawLine (dpy, drawable, gc, left_x, top_y + 1, left_x, bottom_y);
 
   /* Bottom.  */
   if (bot_p)
     {
-      XDrawLine (dpy, drawable, gc,
-		 left_x + left_p, bottom_y,
-		 right_x + !right_p, bottom_y);
-      for (i = 1; i < width; ++i)
+      if (hwidth >= 1)
+        XDrawLine (dpy, drawable, gc,
+		   left_x + left_p, bottom_y,
+		   right_x + !right_p, bottom_y);
+
+      for (i = 1; i < hwidth; ++i)
         XDrawLine (dpy, drawable, gc,
 		   left_x  + i * left_p, bottom_y - i,
 		   right_x + 1 - i * right_p, bottom_y - i);
@@ -2927,9 +2895,7 @@ x_draw_relief_rect (struct frame *f,
   /* Right.  */
   if (right_p)
     {
-      x_clear_area(f, right_x, top_y, 1, 1);
-      x_clear_area(f, right_x, bottom_y, 1, 1);
-      for (i = 0; i < width; ++i)
+      for (i = 0; i < vwidth; ++i)
         XDrawLine (dpy, drawable, gc,
 		   right_x - i, top_y + (i + 1) * top_p,
 		   right_x - i, bottom_y + 1 - (i + 1) * bot_p);
@@ -2950,8 +2916,8 @@ x_draw_relief_rect (struct frame *f,
 
 static void
 x_draw_box_rect (struct glyph_string *s,
-		 int left_x, int top_y, int right_x, int bottom_y, int width,
-		 bool left_p, bool right_p, XRectangle *clip_rect)
+		 int left_x, int top_y, int right_x, int bottom_y, int hwidth,
+		 int vwidth, bool left_p, bool right_p, XRectangle *clip_rect)
 {
   Display *display = FRAME_X_DISPLAY (s->f);
   XGCValues xgcv;
@@ -2962,21 +2928,21 @@ x_draw_box_rect (struct glyph_string *s,
 
   /* Top.  */
   x_fill_rectangle (s->f, s->gc,
-		  left_x, top_y, right_x - left_x + 1, width);
+		  left_x, top_y, right_x - left_x + 1, hwidth);
 
   /* Left.  */
   if (left_p)
     x_fill_rectangle (s->f, s->gc,
-		    left_x, top_y, width, bottom_y - top_y + 1);
+		    left_x, top_y, vwidth, bottom_y - top_y + 1);
 
   /* Bottom.  */
   x_fill_rectangle (s->f, s->gc,
-		  left_x, bottom_y - width + 1, right_x - left_x + 1, width);
+		  left_x, bottom_y - hwidth + 1, right_x - left_x + 1, hwidth);
 
   /* Right.  */
   if (right_p)
     x_fill_rectangle (s->f, s->gc,
-		    right_x - width + 1, top_y, width, bottom_y - top_y + 1);
+		    right_x - vwidth + 1, top_y, vwidth, bottom_y - top_y + 1);
 
   XSetForeground (display, s->gc, xgcv.foreground);
   x_reset_clip_rectangles (s->f, s->gc);
@@ -2988,7 +2954,7 @@ x_draw_box_rect (struct glyph_string *s,
 static void
 x_draw_glyph_string_box (struct glyph_string *s)
 {
-  int width, left_x, right_x, top_y, bottom_y, last_x;
+  int hwidth, vwidth, left_x, right_x, top_y, bottom_y, last_x;
   bool raised_p, left_p, right_p;
   struct glyph *last_glyph;
   XRectangle clip_rect;
@@ -2997,12 +2963,29 @@ x_draw_glyph_string_box (struct glyph_string *s)
 	    ? WINDOW_RIGHT_EDGE_X (s->w)
 	    : window_box_right (s->w, s->area));
 
-  /* The glyph that may have a right box line.  */
-  last_glyph = (s->cmp || s->img
-		? s->first_glyph
-		: s->first_glyph + s->nchars - 1);
+  /* The glyph that may have a right box line.  For static
+     compositions and images, the right-box flag is on the first glyph
+     of the glyph string; for other types it's on the last glyph.  */
+  if (s->cmp || s->img)
+    last_glyph = s->first_glyph;
+  else if (s->first_glyph->type == COMPOSITE_GLYPH
+	   && s->first_glyph->u.cmp.automatic)
+    {
+      /* For automatic compositions, we need to look up the last glyph
+	 in the composition.  */
+        struct glyph *end = s->row->glyphs[s->area] + s->row->used[s->area];
+	struct glyph *g = s->first_glyph;
+	for (last_glyph = g++;
+	     g < end && g->u.cmp.automatic && g->u.cmp.id == s->cmp_id
+	       && g->slice.cmp.to < s->cmp_to;
+	     last_glyph = g++)
+	  ;
+    }
+  else
+    last_glyph = s->first_glyph + s->nchars - 1;
 
-  width = eabs (s->face->box_line_width);
+  vwidth = eabs (s->face->box_vertical_line_width);
+  hwidth = eabs (s->face->box_horizontal_line_width);
   raised_p = s->face->box == FACE_RAISED_BOX;
   left_x = s->x;
   right_x = (s->row->full_width_p && s->extends_to_end_of_line_p
@@ -3023,13 +3006,13 @@ x_draw_glyph_string_box (struct glyph_string *s)
   get_glyph_string_clip_rect (s, &clip_rect);
 
   if (s->face->box == FACE_SIMPLE_BOX)
-    x_draw_box_rect (s, left_x, top_y, right_x, bottom_y, width,
-		     left_p, right_p, &clip_rect);
+    x_draw_box_rect (s, left_x, top_y, right_x, bottom_y, hwidth,
+		     vwidth, left_p, right_p, &clip_rect);
   else
     {
       x_setup_relief_colors (s);
-      x_draw_relief_rect (s->f, left_x, top_y, right_x, bottom_y,
-			  width, raised_p, true, true, left_p, right_p,
+      x_draw_relief_rect (s->f, left_x, top_y, right_x, bottom_y, hwidth,
+			  vwidth, raised_p, true, true, left_p, right_p,
 			  &clip_rect);
     }
 }
@@ -3049,14 +3032,12 @@ x_composite_image (struct glyph_string *s, Pixmap dest,
       XRenderPictFormat *default_format;
       XRenderPictureAttributes attr;
 
-      /* FIXME: Should we do this each time or would it make sense to
-         store destination in the frame struct?  */
       default_format = XRenderFindVisualFormat (display,
                                                 DefaultVisual (display, 0));
       destination = XRenderCreatePicture (display, dest,
                                           default_format, 0, &attr);
 
-      XRenderComposite (display, PictOpSrc,
+      XRenderComposite (display, s->img->mask_picture ? PictOpOver : PictOpSrc,
                         s->img->picture, s->img->mask_picture, destination,
                         srcX, srcY,
                         srcX, srcY,
@@ -3089,7 +3070,7 @@ x_draw_image_foreground (struct glyph_string *s)
   if (s->face->box != FACE_NO_BOX
       && s->first_glyph->left_box_line_p
       && s->slice.x == 0)
-    x += eabs (s->face->box_line_width);
+    x += max (s->face->box_vertical_line_width, 0);
 
   /* If there is a margin around the image, adjust x- and y-position
      by that margin.  */
@@ -3208,7 +3189,7 @@ x_draw_image_relief (struct glyph_string *s)
   if (s->face->box != FACE_NO_BOX
       && s->first_glyph->left_box_line_p
       && s->slice.x == 0)
-    x += eabs (s->face->box_line_width);
+    x += max (s->face->box_vertical_line_width, 0);
 
   /* If there is a margin around the image, adjust x- and y-position
      by that margin.  */
@@ -3276,7 +3257,7 @@ x_draw_image_relief (struct glyph_string *s)
 
   x_setup_relief_colors (s);
   get_glyph_string_clip_rect (s, &r);
-  x_draw_relief_rect (s->f, x, y, x1, y1, thick, raised_p,
+  x_draw_relief_rect (s->f, x, y, x1, y1, thick, thick, raised_p,
 		      top_p, bot_p, left_p, right_p, &r);
 }
 
@@ -3295,7 +3276,7 @@ x_draw_image_foreground_1 (struct glyph_string *s, Pixmap pixmap)
   if (s->face->box != FACE_NO_BOX
       && s->first_glyph->left_box_line_p
       && s->slice.x == 0)
-    x += eabs (s->face->box_line_width);
+    x += max (s->face->box_vertical_line_width, 0);
 
   /* If there is a margin around the image, adjust x- and y-position
      by that margin.  */
@@ -3315,6 +3296,7 @@ x_draw_image_foreground_1 (struct glyph_string *s, Pixmap pixmap)
 	     trust on the shape extension to be available
 	     (XShapeCombineRegion).  So, compute the rectangle to draw
 	     manually.  */
+          /* FIXME: Do we need to do this when using XRender compositing?  */
 	  unsigned long mask = (GCClipMask | GCClipXOrigin | GCClipYOrigin
 				| GCFunction);
 	  XGCValues xgcv;
@@ -3325,9 +3307,9 @@ x_draw_image_foreground_1 (struct glyph_string *s, Pixmap pixmap)
 	  xgcv.function = GXcopy;
 	  XChangeGC (display, s->gc, mask, &xgcv);
 
-	  XCopyArea (display, s->img->pixmap, pixmap, s->gc,
-		     s->slice.x, s->slice.y,
-		     s->slice.width, s->slice.height, x, y);
+	  x_composite_image (s, pixmap,
+                             s->slice.x, s->slice.y,
+                             x, y, s->slice.width, s->slice.height);
 	  XSetClipMask (display, s->gc, None);
 	}
       else
@@ -3396,8 +3378,8 @@ x_draw_glyph_string_bg_rect (struct glyph_string *s, int x, int y, int w, int h)
 static void
 x_draw_image_glyph_string (struct glyph_string *s)
 {
-  int box_line_hwidth = eabs (s->face->box_line_width);
-  int box_line_vwidth = max (s->face->box_line_width, 0);
+  int box_line_hwidth = max (s->face->box_vertical_line_width, 0);
+  int box_line_vwidth = max (s->face->box_horizontal_line_width, 0);
   int height;
 #ifndef USE_CAIRO
   Display *display = FRAME_X_DISPLAY (s->f);
@@ -3813,9 +3795,9 @@ x_draw_glyph_string (struct glyph_string *s)
   if (!s->for_overlaps)
     {
       /* Draw underline.  */
-      if (s->face->underline_p)
+      if (s->face->underline)
         {
-          if (s->face->underline_type == FACE_UNDER_WAVE)
+          if (s->face->underline == FACE_UNDER_WAVE)
             {
               if (s->face->underline_defaulted_p)
                 x_draw_underwave (s);
@@ -3829,13 +3811,13 @@ x_draw_glyph_string (struct glyph_string *s)
                   XSetForeground (display, s->gc, xgcv.foreground);
                 }
             }
-          else if (s->face->underline_type == FACE_UNDER_LINE)
+          else if (s->face->underline == FACE_UNDER_LINE)
             {
               unsigned long thickness, position;
               int y;
 
-              if (s->prev && s->prev->face->underline_p
-		  && s->prev->face->underline_type == FACE_UNDER_LINE)
+              if (s->prev &&
+	          s->prev->face->underline == FACE_UNDER_LINE)
                 {
                   /* We use the same underline style as the previous one.  */
                   thickness = s->prev->underline_thickness;
@@ -3847,20 +3829,21 @@ x_draw_glyph_string (struct glyph_string *s)
 		  unsigned long minimum_offset;
 		  bool underline_at_descent_line;
 		  bool use_underline_position_properties;
-		  Lisp_Object val
-		    = buffer_local_value (Qunderline_minimum_offset,
-					  s->w->contents);
+		  Lisp_Object val = (WINDOW_BUFFER_LOCAL_VALUE
+				     (Qunderline_minimum_offset, s->w));
+
 		  if (FIXNUMP (val))
 		    minimum_offset = max (0, XFIXNUM (val));
 		  else
 		    minimum_offset = 1;
-		  val = buffer_local_value (Qx_underline_at_descent_line,
-					    s->w->contents);
+
+		  val = (WINDOW_BUFFER_LOCAL_VALUE
+			 (Qx_underline_at_descent_line, s->w));
 		  underline_at_descent_line
 		    = !(NILP (val) || EQ (val, Qunbound));
-		  val
-		    = buffer_local_value (Qx_use_underline_position_properties,
-					  s->w->contents);
+
+		  val = (WINDOW_BUFFER_LOCAL_VALUE
+			 (Qx_use_underline_position_properties, s->w));
 		  use_underline_position_properties
 		    = !(NILP (val) || EQ (val, Qunbound));
 
@@ -4791,6 +4774,16 @@ x_detect_focus_change (struct x_display_info *dpyinfo, struct frame *frame,
 
     case FocusIn:
     case FocusOut:
+      /* Ignore transient focus events from hotkeys, window manager
+         gadgets, and other odd sources.  Some buggy window managers
+         (e.g., Muffin 4.2.4) send FocusIn events of this type without
+         corresponding FocusOut events even when some other window
+         really has focus, and these kinds of focus event don't
+         correspond to real user input changes.  GTK+ uses the same
+         filtering. */
+      if (event->xfocus.mode == NotifyGrab ||
+          event->xfocus.mode == NotifyUngrab)
+        return;
       x_focus_changed (event->type,
 		       (event->xfocus.detail == NotifyPointer ?
 			FOCUS_IMPLICIT : FOCUS_EXPLICIT),
@@ -6303,17 +6296,19 @@ x_create_horizontal_toolkit_scroll_bar (struct frame *f, struct scroll_bar *bar)
   XtSetArg (av[ac], XmNincrement, 1); ++ac;
   XtSetArg (av[ac], XmNpageIncrement, 1); ++ac;
 
+  /* Note: "background" is the thumb color, and "trough" is the color behind
+     everything. */
   pixel = f->output_data.x->scroll_bar_foreground_pixel;
   if (pixel != -1)
     {
-      XtSetArg (av[ac], XmNforeground, pixel);
+      XtSetArg (av[ac], XmNbackground, pixel);
       ++ac;
     }
 
   pixel = f->output_data.x->scroll_bar_background_pixel;
   if (pixel != -1)
     {
-      XtSetArg (av[ac], XmNbackground, pixel);
+      XtSetArg (av[ac], XmNtroughColor, pixel);
       ++ac;
     }
 
@@ -8704,7 +8699,7 @@ handle_one_xevent (struct x_display_info *dpyinfo,
 		if (nchars == nbytes)
 		  ch = copy_bufptr[i], len = 1;
 		else
-		  ch = STRING_CHAR_AND_LENGTH (copy_bufptr + i, len);
+		  ch = string_char_and_length (copy_bufptr + i, &len);
 		inev.ie.kind = (SINGLE_BYTE_CHAR_P (ch)
 				? ASCII_KEYSTROKE_EVENT
 				: MULTIBYTE_CHAR_KEYSTROKE_EVENT);
@@ -8933,6 +8928,10 @@ handle_one_xevent (struct x_display_info *dpyinfo,
       if (f)
 	x_cr_update_surface_desired_size (f, configureEvent.xconfigure.width,
 					  configureEvent.xconfigure.height);
+      else if (any && configureEvent.xconfigure.window == FRAME_X_WINDOW (any))
+	x_cr_update_surface_desired_size (any,
+					  configureEvent.xconfigure.width,
+					  configureEvent.xconfigure.height);
 #endif
 #ifdef USE_GTK
       if (!f
@@ -9029,7 +9028,8 @@ handle_one_xevent (struct x_display_info *dpyinfo,
 		  unblock_input ();
 		}
 
-	      if (old_left != f->left_pos || old_top != f->top_pos)
+	      if (!FRAME_TOOLTIP_P (f)
+		  && (old_left != f->left_pos || old_top != f->top_pos))
 		{
 		  inev.ie.kind = MOVE_FRAME_EVENT;
 		  XSETFRAME (inev.ie.frame_or_window, f);
@@ -10095,8 +10095,6 @@ For details, see etc/PROBLEMS.\n",
   error ("%s", error_msg);
 }
 
-/* We specifically use it before defining it, so that gcc doesn't inline it,
-   otherwise gdb doesn't know how to properly put a breakpoint on it.  */
 static void x_error_quitter (Display *, XErrorEvent *);
 
 /* This is the first-level handler for X protocol errors.
@@ -10125,9 +10123,6 @@ x_error_handler (Display *display, XErrorEvent *event)
    If that was the only one, it prints an error message and kills Emacs.  */
 
 /* .gdbinit puts a breakpoint here, so make sure it is not inlined.  */
-
-/* On older GCC versions, just putting x_error_quitter
-   after x_error_handler prevents inlining into the former.  */
 
 static void NO_INLINE
 x_error_quitter (Display *display, XErrorEvent *event)
@@ -10611,26 +10606,29 @@ x_set_offset (struct frame *f, register int xoff, register int yoff, int change_
 	       modified_left, modified_top);
 #endif
 
-  x_sync_with_move (f, f->left_pos, f->top_pos,
-                    FRAME_DISPLAY_INFO (f)->wm_type == X_WMTYPE_UNKNOWN);
+  /* 'x_sync_with_move' is too costly for dragging child frames.  */
+  if (!FRAME_PARENT_FRAME (f))
+    {
+      x_sync_with_move (f, f->left_pos, f->top_pos,
+			FRAME_DISPLAY_INFO (f)->wm_type == X_WMTYPE_UNKNOWN);
 
-  /* change_gravity is non-zero when this function is called from Lisp to
-     programmatically move a frame.  In that case, we call
-     x_check_expected_move to discover if we have a "Type A" or "Type B"
-     window manager, and, for a "Type A" window manager, adjust the position
-     of the frame.
+      /* change_gravity is non-zero when this function is called from Lisp to
+	 programmatically move a frame.  In that case, we call
+	 x_check_expected_move to discover if we have a "Type A" or "Type B"
+	 window manager, and, for a "Type A" window manager, adjust the position
+	 of the frame.
 
-     We call x_check_expected_move if a programmatic move occurred, and
-     either the window manager type (A/B) is unknown or it is Type A but we
-     need to compute the top/left offset adjustment for this frame.  */
+	 We call x_check_expected_move if a programmatic move occurred, and
+	 either the window manager type (A/B) is unknown or it is Type A but we
+	 need to compute the top/left offset adjustment for this frame.  */
 
-  if (change_gravity != 0
-      && !FRAME_PARENT_FRAME (f)
-      && (FRAME_DISPLAY_INFO (f)->wm_type == X_WMTYPE_UNKNOWN
-	  || (FRAME_DISPLAY_INFO (f)->wm_type == X_WMTYPE_A
-	      && (FRAME_X_OUTPUT (f)->move_offset_left == 0
-		  && FRAME_X_OUTPUT (f)->move_offset_top == 0))))
-    x_check_expected_move (f, modified_left, modified_top);
+      if (change_gravity != 0
+	  && (FRAME_DISPLAY_INFO (f)->wm_type == X_WMTYPE_UNKNOWN
+	      || (FRAME_DISPLAY_INFO (f)->wm_type == X_WMTYPE_A
+		  && (FRAME_X_OUTPUT (f)->move_offset_left == 0
+		      && FRAME_X_OUTPUT (f)->move_offset_top == 0))))
+	x_check_expected_move (f, modified_left, modified_top);
+    }
 
   unblock_input ();
 }
@@ -11587,7 +11585,8 @@ x_ewmh_activate_frame (struct frame *f)
       x_send_client_event (frame, make_fixnum (0), frame,
 			   dpyinfo->Xatom_net_active_window,
 			   make_fixnum (32),
-			   list2i (1, dpyinfo->last_user_time));
+			   list2 (make_fixnum (1),
+				  INT_TO_INTEGER (dpyinfo->last_user_time)));
     }
 }
 
@@ -13372,7 +13371,8 @@ static struct redisplay_interface x_redisplay_interface =
     x_draw_window_divider,
     x_shift_glyphs_for_insert, /* Never called; see comment in function.  */
     x_show_hourglass,
-    x_hide_hourglass
+    x_hide_hourglass,
+    x_default_font_parameter
   };
 
 
@@ -13633,7 +13633,7 @@ baseline level.  The default value is nil.  */);
   DEFVAR_BOOL ("x-mouse-click-focus-ignore-position",
 	       x_mouse_click_focus_ignore_position,
     doc: /* Non-nil means that a mouse click to focus a frame does not move point.
-This variable is only used when the window manager requires that you
+This variable is used only when the window manager requires that you
 click on a frame to select it (give it focus).  In that case, a value
 of nil, means that the selected window and cursor position changes to
 reflect the mouse click position, while a non-nil value means that the

@@ -1,6 +1,6 @@
 @c -*-texinfo-*-
 @c This is part of the GNU Emacs Lisp Reference Manual.
-@c Copyright (C) 1990-1995, 1998-1999, 2001-2019 Free Software
+@c Copyright (C) 1990--1995, 1998--1999, 2001--2020 Free Software
 @c Foundation, Inc.
 @c See the file elisp.texi for copying conditions.
 @node Modes
@@ -135,12 +135,25 @@ non-@code{nil} value, it returns that value; otherwise it returns
 @node Setting Hooks
 @subsection Setting Hooks
 
-  Here's an example that uses a mode hook to turn on Auto Fill mode when
-in Lisp Interaction mode:
+  Here's an example that adds a function to a mode hook to turn
+on Auto Fill mode when in Lisp Interaction mode:
 
 @example
 (add-hook 'lisp-interaction-mode-hook 'auto-fill-mode)
 @end example
+
+  The value of a hook variable should be a list of functions.  You can
+manipulate that list using the normal Lisp facilities, but the modular
+way is to use the functions @code{add-hook} and @code{remove-hook},
+defined below.  They take care to handle some unusual situations and
+avoid problems.
+
+  It works to put a @code{lambda}-expression function on a hook, but
+we recommend avoiding this because it can lead to confusion.  If you
+add the same @code{lambda}-expression a second time but write it
+slightly differently, you will get two equivalent but distinct
+functions on the hook.  If you then remove one of them, the other will
+still be on it.
 
 @defun add-hook hook function &optional depth local
 This function is the handy way to add function @var{function} to hook
@@ -456,9 +469,10 @@ variable @code{imenu-generic-expression}, for the two variables
 @code{imenu-create-index-function} (@pxref{Imenu}).
 
 @item
-The mode can specify a local value for
-@code{eldoc-documentation-function} to tell ElDoc mode how to handle
-this mode.
+The mode can tell ElDoc mode how to retrieve different types of
+documentation for whatever is at point, by adding one or more
+buffer-local entries to the special hook
+@code{eldoc-documentation-functions}.
 
 @item
 The mode can specify how to complete various keywords by adding one or
@@ -1339,19 +1353,11 @@ illustrate how these modes are written.
 @end smallexample
 
   The three modes for Lisp share much of their code.  For instance,
-each calls the following function to set various variables:
-
-@smallexample
-@group
-(defun lisp-mode-variables (&optional syntax keywords-case-insensitive elisp)
-  (when syntax
-    (set-syntax-table lisp-mode-syntax-table))
-  @dots{}
-@end group
-@end smallexample
+Lisp mode and Emacs Lisp mode inherit from Lisp Data mode and Lisp
+Interaction Mode inherits from Emacs Lisp mode.
 
 @noindent
-Amongst other things, this function sets up the @code{comment-start}
+Amongst other things, Lisp Data mode sets up the @code{comment-start}
 variable to handle Lisp comments:
 
 @smallexample
@@ -1401,7 +1407,7 @@ Finally, here is the major mode command for Lisp mode:
 
 @smallexample
 @group
-(define-derived-mode lisp-mode prog-mode "Lisp"
+(define-derived-mode lisp-mode lisp-data-mode "Lisp"
   "Major mode for editing Lisp code for Lisps other than GNU Emacs Lisp.
 Commands:
 Delete converts tabs to spaces as it moves back.
@@ -1412,10 +1418,9 @@ Note that `run-lisp' may be used either to start an inferior Lisp job
 or to switch back to an existing one."
 @end group
 @group
-  (lisp-mode-variables nil t)
   (setq-local find-tag-default-function 'lisp-find-tag-default)
   (setq-local comment-start-skip
-              "\\(\\(^\\|[^\\\\\n]\\)\\(\\\\\\\\\\)*\\)\\(;+\\|#|\\) *")
+              "\\(\\(^\\|[^\\\n]\\)\\(\\\\\\\\\\)*\\)\\(;+\\|#|\\) *")
   (setq imenu-case-fold-search t))
 @end group
 @end smallexample
@@ -2660,6 +2665,7 @@ Setting this variable makes it buffer-local in the current buffer.
 @node Font Lock Mode
 @section Font Lock Mode
 @cindex Font Lock mode
+@cindex syntax highlighting and coloring
 
   @dfn{Font Lock mode} is a buffer-local minor mode that automatically
 attaches @code{face} properties to certain parts of the buffer based on
@@ -2737,6 +2743,12 @@ This function should make sure the region between @var{beg} and
 @var{end} default to the beginning and the end of the buffer's
 accessible portion.  Calls the function specified by
 @code{font-lock-ensure-function}.
+
+@item font-lock-debug-fontify
+This is a convenience command meant to be used when developing font
+locking for a mode, and should not be called from Lisp code.  It
+recomputes all the relevant variables and then calls
+@code{font-lock-fontify-region} on the entire buffer.
 @end ftable
 
   There are several variables that control how Font Lock mode highlights
@@ -3195,6 +3207,11 @@ The optional argument @var{contextual}, if non-@code{nil}, forces Font
 Lock mode to always refontify a syntactically relevant part of the
 buffer, and not just the modified lines.  This argument can usually be
 omitted.
+
+When Font Lock is activated in a buffer, it calls this function with a
+non-@code{nil} value of @var{contextual} if the value of
+@code{font-lock-keywords-only} (@pxref{Syntactic Font Lock}) is
+@code{nil}.
 @end defun
 
 @defun jit-lock-unregister function
@@ -3281,7 +3298,8 @@ assigned using the ordering as a guide.
 @table @code
 @item font-lock-warning-face
 @vindex font-lock-warning-face
-for a construct that is peculiar, or that greatly changes the meaning of
+for a construct that is peculiar (e.g., an unescaped confusable quote
+in an Emacs Lisp symbol like @samp{‘foo}), or that greatly changes the meaning of
 other text, like @samp{;;;###autoload} in Emacs Lisp and @samp{#error}
 in C.
 
@@ -3360,7 +3378,11 @@ table in special cases.  @xref{Syntax Properties}.
 If the value of this variable is non-@code{nil}, Font Lock does not do
 syntactic fontification, only search-based fontification based on
 @code{font-lock-keywords}.  It is normally set by Font Lock mode based
-on the @var{keywords-only} element in @code{font-lock-defaults}.
+on the @var{keywords-only} element in @code{font-lock-defaults}.  If
+the value is @code{nil}, Font Lock will call @code{jit-lock-register}
+(@pxref{Other Font Lock Variables}) to set up for automatic
+refontification of buffer text following a modified line to reflect
+the new syntactic context due to the change.
 @end defvar
 
 @defvar font-lock-syntax-table
@@ -3375,13 +3397,23 @@ Table Functions}).
 @defvar font-lock-syntactic-face-function
 If this variable is non-@code{nil}, it should be a function to determine
 which face to use for a given syntactic element (a string or a comment).
-The value is normally set through an @var{other-vars} element in
-@code{font-lock-defaults}.
 
 The function is called with one argument, the parse state at point
 returned by @code{parse-partial-sexp}, and should return a face.  The
 default value returns @code{font-lock-comment-face} for comments and
-@code{font-lock-string-face} for strings (@pxref{Faces for Font Lock}).
+@code{font-lock-string-face} for strings (@pxref{Faces for Font
+Lock}).
+
+This variable is normally set through the ``other'' elements in
+@code{font-lock-defaults}:
+
+@lisp
+(setq-local font-lock-defaults
+            `(,python-font-lock-keywords
+              nil nil nil nil
+              (font-lock-syntactic-face-function
+               . python-font-lock-syntactic-face-function)))
+@end lisp
 @end defvar
 
 @node Multiline Font Lock

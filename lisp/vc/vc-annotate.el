@@ -1,6 +1,6 @@
 ;;; vc-annotate.el --- VC Annotate Support  -*- lexical-binding: t -*-
 
-;; Copyright (C) 1997-1998, 2000-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1997-1998, 2000-2020 Free Software Foundation, Inc.
 
 ;; Author: Martin Lorentzson <emwson@emw.ericsson.se>
 ;; Maintainer: emacs-devel@gnu.org
@@ -725,6 +725,7 @@ The annotations are relative to the current time, unless overridden by OFFSET."
                ;; Make the face if not done.
                (face (or (intern-soft face-name)
                          (let ((tmp-face (make-face (intern face-name))))
+                           (set-face-extend tmp-face t)
                            (cond
                             (vc-annotate-background-mode
                              (set-face-background tmp-face (cdr color)))

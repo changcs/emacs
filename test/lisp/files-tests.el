@@ -1,6 +1,6 @@
 ;;; files-tests.el --- tests for files.el.  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2012-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2012-2020 Free Software Foundation, Inc.
 
 ;; This file is part of GNU Emacs.
 
@@ -240,8 +240,8 @@ form.")
     (should (equal kill-emacs-args '(nil)))))
 
 (ert-deftest files-tests-read-file-in-~ ()
-  "Test file prompting in directory named '~'.
-If we are in a directory named '~', the default value should not
+  "Test file prompting in directory named `~'.
+If we are in a directory named `~', the default value should not
 be $HOME."
   (cl-letf (((symbol-function 'completing-read)
              (lambda (_prompt _coll &optional _pred _req init _hist def _)
@@ -1003,9 +1003,9 @@ unquoted file names."
 
 (ert-deftest files-tests-file-name-non-special-set-file-times ()
   (files-tests--with-temp-non-special (tmpfile nospecial)
-    (set-file-times nospecial))
+    (set-file-times nospecial nil 'nofollow))
   (files-tests--with-temp-non-special-and-file-name-handler (tmpfile nospecial)
-    (should-error (set-file-times nospecial))))
+    (should-error (set-file-times nospecial nil 'nofollow))))
 
 (ert-deftest files-tests-file-name-non-special-set-visited-file-modtime ()
   (files-tests--with-temp-non-special (tmpfile nospecial)
@@ -1052,7 +1052,13 @@ unquoted file names."
           (should (search-forward emacs-version nil t))
           ;; Don't stop the test run with a query, as the subprocess
           ;; may or may not be dead by the time we reach here.
-          (set-process-query-on-exit-flag proc nil)))))
+          (set-process-query-on-exit-flag proc nil)
+          ;; On MS-Windows, wait for the process to die, since the OS
+          ;; will not let us delete a directory that is the cwd of a
+          ;; running process.
+          (when (eq system-type 'windows-nt)
+            (while (process-live-p proc)
+              (sleep-for 0.1)))))))
   (files-tests--with-temp-non-special-and-file-name-handler
       (tmpdir nospecial-dir t)
     (with-temp-buffer
@@ -1157,6 +1163,42 @@ works as expected if the default directory is quoted."
     (should-error (make-directory a/b))
     (should-not (make-directory a/b t))
     (delete-directory dir 'recursive)))
+
+(ert-deftest files-tests-file-modes-symbolic-to-number ()
+  (let ((alist (list (cons "a=rwx" #o777)
+                     (cons "o=t" #o1000)
+                     (cons "o=xt" #o1001)
+                     (cons "o=tx" #o1001) ; Order doesn't matter.
+                     (cons "u=rwx,g=rx,o=rx" #o755)
+                     (cons "u=rwx,g=,o=" #o700)
+                     (cons "u=rwx" #o700) ; Empty permissions can be ignored.
+                     (cons "u=rw,g=r,o=r" #o644)
+                     (cons "u=rw,g=r,o=t" #o1640)
+                     (cons "u=rw,g=r,o=xt" #o1641)
+                     (cons "u=rwxs,g=rs,o=xt" #o7741)
+                     (cons "u=rws,g=rs,o=t" #o7640)
+                     (cons "u=rws,g=rs,o=r" #o6644)
+                     (cons "a=r" #o444)
+                     (cons "u=S" nil)
+                     (cons "u=T" nil)
+                     (cons "u=Z" nil))))
+    (dolist (x alist)
+      (if (cdr-safe x)
+          (should (equal (cdr x) (file-modes-symbolic-to-number (car x))))
+        (should-error (file-modes-symbolic-to-number (car x)))))))
+
+(ert-deftest files-tests-file-modes-number-to-symbolic ()
+  (let ((alist (list (cons #o755 "-rwxr-xr-x")
+                     (cons #o700 "-rwx------")
+                     (cons #o644 "-rw-r--r--")
+                     (cons #o1640 "-rw-r----T")
+                     (cons #o1641 "-rw-r----t")
+                     (cons #o7741 "-rwsr-S--t")
+                     (cons #o7640 "-rwSr-S--T")
+                     (cons #o6644 "-rwSr-Sr--")
+                     (cons #o444 "-r--r--r--"))))
+    (dolist (x alist)
+      (should (equal (cdr x) (file-modes-number-to-symbolic (car x)))))))
 
 (ert-deftest files-tests-no-file-write-contents ()
   "Test that `write-contents-functions' permits saving a file.
@@ -1282,13 +1324,19 @@ renaming only, rather than modified in-place."
   (should (equal (file-size-human-readable 10000 'si " " "bit") "10 kbit"))
   (should (equal (file-size-human-readable 10000 'iec " " "bit") "9.8 Kibit"))
 
+  (should (equal (file-size-human-readable 2048) "2k"))
+  (should (equal (file-size-human-readable 2046) "2k"))
+  (should (equal (file-size-human-readable 2050) "2k"))
+  (should (equal (file-size-human-readable 1950) "1.9k"))
+  (should (equal (file-size-human-readable 2100) "2.1k"))
+
   (should (equal (file-size-human-readable-iec 0) "0 B"))
   (should (equal (file-size-human-readable-iec 1) "1 B"))
   (should (equal (file-size-human-readable-iec 9621) "9.4 KiB"))
   (should (equal (file-size-human-readable-iec 72528034765) "67.5 GiB")))
 
 (ert-deftest files-test-magic-mode-alist-re-baseline ()
-  "Test magic-mode-alist with RE, expected behaviour for match."
+  "Test magic-mode-alist with RE, expected behavior for match."
   (let ((magic-mode-alist '(("my-tag" . text-mode))))
     (with-temp-buffer
       (insert "my-tag")
@@ -1296,7 +1344,7 @@ renaming only, rather than modified in-place."
       (should (eq major-mode 'text-mode)))))
 
 (ert-deftest files-test-magic-mode-alist-re-no-match ()
-  "Test magic-mode-alist with RE, expected behaviour for no match."
+  "Test magic-mode-alist with RE, expected behavior for no match."
   (let ((magic-mode-alist '(("my-tag" . text-mode))))
     (with-temp-buffer
       (insert "not-my-tag")

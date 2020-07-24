@@ -1,6 +1,6 @@
 ;;; diff-mode.el --- a mode for viewing/editing context diffs -*- lexical-binding: t -*-
 
-;; Copyright (C) 1998-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1998-2020 Free Software Foundation, Inc.
 
 ;; Author: Stefan Monnier <monnier@iro.umontreal.ca>
 ;; Keywords: convenience patch diff vc
@@ -298,22 +298,22 @@ well."
 
 (defface diff-header
   '((((class color) (min-colors 88) (background light))
-     :background "grey85")
+     :background "grey85" :extend t)
     (((class color) (min-colors 88) (background dark))
-     :background "grey45")
+     :background "grey45" :extend t)
     (((class color))
-     :foreground "blue1" :weight bold)
-    (t :weight bold))
+     :foreground "blue1" :weight bold :extend t)
+    (t :weight bold :extend t))
   "`diff-mode' face inherited by hunk and index header faces.")
 
 (defface diff-file-header
   '((((class color) (min-colors 88) (background light))
-     :background "grey75" :weight bold)
+     :background "grey75" :weight bold :extend t)
     (((class color) (min-colors 88) (background dark))
-     :background "grey60" :weight bold)
+     :background "grey60" :weight bold :extend t)
     (((class color))
-     :foreground "cyan" :weight bold)
-    (t :weight bold))			; :height 1.3
+     :foreground "cyan" :weight bold :extend t)
+    (t :weight bold :extend t))			; :height 1.3
   "`diff-mode' face used to highlight file header lines.")
 
 (defface diff-index
@@ -328,26 +328,26 @@ well."
   '((default
      :inherit diff-changed)
     (((class color) (min-colors 257) (background light))
-     :background "#ffeeee")
+     :background "#ffeeee" :extend t)
     (((class color) (min-colors 88) (background light))
-     :background "#ffdddd")
+     :background "#ffdddd" :extend t)
     (((class color) (min-colors 88) (background dark))
-     :background "#553333")
+     :background "#553333" :extend t)
     (((class color))
-     :foreground "red"))
+     :foreground "red" :extend t))
   "`diff-mode' face used to highlight removed lines.")
 
 (defface diff-added
   '((default
      :inherit diff-changed)
     (((class color) (min-colors 257) (background light))
-     :background "#eeffee")
+     :background "#eeffee" :extend t)
     (((class color) (min-colors 88) (background light))
-     :background "#ddffdd")
+     :background "#ddffdd" :extend t)
     (((class color) (min-colors 88) (background dark))
-     :background "#335533")
+     :background "#335533" :extend t)
     (((class color))
-     :foreground "green"))
+     :foreground "green" :extend t))
   "`diff-mode' face used to highlight added lines.")
 
 (defface diff-changed
@@ -384,9 +384,9 @@ well."
   "`diff-mode' face used to highlight function names produced by \"diff -p\".")
 
 (defface diff-context
-  '((t nil))
+  '((t :extend t))
   "`diff-mode' face used to highlight context and other side-information."
-  :version "25.1")
+  :version "27.1")
 
 (defface diff-nonexistent
   '((t :inherit diff-file-header))
@@ -484,7 +484,7 @@ and the face `diff-added' for added lines.")
   ;; Prefer second name as first is most likely to be a backup or
   ;; version-control name.  The [\t\n] at the end of the unidiff pattern
   ;; catches Debian source diff files (which lack the trailing date).
-  '((nil "\\+\\+\\+\\ \\([^\t\n]+\\)[\t\n]" 1) ; unidiffs
+  '((nil "\\+\\+\\+ \\([^\t\n]+\\)[\t\n]" 1) ; unidiffs
     (nil "^--- \\([^\t\n]+\\)\t.*\n\\*" 1))) ; context diffs
 
 ;;;;
@@ -504,12 +504,25 @@ See https://lists.gnu.org/r/emacs-devel/2007-11/msg01990.html")
 (defconst diff-separator-re "^--+ ?$")
 
 (defvar diff-narrowed-to nil)
+(defvar diff-buffer-type nil)
 
 (defun diff-hunk-style (&optional style)
   (when (looking-at diff-hunk-header-re)
     (setq style (cdr (assq (char-after) '((?@ . unified) (?* . context)))))
     (goto-char (match-end 0)))
   style)
+
+(defun diff-prev-line-if-patch-separator ()
+  "Return previous line if it has patch separator as produced by git."
+  (pcase diff-buffer-type
+    ('git
+     (save-excursion
+       (let ((old-point (point)))
+         (forward-line -1)
+         (if (looking-at "^-- $")
+             (point)
+           old-point))))
+    (_ (point))))
 
 (defun diff-end-of-hunk (&optional style donttrustheader)
   "Advance to the end of the current hunk, and return its position."
@@ -561,7 +574,8 @@ See https://lists.gnu.org/r/emacs-devel/2007-11/msg01990.html")
         (goto-char (or end (point-max)))
         (while (eq ?\n (char-before (1- (point))))
           (forward-char -1)
-          (setq end (point)))))
+          (setq end (point))))
+      (setq end (diff-prev-line-if-patch-separator)))
     ;; The return value is used by easy-mmode-define-navigation.
     (goto-char (or end (point-max)))))
 
@@ -1491,7 +1505,12 @@ a diff with \\[diff-reverse-direction].
   (add-function :filter-return (local 'filter-buffer-substring-function)
                 #'diff--filter-substring)
   (unless buffer-file-name
-    (hack-dir-local-variables-non-file-buffer)))
+    (hack-dir-local-variables-non-file-buffer))
+  (save-excursion
+    (setq-local diff-buffer-type
+                (if (re-search-forward "^diff --git" nil t)
+                    'git
+                  nil))))
 
 ;;;###autoload
 (define-minor-mode diff-minor-mode
@@ -2228,29 +2247,32 @@ The elements of the alist are of the form (FILE . (DEFUN...)),
 where DEFUN... is a list of function names found in FILE."
   (save-excursion
     (goto-char (point-min))
-    (let ((defuns nil)
-          (hunk-end nil)
-          (hunk-mismatch-files nil)
-          (make-defun-context-follower
-           (lambda (goline)
-             (let ((eodefun nil)
-                   (defname nil))
-               (list
-                (lambda () ;; Check for end of current defun.
-                  (when (and eodefun
-                             (funcall goline)
-                             (>= (point) eodefun))
-                    (setq defname nil)
-                    (setq eodefun nil)))
-                (lambda (&optional get-current) ;; Check for new defun.
-                  (if get-current
-                      defname
-                    (when-let* ((def (and (not eodefun)
-                                          (funcall goline)
-                                          (add-log-current-defun)))
-                                (eof (save-excursion (end-of-defun) (point))))
-                      (setq eodefun eof)
-                      (setq defname def)))))))))
+    (let* ((defuns nil)
+           (hunk-end nil)
+           (hunk-mismatch-files nil)
+           (make-defun-context-follower
+            (lambda (goline)
+              (let ((eodefun nil)
+                    (defname nil))
+                (list
+                 (lambda () ;; Check for end of current defun.
+                   (when (and eodefun
+                              (funcall goline)
+                              (>= (point) eodefun))
+                     (setq defname nil)
+                     (setq eodefun nil)))
+                 (lambda (&optional get-current) ;; Check for new defun.
+                   (if get-current
+                       defname
+                     (when-let* ((def (and (not eodefun)
+                                           (funcall goline)
+                                           (add-log-current-defun)))
+                                 (eof (save-excursion
+                                        (condition-case ()
+                                            (progn (end-of-defun) (point))
+                                          (scan-error hunk-end)))))
+                       (setq eodefun eof)
+                       (setq defname def)))))))))
       (while
           ;; Might need to skip over file headers between diff
           ;; hunks (e.g., "diff --git ..." etc).
@@ -2698,9 +2720,13 @@ hunk text is not found in the source file."
     ;; When initialization is requested, we should be in a brand new
     ;; temp buffer.
     (cl-assert (null buffer-file-name))
-    (let ((enable-local-variables :safe) ;; to find `mode:'
+    ;; Use `:safe' to find `mode:'.  In case of hunk-only, use nil because
+    ;; Local Variables list might be incomplete when context is truncated.
+    (let ((enable-local-variables (unless hunk-only :safe))
           (buffer-file-name file))
-      (set-auto-mode)
+      ;; Don't run hooks that might assume buffer-file-name
+      ;; really associates buffer with a file (bug#39190).
+      (delay-mode-hooks (set-auto-mode))
       ;; FIXME: Is this really worth the trouble?
       (when (and (fboundp 'generic-mode-find-file-hook)
                  (memq #'generic-mode-find-file-hook

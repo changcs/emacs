@@ -1,6 +1,6 @@
 ;;; ns-win.el --- lisp side of interface with NeXT/Open/GNUstep/macOS window system  -*- lexical-binding: t -*-
 
-;; Copyright (C) 1993-1994, 2005-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1993-1994, 2005-2020 Free Software Foundation, Inc.
 
 ;; Authors: Carl Edman
 ;;	Christian Limpach
@@ -102,7 +102,7 @@ The properties returned may include `top', `left', `height', and `width'."
 
 ;; Here are some Nextstep-like bindings for command key sequences.
 (define-key global-map [?\s-,] 'customize)
-(define-key global-map [?\s-'] 'next-multiframe-window)
+(define-key global-map [?\s-'] 'next-window-any-frame)
 (define-key global-map [?\s-`] 'other-frame)
 (define-key global-map [?\s-~] 'ns-prev-frame)
 (define-key global-map [?\s--] 'center-line)
@@ -311,15 +311,12 @@ is currently being used."
   "Insert contents of `ns-working-text' as UTF-8 string and mark with
 `ns-working-overlay'.  Any previously existing working text is cleared first.
 The overlay is assigned the face `ns-working-text-face'."
-  ;; FIXME: if buffer is read-only, don't try to insert anything, and
-  ;; if text is bound to a command, execute that instead (Bug#1453).
   (interactive)
   (ns-delete-working-text)
   (let ((start (point)))
-    (insert ns-working-text)
-    (overlay-put (setq ns-working-overlay (make-overlay start (point)
-							(current-buffer) nil t))
-		 'face 'ns-working-text-face)))
+    (overlay-put (setq ns-working-overlay (make-overlay start (point)))
+                 'after-string
+                 (propertize ns-working-text 'face 'ns-working-text-face))))
 
 (defun ns-echo-working-text ()
   "Echo contents of `ns-working-text' in message display area.
@@ -342,8 +339,7 @@ See `ns-insert-working-text'."
          ;; Still alive?
          (overlay-buffer ns-working-overlay))
     (with-current-buffer (overlay-buffer ns-working-overlay)
-      (delete-region (overlay-start ns-working-overlay)
-                     (overlay-end ns-working-overlay))
+      (overlay-put ns-working-overlay 'after-string nil)
       (delete-overlay ns-working-overlay)))
    ((integerp ns-working-overlay)
     (let ((msg (current-message))

@@ -1,6 +1,6 @@
 /* Functions for creating and updating GTK widgets.
 
-Copyright (C) 2003-2019 Free Software Foundation, Inc.
+Copyright (C) 2003-2020 Free Software Foundation, Inc.
 
 This file is part of GNU Emacs.
 
@@ -17,11 +17,19 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 
+/* FIXME: This code is problematic; it misuses GTK, so the GTK
+   developers don't think they should fix the resulting problems in GTK
+   itself.  The right way to fix this is by rewriting the code in Emacs
+   to use GTK3 properly.  As of 2020, there is a project to do this.
+   Talk with Yuuki Harano <masm+emacs@masm11.me> if you are interested
+   in doing substantial work on this.  */
+
 #include <config.h>
 
 #ifdef USE_GTK
 #include <float.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include <c-ctype.h>
 
@@ -940,9 +948,8 @@ xg_frame_resized (struct frame *f, int pixelwidth, int pixelheight)
     }
 }
 
-/* Resize the outer window of frame F after changing the height.
-   COLUMNS/ROWS is the size the edit area shall have after the resize.  */
-
+/** Resize the outer window of frame F.  WIDTH and HEIGHT are the new
+    pixel sizes of F's text area.  */
 void
 xg_frame_set_char_size (struct frame *f, int width, int height)
 {
@@ -953,6 +960,8 @@ xg_frame_set_char_size (struct frame *f, int width, int height)
   int totalheight
     = pixelheight + FRAME_TOOLBAR_HEIGHT (f) + FRAME_MENUBAR_HEIGHT (f);
   int totalwidth = pixelwidth + FRAME_TOOLBAR_WIDTH (f);
+  bool was_visible = false;
+  bool hide_child_frame;
 
   if (FRAME_PIXEL_HEIGHT (f) == 0)
     return;
@@ -995,12 +1004,42 @@ xg_frame_set_char_size (struct frame *f, int width, int height)
       gtk_window_resize (GTK_WINDOW (FRAME_GTK_OUTER_WIDGET (f)),
 			 totalwidth, gheight);
     }
+  else if (FRAME_PARENT_FRAME (f) && FRAME_VISIBLE_P (f))
+    {
+      was_visible = true;
+      hide_child_frame = EQ (x_gtk_resize_child_frames, Qhide);
+
+      if (totalwidth != gwidth || totalheight != gheight)
+	{
+	  frame_size_history_add
+	    (f, Qxg_frame_set_char_size_4, width, height,
+	     list2i (totalwidth, totalheight));
+
+          if (hide_child_frame)
+            {
+              block_input ();
+              gtk_widget_hide (FRAME_GTK_OUTER_WIDGET (f));
+              unblock_input ();
+            }
+
+	  gtk_window_resize (GTK_WINDOW (FRAME_GTK_OUTER_WIDGET (f)),
+			     totalwidth, totalheight);
+
+          if (hide_child_frame)
+            {
+              block_input ();
+              gtk_widget_show_all (FRAME_GTK_OUTER_WIDGET (f));
+              unblock_input ();
+            }
+
+	  fullscreen = Qnil;
+	}
+    }
   else
     {
       frame_size_history_add
 	(f, Qxg_frame_set_char_size_3, width, height,
 	 list2i (totalwidth, totalheight));
-
       gtk_window_resize (GTK_WINDOW (FRAME_GTK_OUTER_WIDGET (f)),
 			 totalwidth, totalheight);
       fullscreen = Qnil;
@@ -1016,7 +1055,7 @@ xg_frame_set_char_size (struct frame *f, int width, int height)
      size as fast as possible.
      For unmapped windows, we can set rows/cols.  When
      the frame is mapped again we will (hopefully) get the correct size.  */
-  if (FRAME_VISIBLE_P (f))
+  if (FRAME_VISIBLE_P (f) && !was_visible)
     {
       /* Must call this to flush out events */
       (void)gtk_events_pending ();
@@ -1372,10 +1411,15 @@ xg_free_frame_widgets (struct frame *f)
       FRAME_X_WINDOW (f) = 0; /* Set to avoid XDestroyWindow in xterm.c */
       FRAME_X_RAW_DRAWABLE (f) = 0;
       FRAME_GTK_OUTER_WIDGET (f) = 0;
+      if (x->ttip_widget)
+        {
+          /* Remove ttip_lbl from ttip_widget's custom slot before
+             destroying it, to avoid double-free (Bug#41239).  */
+          gtk_tooltip_set_custom (x->ttip_widget, NULL);
+          g_object_unref (G_OBJECT (x->ttip_widget));
+        }
       if (x->ttip_lbl)
         gtk_widget_destroy (x->ttip_lbl);
-      if (x->ttip_widget)
-        g_object_unref (G_OBJECT (x->ttip_widget));
     }
 }
 
@@ -2228,6 +2272,21 @@ xg_get_file_name (struct frame *f,
 
 static char *x_last_font_name;
 
+#ifdef HAVE_GTK3
+static gboolean
+xg_font_filter (const PangoFontFamily *family,
+                const PangoFontFace *face,
+                gpointer data)
+{
+  const char *name = pango_font_family_get_name ((PangoFontFamily *)family);
+  ptrdiff_t namelen = strlen (name);
+
+  if (font_is_ignored (name, namelen))
+    return FALSE;
+  return TRUE;
+}
+#endif
+
 /* Pop up a GTK font selector and return the name of the font the user
    selects, as a C string.  The returned font name follows GTK's own
    format:
@@ -2247,6 +2306,9 @@ xg_get_font (struct frame *f, const char *default_name)
   w = gtk_font_chooser_dialog_new
     ("Pick a font", GTK_WINDOW (FRAME_GTK_OUTER_WIDGET (f)));
 
+#ifdef HAVE_GTK3
+  gtk_font_chooser_set_filter_func (GTK_FONT_CHOOSER (w), xg_font_filter, NULL, NULL);
+#endif
   if (default_name)
     {
       /* Convert fontconfig names to Gtk names, i.e. remove - before
@@ -2264,7 +2326,16 @@ xg_get_font (struct frame *f, const char *default_name)
     default_name = x_last_font_name;
 
   if (default_name)
-    gtk_font_chooser_set_font (GTK_FONT_CHOOSER (w), default_name);
+    {
+#ifdef HAVE_GTK3
+      PangoFontDescription *desc
+        = pango_font_description_from_string (default_name);
+      gtk_font_chooser_set_font_desc (GTK_FONT_CHOOSER (w), desc);
+      pango_font_description_free (desc);
+#else
+      gtk_font_chooser_set_font (GTK_FONT_CHOOSER (w), default_name);
+#endif
+    }
 
   gtk_widget_set_name (w, "emacs-fontdialog");
   done = xg_dialog_run (f, w);
@@ -2288,8 +2359,10 @@ xg_get_font (struct frame *f, const char *default_name)
 			QCweight, XG_WEIGHT_TO_SYMBOL (weight),
 			QCslant, XG_STYLE_TO_SYMBOL (style));
 
+          char *font_desc_str = pango_font_description_to_string (desc);
+          dupstring (&x_last_font_name, font_desc_str);
+          g_free (font_desc_str);
 	  pango_font_description_free (desc);
-	  dupstring (&x_last_font_name, family);
 	}
 
 #else /* Use old font selector, which just returns the font name.  */
@@ -3442,6 +3515,7 @@ menubar_map_cb (GtkWidget *w, gpointer user_data)
   GtkRequisition req;
   struct frame *f = user_data;
   gtk_widget_get_preferred_size (w, NULL, &req);
+  req.height *= xg_get_scale (f);
   if (FRAME_MENUBAR_HEIGHT (f) != req.height)
     {
       FRAME_MENUBAR_HEIGHT (f) = req.height;
@@ -3473,7 +3547,7 @@ xg_update_frame_menubar (struct frame *f)
   g_signal_connect (x->menubar_widget, "map", G_CALLBACK (menubar_map_cb), f);
   gtk_widget_show_all (x->menubar_widget);
   gtk_widget_get_preferred_size (x->menubar_widget, NULL, &req);
-
+  req.height *= xg_get_scale (f);
   if (FRAME_MENUBAR_HEIGHT (f) != req.height)
     {
       FRAME_MENUBAR_HEIGHT (f) = req.height;
@@ -3539,8 +3613,9 @@ xg_event_is_for_menubar (struct frame *f, const XEvent *event)
 
   list = gtk_container_get_children (GTK_CONTAINER (x->menubar_widget));
   if (! list) return 0;
-  rec.x = event->xbutton.x;
-  rec.y = event->xbutton.y;
+  int scale = xg_get_scale (f);
+  rec.x = event->xbutton.x / scale;
+  rec.y = event->xbutton.y / scale;
   rec.width = 1;
   rec.height = 1;
 
@@ -4365,13 +4440,6 @@ xg_tool_bar_callback (GtkWidget *w, gpointer client_data)
 
   key = AREF (f->tool_bar_items, idx + TOOL_BAR_ITEM_KEY);
   XSETFRAME (frame, f);
-
-  /* We generate two events here.  The first one is to set the prefix
-     to `(tool_bar)', see keyboard.c.  */
-  event.kind = TOOL_BAR_EVENT;
-  event.frame_or_window = frame;
-  event.arg = frame;
-  kbd_buffer_store_event (&event);
 
   event.kind = TOOL_BAR_EVENT;
   event.frame_or_window = frame;

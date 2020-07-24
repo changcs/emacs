@@ -1,6 +1,6 @@
 ;;; ede/linux.el --- Special project for Linux
 
-;; Copyright (C) 2008-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2008-2020 Free Software Foundation, Inc.
 
 ;; Author: Eric M. Ludlam <zappo@gnu.org>
 
@@ -118,7 +118,7 @@ If DIR has not been used as a build directory, fall back to
 
 
 (defun ede-linux--get-archs (dir)
-  "Returns a list of architecture names found in DIR."
+  "Return a list of architecture names found in DIR."
   (let ((archs-dir (expand-file-name "arch" dir))
         archs)
     (when (file-directory-p archs-dir)
@@ -169,7 +169,7 @@ found in DIR."
 
 
 (defun ede-linux--include-path (dir bdir arch)
-  "Returns a list with include directories.
+  "Return a list with include directories.
 Returned directories might not exist, since they are not created
 until Linux is built for the first time."
   (cl-map 'list
@@ -186,7 +186,7 @@ until Linux is built for the first time."
 
 ;;;###autoload
 (defun ede-linux-load (dir &optional _rootproj)
-  "Return an Linux Project object if there is a match.
+  "Return a Linux Project object if there is a match.
 Return nil if there isn't one.
 Argument DIR is the directory it is created for.
 ROOTPROJ is nil, since there is only one project."

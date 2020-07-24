@@ -1,6 +1,6 @@
 ;;; replace.el --- replace commands for Emacs -*- lexical-binding: t -*-
 
-;; Copyright (C) 1985-1987, 1992, 1994, 1996-1997, 2000-2019 Free
+;; Copyright (C) 1985-1987, 1992, 1994, 1996-1997, 2000-2020 Free
 ;; Software Foundation, Inc.
 
 ;; Maintainer: emacs-devel@gnu.org
@@ -176,6 +176,7 @@ See `replace-regexp' and `query-replace-regexp-eval'.")
 
 (defun query-replace-read-from (prompt regexp-flag)
   "Query and return the `from' argument of a query-replace operation.
+Prompt with PROMPT.  REGEXP-FLAG non-nil means the response should be a regexp.
 The return value can also be a pair (FROM . TO) indicating that the user
 wants to replace FROM with TO."
   (if query-replace-interactive
@@ -253,6 +254,7 @@ wants to replace FROM with TO."
 
 (defun query-replace-compile-replacement (to regexp-flag)
   "Maybe convert a regexp replacement TO to Lisp.
+REGEXP-FLAG non-nil means TO is a regexp.
 Returns a list suitable for `perform-replace' if necessary,
 the original string if not."
   (if (and regexp-flag
@@ -293,7 +295,8 @@ the original string if not."
 
 
 (defun query-replace-read-to (from prompt regexp-flag)
-  "Query and return the `to' argument of a query-replace operation."
+  "Query and return the `to' argument of a query-replace operation.
+Prompt with PROMPT.  REGEXP-FLAG non-nil means the response should a regexp."
   (query-replace-compile-replacement
    (save-excursion
      (let* ((history-add-new-input nil)
@@ -337,13 +340,17 @@ that reads FROM-STRING, or invoke replacements from
 incremental search with a key sequence like `C-s C-s M-%'
 to use its current search string as the string to replace.
 
-Matching is independent of case if `case-fold-search' is non-nil and
-FROM-STRING has no uppercase letters.  Replacement transfers the case
-pattern of the old text to the new text, if `case-replace' and
-`case-fold-search' are non-nil and FROM-STRING has no uppercase
-letters.  (Transferring the case pattern means that if the old text
-matched is all caps, or capitalized, then its replacement is upcased
-or capitalized.)
+Matching is independent of case if both `case-fold-search'
+and `search-upper-case' are non-nil and FROM-STRING has no
+uppercase letters; if `search-upper-case' is nil, then
+whether matching ignores case depends on `case-fold-search'
+regardless of whether there are uppercase letters in FROM-STRING.
+Replacement transfers the case pattern of the old text to the
+new text, if both `case-fold-search' and `case-replace' are
+non-nil and FROM-STRING has no uppercase letters.
+\(Transferring the case pattern means that if the old text
+matched is all caps, or capitalized, then its replacement is
+respectively upcased or capitalized.)
 
 Ignore read-only matches if `query-replace-skip-read-only' is non-nil,
 ignore hidden matches if `search-invisible' is nil, and ignore more
@@ -399,13 +406,16 @@ that reads REGEXP, or invoke replacements from
 incremental search with a key sequence like `C-M-s C-M-s C-M-%'
 to use its current search regexp as the regexp to replace.
 
-Matching is independent of case if `case-fold-search' is non-nil and
-REGEXP has no uppercase letters.  Replacement transfers the case
-pattern of the old text to the new text, if `case-replace' and
-`case-fold-search' are non-nil and REGEXP has no uppercase letters.
-\(Transferring the case pattern means that if the old text matched is
-all caps, or capitalized, then its replacement is upcased or
-capitalized.)
+Matching is independent of case if both `case-fold-search'
+and `search-upper-case' are non-nil and REGEXP has no uppercase
+letters; if `search-upper-case' is nil, then whether matching
+ignores case depends on `case-fold-search' regardless of whether
+there are uppercase letters in REGEXP.
+Replacement transfers the case pattern of the old text to the new
+text, if both `case-fold-search' and `case-replace' are non-nil
+and REGEXP has no uppercase letters.  (Transferring the case pattern
+means that if the old text matched is all caps, or capitalized,
+then its replacement is respectively upcased or capitalized.)
 
 Ignore read-only matches if `query-replace-skip-read-only' is non-nil,
 ignore hidden matches if `search-invisible' is nil, and ignore more
@@ -627,6 +637,9 @@ to the end of the buffer).  Interactively, if Transient Mark mode is
 enabled and the mark is active, operates on the contents of the region;
 otherwise from point to the end of the buffer's accessible portion.
 
+Arguments BACKWARD and REGION-NONCONTIGUOUS-P are passed
+to `perform-replace' (which see).
+
 Use \\<minibuffer-local-map>\\[next-history-element] \
 to pull the last incremental search string to the minibuffer
 that reads FROM-STRING.
@@ -681,6 +694,9 @@ only matches surrounded by word boundaries.  A negative prefix arg means
 replace backward.
 
 Fourth and fifth arg START and END specify the region to operate on.
+
+Arguments BACKWARD and REGION-NONCONTIGUOUS-P are passed
+to `perform-replace' (which see).
 
 In TO-STRING, `\\&' stands for whatever matched the whole of REGEXP,
 and `\\=\\N' (where N is a digit) stands for whatever matched
@@ -740,6 +756,13 @@ which will run faster and will not set the mark or print anything."
 
 Maximum length of the history list is determined by the value
 of `history-length', which see.")
+
+(defvar occur-highlight-regexp t
+  "Regexp matching part of visited source lines to highlight temporarily.
+Highlight entire line if t; don't highlight source lines if nil.")
+
+(defvar occur-highlight-overlay nil
+  "Overlay used to temporarily highlight occur matches.")
 
 (defvar occur-collect-regexp-history '("\\1")
   "History of regexp for occur's collect operation")
@@ -1097,6 +1120,8 @@ a previously found match."
     (define-key map "\C-m" 'occur-mode-goto-occurrence)
     (define-key map "o" 'occur-mode-goto-occurrence-other-window)
     (define-key map "\C-o" 'occur-mode-display-occurrence)
+    (define-key map "n" 'next-error-no-select)
+    (define-key map "p" 'previous-error-no-select)
     (define-key map "\M-n" 'occur-next)
     (define-key map "\M-p" 'occur-prev)
     (define-key map "r" 'occur-rename-buffer)
@@ -1232,7 +1257,8 @@ To return to ordinary Occur mode, use \\[occur-cease-edit]."
 
 (defalias 'occur-mode-mouse-goto 'occur-mode-goto-occurrence)
 (defun occur-mode-goto-occurrence (&optional event)
-  "Go to the occurrence on the current line."
+  "Go to the occurrence specified by EVENT, a mouse click.
+If not invoked by a mouse click, go to occurrence on the current line."
   (interactive (list last-nonmenu-event))
   (let ((buffer (when event (current-buffer)))
         (pos
@@ -1244,9 +1270,12 @@ To return to ordinary Occur mode, use \\[occur-cease-edit]."
            (with-current-buffer (window-buffer (posn-window (event-end event)))
              (save-excursion
                (goto-char (posn-point (event-end event)))
-               (occur-mode-find-occurrence))))))
+               (occur-mode-find-occurrence)))))
+        (regexp occur-highlight-regexp))
     (pop-to-buffer (marker-buffer pos))
     (goto-char pos)
+    (let ((end-mk (save-excursion (re-search-forward regexp nil t))))
+      (occur--highlight-occurrence pos end-mk))
     (when buffer (next-error-found buffer (current-buffer)))
     (run-hooks 'occur-mode-find-occurrence-hook)))
 
@@ -1260,17 +1289,74 @@ To return to ordinary Occur mode, use \\[occur-cease-edit]."
     (next-error-found buffer (current-buffer))
     (run-hooks 'occur-mode-find-occurrence-hook)))
 
+;; Stolen from compile.el
+(defun occur-goto-locus-delete-o ()
+  (delete-overlay occur-highlight-overlay)
+  ;; Get rid of timer and hook that would try to do this again.
+  (if (timerp next-error-highlight-timer)
+      (cancel-timer next-error-highlight-timer))
+  (remove-hook 'pre-command-hook
+               #'occur-goto-locus-delete-o))
+
+;; Highlight the current visited occurrence.
+;; Adapted from `compilation-goto-locus'.
+(defun occur--highlight-occurrence (mk end-mk)
+  (let ((highlight-regexp occur-highlight-regexp))
+    (if (timerp next-error-highlight-timer)
+        (cancel-timer next-error-highlight-timer))
+    (unless occur-highlight-overlay
+      (setq occur-highlight-overlay
+	    (make-overlay (point-min) (point-min)))
+      (overlay-put occur-highlight-overlay 'face 'next-error))
+    (with-current-buffer (marker-buffer mk)
+      (save-excursion
+        (if end-mk (goto-char end-mk) (end-of-line))
+        (let ((end (point)))
+	  (if mk (goto-char mk) (beginning-of-line))
+	  (if (and (stringp highlight-regexp)
+		   (re-search-forward highlight-regexp end t))
+	      (progn
+	        (goto-char (match-beginning 0))
+	        (move-overlay occur-highlight-overlay
+			      (match-beginning 0) (match-end 0)
+			      (current-buffer)))
+	    (move-overlay occur-highlight-overlay
+			  (point) end (current-buffer)))
+	  (if (or (eq next-error-highlight t)
+		  (numberp next-error-highlight))
+	      ;; We want highlighting: delete overlay on next input.
+	      (add-hook 'pre-command-hook
+		        #'occur-goto-locus-delete-o)
+	    ;; We don't want highlighting: delete overlay now.
+	    (delete-overlay occur-highlight-overlay))
+	  ;; We want highlighting for a limited time:
+	  ;; set up a timer to delete it.
+	  (when (numberp next-error-highlight)
+	    (setq next-error-highlight-timer
+		  (run-at-time next-error-highlight nil
+			       'occur-goto-locus-delete-o))))))
+    (when (eq next-error-highlight 'fringe-arrow)
+      ;; We want a fringe arrow (instead of highlighting).
+      (setq next-error-overlay-arrow-position
+	    (copy-marker (line-beginning-position))))))
+
 (defun occur-mode-display-occurrence ()
   "Display in another window the occurrence the current line describes."
   (interactive)
   (let ((buffer (current-buffer))
         (pos (occur-mode-find-occurrence))
+        (regexp occur-highlight-regexp)
+        (next-error-highlight next-error-highlight-no-select)
+        (display-buffer-overriding-action
+         '(nil (inhibit-same-window . t)))
 	window)
     (setq window (display-buffer (marker-buffer pos) t))
     ;; This is the way to set point in the proper window.
     (save-selected-window
       (select-window window)
       (goto-char pos)
+      (let ((end-mk (save-excursion (re-search-forward regexp nil t))))
+        (occur--highlight-occurrence pos end-mk))
       (next-error-found buffer (current-buffer))
       (run-hooks 'occur-mode-find-occurrence-hook))))
 
@@ -1298,8 +1384,9 @@ To return to ordinary Occur mode, use \\[occur-cease-edit]."
   (occur-find-match n #'previous-single-property-change "No earlier matches"))
 
 (defun occur-next-error (&optional argp reset)
-  "Move to the Nth (default 1) next match in an Occur mode buffer.
-Compatibility function for \\[next-error] invocations."
+  "Move to the ARGPth (default 1) next match in an Occur mode buffer.
+RESET non-nil means rewind to the first match.
+This is a compatibility function for \\[next-error] invocations."
   (interactive "p")
   (goto-char (cond (reset (point-min))
 		   ((< argp 0) (line-beginning-position))
@@ -1409,11 +1496,12 @@ which means to discard all text properties."
 (defun occur-rename-buffer (&optional unique-p interactive-p)
   "Rename the current *Occur* buffer to *Occur: original-buffer-name*.
 Here `original-buffer-name' is the buffer name where Occur was originally run.
-When given the prefix argument, or called non-interactively, the renaming
-will not clobber the existing buffer(s) of that name, but use
-`generate-new-buffer-name' instead.  You can add this to `occur-hook'
-if you always want a separate *Occur* buffer for each buffer where you
-invoke `occur'."
+If UNIQUE-P is non-nil (interactively, the prefix argument), or called
+non-interactively with INTERACTIVE-P nil, the renaming will not clobber
+the existing buffer(s) of that name, but will use `generate-new-buffer-name'
+instead.
+You can add this to `occur-hook' if you always want a separate
+*Occur* buffer for each buffer where you invoke `occur'."
   (interactive "P\np")
   (with-current-buffer
       (if (eq major-mode 'occur-mode) (current-buffer) (get-buffer "*Occur*"))
@@ -1483,6 +1571,8 @@ is not modified."
 
 (defun multi-occur (bufs regexp &optional nlines)
   "Show all lines in buffers BUFS containing a match for REGEXP.
+Optional argument NLINES specifies the number of context lines to show
+with each match, see `list-matching-lines-default-context-lines'.
 This function acts on multiple buffers; otherwise, it is exactly like
 `occur'.  When you invoke this command interactively, you must specify
 the buffer names that you want, one by one.
@@ -1509,7 +1599,9 @@ See also `multi-occur-in-matching-buffers'."
 (defun multi-occur-in-matching-buffers (bufregexp regexp &optional allbufs)
   "Show all lines matching REGEXP in buffers specified by BUFREGEXP.
 Normally BUFREGEXP matches against each buffer's visited file name,
-but if you specify a prefix argument, it matches against the buffer name.
+but ALLBUFS non-nil (interactively, if you specify a prefix argument),
+it matches against the buffer name and includes also buffers that
+don't visit files.
 See also `multi-occur'."
   (interactive
    (cons
@@ -1560,7 +1652,8 @@ See also `multi-occur'."
                                          (and (overlayp boo)
                                               (overlay-buffer boo)))
                                  boo))
-			   bufs))))
+                           bufs)))
+        (source-buffer-default-directory default-directory))
     ;; Handle the case where one of the buffers we're searching is the
     ;; output buffer.  Just rename it.
     (when (member buf-name
@@ -1577,6 +1670,9 @@ See also `multi-occur'."
     (setq occur-buf (get-buffer-create buf-name))
 
     (with-current-buffer occur-buf
+      ;; Make the default-directory of the *Occur* buffer match that of
+      ;; the buffer where the occurences come from
+      (setq default-directory source-buffer-default-directory)
       (if (stringp nlines)
 	  (fundamental-mode) ;; This is for collect operation.
 	(occur-mode))
@@ -1585,6 +1681,7 @@ See also `multi-occur'."
 	    (buffer-undo-list t)
 	    (occur--final-pos nil))
 	(erase-buffer)
+        (set (make-local-variable 'occur-highlight-regexp) regexp)
 	(let ((count
 	       (if (stringp nlines)
                    ;; Treat nlines as a regexp to collect.

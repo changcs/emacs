@@ -1,6 +1,6 @@
 ;;; nnmairix.el --- Mairix back end for Gnus, the Emacs newsreader
 
-;; Copyright (C) 2007-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2007-2020 Free Software Foundation, Inc.
 
 ;; Author: David Engster <deng@randomsample.de>
 ;; Keywords: mail searching
@@ -301,7 +301,7 @@ The default chooses the largest window in the current frame."
 
 (defcustom nnmairix-propagate-marks-upon-close t
   "Flag if marks should be propagated upon closing a group.
-The default of this variable is t.  If set to 'ask, the
+The default of this variable is t.  If set to `ask', the
 user will be asked if the flags should be propagated when the
 group is closed.  If set to nil, the user will have to manually
 call `nnmairix-propagate-marks'."
@@ -711,29 +711,29 @@ Other back ends might or might not work.")
 	    (nnimap-request-update-info-internal folder folderinfo nnmairix-backend-server)
 	  (nnmairix-call-backend "request-update-info" folder folderinfo nnmairix-backend-server))
 	;; set range of read articles
-	(gnus-info-set-read
-	 info
-	 (if docorr
-	     (nnmairix-map-range
-	      `(lambda (x) (+ x ,(cadr corr)))
-	      (gnus-info-read folderinfo))
-	   (gnus-info-read folderinfo)))
+	(setf (gnus-info-read info)
+	      (if docorr
+	          (nnmairix-map-range
+		   ;; FIXME: Use lexical-binding.
+	           `(lambda (x) (+ x ,(cadr corr)))
+	           (gnus-info-read folderinfo))
+	        (gnus-info-read folderinfo)))
 	;; set other marks
-	(gnus-info-set-marks
-	 info
-	 (if docorr
-	     (mapcar (lambda (cur)
-			 (cons
-			  (car cur)
-			  (nnmairix-map-range
-			   `(lambda (x) (+ x ,(cadr corr)))
-			   (list (cadr cur)))))
-		     (gnus-info-marks folderinfo))
-	   (gnus-info-marks folderinfo))))
+	(setf (gnus-info-marks info)
+	      (if docorr
+		  (mapcar (lambda (cur)
+			    (cons
+			     (car cur)
+			     (nnmairix-map-range
+			      ;; FIXME: Use lexical-binding.
+			      `(lambda (x) (+ x ,(cadr corr)))
+			      (list (cadr cur)))))
+			  (gnus-info-marks folderinfo))
+		(gnus-info-marks folderinfo))))
       (when (eq readmarks 'unread)
-	(gnus-info-set-read info nil))
+	(setf (gnus-info-read info) nil))
       (when (eq readmarks 'read)
-	(gnus-info-set-read info (gnus-active qualgroup))))
+	(setf (gnus-info-read info) (gnus-active qualgroup))))
   t)
 
 (nnoo-define-skeleton nnmairix)
@@ -1249,7 +1249,7 @@ Marks propagation has to be enabled for this to work."
 If THREADS is non-nil, enable full threads."
   (let ((args (cons (car command) '(nil t nil))))
     (with-current-buffer
-       (get-buffer-create nnmairix-mairix-output-buffer)
+       (gnus-get-buffer-create nnmairix-mairix-output-buffer)
       (erase-buffer)
       (when (> (length command) 1)
 	(setq args (append args (cdr command))))
@@ -1267,7 +1267,7 @@ If THREADS is non-nil, enable full threads."
   "Call mairix binary with COMMAND and QUERY in raw mode."
   (let ((args (cons (car command) '(nil t nil))))
     (with-current-buffer
-       (get-buffer-create nnmairix-mairix-output-buffer)
+       (gnus-get-buffer-create nnmairix-mairix-output-buffer)
       (erase-buffer)
       (when (> (length command) 1)
         (setq args (append args (cdr command))))
@@ -1400,11 +1400,11 @@ nnmairix with nnml backends."
   "Replace folder names in Xref header and correct article numbers.
 Do this for all ARTICLES on BACKENDGROUP.  Replace using
 MAIRIXGROUP.  NUMC contains values for article number correction.
-TYPE is either 'nov or 'headers."
+TYPE is either `nov' or `headers'."
   (nnheader-message 7 "nnmairix: Rewriting headers...")
   (cond
    ((eq type 'nov)
-    (let ((buf (get-buffer-create " *nnmairix buffer*"))
+    (let ((buf (gnus-get-buffer-create " *nnmairix buffer*"))
 	  (corr (not (zerop numc)))
 	  (name (buffer-name nntp-server-buffer))
 	  header cur xref)
@@ -1449,7 +1449,7 @@ TYPE is either 'nov or 'headers."
 (defun nnmairix-backend-to-server (server)
   "Return nnmairix server most probably responsible for back end SERVER.
 User will be asked if this cannot be determined.  Result is saved in
-parameter 'indexed-servers of corresponding default search
+parameter `indexed-servers' of corresponding default search
 group."
   (let ((allservers (nnmairix-get-nnmairix-servers))
 	mairixserver found defaultgroup)

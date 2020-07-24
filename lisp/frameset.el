@@ -1,6 +1,6 @@
 ;;; frameset.el --- save and restore frame and window setup -*- lexical-binding: t -*-
 
-;; Copyright (C) 2013-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2013-2020 Free Software Foundation, Inc.
 
 ;; Author: Juanma Barranquero <lekktu@gmail.com>
 ;; Keywords: convenience
@@ -396,17 +396,17 @@ Properties can be set with
 ;; or, if you're only changing a few items,
 ;;
 ;;   (defvar my-filter-alist
-;;     (nconc '((my-param1 . :never)
-;;              (my-param2 . my-filtering-function))
-;;            frameset-filter-alist)
+;;     (append '((my-param1 . :never)
+;;		 (my-param2 . my-filtering-function))
+;;	       frameset-filter-alist)
 ;;     "My brief customized parameter filter alist.")
 ;;
 ;; and pass it to the FILTER arg of the save/restore functions,
 ;; ALWAYS taking care of not modifying the original lists; if you're
 ;; going to do any modifying of my-filter-alist, please use
 ;;
-;;   (nconc '((my-param1 . :never) ...)
-;;          (copy-sequence frameset-filter-alist))
+;;   (append '((my-param1 . :never) ...)
+;;	     (copy-sequence frameset-filter-alist))
 ;;
 ;; One thing you shouldn't forget is that they are alists, so searching
 ;; in them is sequential.  If you just want to change the default of
@@ -445,7 +445,7 @@ DO NOT MODIFY.  See `frameset-filter-alist' for a full description.")
 
 ;;;###autoload
 (defvar frameset-persistent-filter-alist
-  (nconc
+  (append
    '((background-color            . frameset-filter-sanitize-color)
      (buffer-list                 . :never)
      (buffer-predicate            . :never)
@@ -456,6 +456,9 @@ DO NOT MODIFY.  See `frameset-filter-alist' for a full description.")
      (client                      . :never)
      (delete-before               . :never)
      (font                        . frameset-filter-font-param)
+     ;; Don't save font-backend because we cannot guarantee the new
+     ;; session will support the saved backend anyway.  (Bug#38442)
+     (font-backend                . :never)
      (foreground-color            . frameset-filter-sanitize-color)
      (frameset--text-pixel-height . :save)
      (frameset--text-pixel-width  . :save)

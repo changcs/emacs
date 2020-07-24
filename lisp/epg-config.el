@@ -1,6 +1,6 @@
 ;;; epg-config.el --- configuration of the EasyPG Library
 
-;; Copyright (C) 2006-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2006-2020 Free Software Foundation, Inc.
 
 ;; Author: Daiki Ueno <ueno@unixuser.org>
 ;; Keywords: PGP, GnuPG
@@ -148,11 +148,7 @@ Otherwise, it tries the programs listed in the entry until the
 version requirement is met."
   (unless program-alist
     (setq program-alist epg-config--program-alist))
-  (let ((entry (assq protocol program-alist))
-        ;; In many gnupg distributions (especially on Windows), the
-        ;; version string is "gpg (GnuPG) 2.2.15-unknown" or the like.
-        (version-regexp-alist (cons '("^[-._+ ]?unknown$" . -4)
-                                    version-regexp-alist)))
+  (let ((entry (assq protocol program-alist)))
     (unless entry
       (error "Unknown protocol %S" protocol))
     (cl-destructuring-bind (symbol . alist)
@@ -187,10 +183,18 @@ version requirement is met."
 (defun epg-config--make-gpg-configuration (program)
   (let (config groups type args)
     (with-temp-buffer
-      (apply #'call-process program nil (list t nil) nil
-	     (append (if epg-gpg-home-directory
-			 (list "--homedir" epg-gpg-home-directory))
-		     '("--with-colons" "--list-config")))
+      ;; The caller might have bound coding-system-for-* to something
+      ;; like 'no-conversion, but the below needs to call PROGRAM
+      ;; expecting human-readable text in both directions (since we
+      ;; are going to parse the output as text), so let Emacs guess
+      ;; the encoding of that text by its usual encoding-detection
+      ;; machinery.
+      (let ((coding-system-for-read 'undecided)
+            (coding-system-for-write 'undecided))
+        (apply #'call-process program nil (list t nil) nil
+	       (append (if epg-gpg-home-directory
+			   (list "--homedir" epg-gpg-home-directory))
+		       '("--with-colons" "--list-config"))))
       (goto-char (point-min))
       (while (re-search-forward "^cfg:\\([^:]+\\):\\(.*\\)" nil t)
 	(setq type (intern (match-string 1))
@@ -198,13 +202,13 @@ version requirement is met."
 	(cond
 	 ((eq type 'group)
 	  (if (string-match "\\`\\([^:]+\\):" args)
-		  (setq groups
-			(cons (cons (downcase (match-string 1 args))
-				    (delete "" (split-string
-						(substring args
-							   (match-end 0))
-						";")))
-			      groups))
+	      (setq groups
+		    (cons (cons (downcase (match-string 1 args))
+				(delete "" (split-string
+					    (substring args
+						       (match-end 0))
+					    ";")))
+			  groups))
 	    (if epg-debug
 		(message "Invalid group configuration: %S" args))))
 	 ((memq type '(pubkey cipher digest compress))

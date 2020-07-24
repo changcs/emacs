@@ -1,6 +1,6 @@
 ;;; srecode/insert.el --- Insert srecode templates to an output stream  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2005, 2007-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2005, 2007-2020 Free Software Foundation, Inc.
 
 ;; Author: Eric M. Ludlam <zappo@gnu.org>
 
@@ -44,9 +44,7 @@ Dictionary value references that ask begin with the ? character.
 Possible values are:
   `ask'   - Prompt in the minibuffer as the value is inserted.
   `field' - Use the dictionary macro name as the inserted value,
-            and place a field there.  Matched fields change together.
-
-NOTE: The field feature does not yet work with XEmacs."
+            and place a field there.  Matched fields change together."
   :group 'srecode
   :type '(choice (const :tag "Ask" ask)
 		 (const :tag "Field" field)))
@@ -375,8 +373,8 @@ Can't be blank, or it might be used by regular variable insertion.")
 	   :initarg :where
 	   :documentation
 	   "This should be `begin' or `end', indicating where to insert a CR.
-When `begin', insert a CR if not at 'bol'.
-When `end', insert a CR if not at 'eol'.")
+When `begin', insert a CR if not at `bol'.
+When `end', insert a CR if not at `eol'.")
     ;; @TODO - Add slot and control for the number of blank
     ;;         lines before and after point.
    )

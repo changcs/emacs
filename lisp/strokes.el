@@ -1,6 +1,6 @@
 ;;; strokes.el --- control Emacs through mouse strokes
 
-;; Copyright (C) 1997, 2000-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1997, 2000-2020 Free Software Foundation, Inc.
 
 ;; Author: David Bakhash <cadet@alum.mit.edu>
 ;; Maintainer: emacs-devel@gnu.org
@@ -296,6 +296,8 @@ the corresponding interactive function.")
 
 (defvar strokes-load-hook nil
   "Functions to be called when Strokes is loaded.")
+(make-obsolete-variable 'strokes-load-hook
+                        "use `with-eval-after-load' instead." "28.1")
 
 ;;; ### NOT IMPLEMENTED YET ###
 ;;(defvar edit-strokes-menu
@@ -1216,9 +1218,7 @@ the stroke as a character in some language."
 
 ;;(defun strokes-edit-quit ()
 ;;  (interactive)
-;;  (or (one-window-p t 0)
-;;      (delete-window))
-;;  (kill-buffer "*Strokes List*"))
+;;  (quit-windows-on "*Strokes List*" t))
 
 ;;(define-derived-mode edit-strokes-mode list-mode
 ;;  "Edit-Strokes"
@@ -1375,9 +1375,7 @@ If STROKES-MAP is not given, `strokes-global-map' will be used instead."
 
 (defun strokes-alphabetic-lessp (stroke1 stroke2)
   "Return t if STROKE1's command name precedes STROKE2's in lexicographic order."
-  (let ((command-name-1 (symbol-name (cdr stroke1)))
-	(command-name-2 (symbol-name (cdr stroke2))))
-    (string-lessp command-name-1 command-name-2)))
+  (string-lessp (cdr stroke1) (cdr stroke2)))
 
 (defvar strokes-mode-map
   (let ((map (make-sparse-keymap)))

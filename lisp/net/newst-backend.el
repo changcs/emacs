@@ -1,6 +1,6 @@
 ;;; newst-backend.el --- Retrieval backend for newsticker  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2003-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2003-2020 Free Software Foundation, Inc.
 
 ;; Author:      Ulf Jasper <ulf.jasper@web.de>
 ;; Filename:    newst-backend.el
@@ -363,7 +363,7 @@ description are marked as immortal."
                                (const :tag "Title" title)
                                (const :tag "Description" description)
                                (const :tag "All" all))
-                              (string :tag "Regexp")))))
+                              (regexp :tag "Regexp")))))
   :group 'newsticker-headline-processing)
 
 ;; ======================================================================
@@ -1598,7 +1598,7 @@ This function calls `message' with arguments STRING and ARGS, if
 (defun newsticker--decode-iso8601-date (string)
   "Return ISO8601-STRING in format like `encode-time'.
 Converts from ISO-8601 to Emacs representation.  If no time zone
-is present, this fuction defaults to universal time."
+is present, this function defaults to universal time."
   (if string
       (condition-case nil
           (encode-time (decoded-time-set-defaults (iso8601-parse string) 0))

@@ -1,10 +1,10 @@
 ;;; erc-backend.el --- Backend network communication for ERC  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2004-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2004-2020 Free Software Foundation, Inc.
 
 ;; Filename: erc-backend.el
 ;; Author: Lawrence Mitchell <wence@gmx.li>
-;; Maintainer: emacs-devel@gnu.org
+;; Maintainer: Amin Bandali <bandali@gnu.org>
 ;; Created: 2004-05-7
 ;; Keywords: IRC chat client internet
 
@@ -375,7 +375,7 @@ Example: If you know that the channel #linux-ru uses the coding-system
 `cyrillic-koi8', then add (\"#linux-ru\" . cyrillic-koi8) to the
 alist."
   :group 'erc-server
-  :type '(repeat (cons (string :tag "Target")
+  :type '(repeat (cons (regexp :tag "Target")
                        coding-system)))
 
 (defcustom erc-server-connect-function #'erc-open-network-stream
@@ -466,7 +466,8 @@ If this is set to nil, never try to reconnect."
 The length is specified in `erc-split-line-length'.
 
 Currently this is called by `erc-send-input'."
-  (let ((charset (car (erc-coding-system-for-target nil))))
+  (let* ((coding (erc-coding-system-for-target nil))
+         (charset (if (consp coding) (car coding) coding)))
     (with-temp-buffer
       (insert longline)
       ;; The line lengths are in octets, not characters (because these
@@ -481,13 +482,13 @@ Currently this is called by `erc-send-input'."
       (split-string (buffer-string) "\n"))))
 
 (defun erc-forward-word ()
-  "Moves forward one word, ignoring any subword settings.  If no
-subword-mode is active, then this is (forward-word)."
+  "Move forward one word, ignoring any subword settings.
+If no subword-mode is active, then this is (forward-word)."
   (skip-syntax-forward "^w")
   (> (skip-syntax-forward "w") 0))
 
 (defun erc-word-at-arg-p (pos)
-  "Reports whether the char after a given POS has word syntax.
+  "Report whether the char after a given POS has word syntax.
 If POS is out of range, the value is nil."
   (let ((c (char-after pos)))
     (if c
@@ -495,9 +496,9 @@ If POS is out of range, the value is nil."
       nil)))
 
 (defun erc-bounds-of-word-at-point ()
-  "Returns the bounds of a word at point, or nil if we're not at
-a word.  If no subword-mode is active, then this
-is (bounds-of-thing-at-point 'word)."
+  "Return the bounds of word at point, or nil if we're not at a word.
+If no subword-mode is active, then this is
+\(bounds-of-thing-at-point 'word)."
   (if (or (erc-word-at-arg-p (point))
           (erc-word-at-arg-p (1- (point))))
       (save-excursion
@@ -596,7 +597,7 @@ We will store server variables in the buffer given by BUFFER."
       (erc-login)) ))
 
 (defun erc-server-reconnect ()
-"Reestablish the current IRC connection.
+  "Reestablish the current IRC connection.
 Make sure you are in an ERC buffer when running this."
   (let ((buffer (erc-server-buffer)))
     (unless (buffer-live-p buffer)
@@ -765,8 +766,8 @@ This is determined via `erc-encoding-coding-alist' or
 
 (defun erc-decode-string-from-target (str target)
   "Decode STR as appropriate for TARGET.
-This is indicated by `erc-encoding-coding-alist', defaulting to the value of
-`erc-server-coding-system'."
+This is indicated by `erc-encoding-coding-alist', defaulting to the
+value of `erc-server-coding-system'."
   (unless (stringp str)
     (setq str ""))
   (let ((coding (erc-coding-system-for-target target)))
@@ -1118,7 +1119,8 @@ NAME is the response name as sent by the server (see the IRC RFC for
 meanings).
 
 This creates:
- - a hook variable `erc-server-NAME-functions' initialized to `erc-server-NAME'.
+ - a hook variable `erc-server-NAME-functions' initialized to
+   `erc-server-NAME'.
  - a function `erc-server-NAME' with body FN-BODY.
 
 If ALIASES is non-nil, each alias in ALIASES is `defalias'ed to

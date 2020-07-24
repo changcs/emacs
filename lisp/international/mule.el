@@ -1,6 +1,6 @@
 ;;; mule.el --- basic commands for multilingual environment
 
-;; Copyright (C) 1997-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1997-2020 Free Software Foundation, Inc.
 ;; Copyright (C) 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004,
 ;;   2005, 2006, 2007, 2008, 2009, 2010, 2011
 ;;   National Institute of Advanced Industrial Science and Technology (AIST)
@@ -30,12 +30,13 @@
 
 ;;; Code:
 
-;; FIXME?  Are these still relevant?  Nothing uses them AFAICS.
 (defconst mule-version "6.0 (HANACHIRUSATO)" "\
 Version number and name of this version of MULE (multilingual environment).")
+(make-obsolete-variable 'mule-version nil "28.1")
 
 (defconst mule-version-date "2003.9.1" "\
 Distribution date of this version of MULE (multilingual environment).")
+(make-obsolete-variable 'mule-version-date nil "28.1")
 
 
 ;;; CHARSET
@@ -768,11 +769,12 @@ decoded by the coding system itself and before any functions in
 `after-insert-functions' are called.  This function is passed one
 argument: the number of characters in the text to convert, with
 point at the start of the text.  The function should leave point
-unchanged, and should return the new character count.  Note that
-this function should avoid reading from files or receiving text
-from subprocesses -- anything that could invoke decoding; if it
-must do so, it should bind `coding-system-for-read' to a value
-other than the current coding-system, to avoid infinite recursion.
+and the match data unchanged, and should return the new character
+count.  Note that this function should avoid reading from files
+or receiving text from subprocesses -- anything that could invoke
+decoding; if it must do so, it should bind
+`coding-system-for-read' to a value other than the current
+coding-system, to avoid infinite recursion.
 
 `:pre-write-conversion'
 
@@ -780,13 +782,13 @@ VALUE must be a function to call after all functions in
 `write-region-annotate-functions' and `buffer-file-format' are
 called, and before the text is encoded by the coding system
 itself.  This function should convert the whole text in the
-current buffer.  For backward compatibility, this function is
-passed two arguments which can be ignored.  Note that this
-function should avoid writing to files or sending text to
-subprocesses -- anything that could invoke encoding; if it
-must do so, it should bind `coding-system-for-write' to a
-value other than the current coding-system, to avoid infinite
-recursion.
+current buffer, and leave the match data unchanged.  For backward
+compatibility, this function is passed two arguments which can be
+ignored.  Note that this function should avoid writing to files
+or sending text to subprocesses -- anything that could invoke
+encoding; if it must do so, it should bind
+`coding-system-for-write' to a value other than the current
+coding-system, to avoid infinite recursion.
 
 `:default-char'
 
@@ -2601,7 +2603,7 @@ This function is intended to be added to `auto-coding-functions'."
                     (detect-coding-region (point-min) size t)))))
             ;; Pure ASCII always comes back as undecided.
             (if (memq detected
-                      '(utf-8 'utf-8-with-signature 'utf-8-hfs undecided))
+                      '(utf-8 utf-8-with-signature utf-8-hfs undecided))
                 'utf-8
               (warn "File contents detected as %s.
   Consider adding an encoding attribute to the xml declaration,

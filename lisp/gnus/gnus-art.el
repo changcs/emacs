@@ -1,6 +1,6 @@
 ;;; gnus-art.el --- article mode commands for Gnus
 
-;; Copyright (C) 1996-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1996-2020 Free Software Foundation, Inc.
 
 ;; Author: Lars Magne Ingebrigtsen <larsi@gnus.org>
 ;; Keywords: news
@@ -268,21 +268,15 @@ This can also be a list of the above values."
   :type 'plist
   :group 'gnus-article-hiding)
 
-;; Fixme: This isn't the right thing for mixed graphical and non-graphical
-;; frames in a session.
-(defcustom gnus-article-x-face-command
-  (if (gnus-image-type-available-p 'pbm)
-      'gnus-display-x-face-in-from
-    "{ echo \
-'/* Format_version=1, Width=48, Height=48, Depth=1, Valid_bits_per_item=16 */'\
-; uncompface; } | icontopbm | display -")
+(defcustom gnus-article-x-face-command (and (gnus-image-type-available-p 'pbm)
+					    'gnus-display-x-face-in-from)
   "String or function to be executed to display an X-Face header.
 If it is a string, the command will be executed in a sub-shell
 asynchronously.  The compressed face will be piped to this command."
   :type '(choice string
 		 (function-item gnus-display-x-face-in-from)
 		 function)
-  :version "21.1"
+  :version "27.1"
   :group 'gnus-picon
   :group 'gnus-article-washing)
 
@@ -2088,7 +2082,7 @@ you're expecting some kind of apostrophe or quotation mark, then
 try this wash."
   (interactive)
   (article-translate-strings gnus-article-smartquotes-map))
-(define-obsolete-function-alias 'article-treat-dumquotes
+(define-obsolete-function-alias 'article-treat-dumbquotes
   #'article-treat-smartquotes "27.1")
 
 (defvar org-entities)
@@ -2309,21 +2303,27 @@ long lines if and only if arg is positive."
 		"\n")
 	(put-text-property start (point) 'gnus-decoration 'header)))))
 
-(defun article-fill-long-lines ()
-  "Fill lines that are wider than the window width."
-  (interactive)
+(defun article-fill-long-lines (&optional width)
+  "Fill lines that are wider than the window width or `fill-column'.
+If WIDTH (interactively, the numeric prefix), use that as the
+fill width."
+  (interactive "P")
   (save-excursion
-    (let ((inhibit-read-only t)
-	  (width (window-width (get-buffer-window (current-buffer)))))
+    (let* ((inhibit-read-only t)
+	   (window-width (window-width (get-buffer-window (current-buffer))))
+	   (width (if width
+		      (prefix-numeric-value width)
+		    (min fill-column window-width))))
       (save-restriction
 	(article-goto-body)
 	(let ((adaptive-fill-mode nil)) ;Why?  -sm
 	  (while (not (eobp))
 	    (end-of-line)
-	    (when (>= (current-column) (min fill-column width))
+	    (when (>= (current-column) width)
 	      (narrow-to-region (min (1+ (point)) (point-max))
 				(point-at-bol))
-              (let ((goback (point-marker)))
+              (let ((goback (point-marker))
+		    (fill-column width))
                 (fill-paragraph nil)
                 (goto-char (marker-position goback)))
 	      (widen))
@@ -3035,6 +3035,7 @@ images if any to the browser, and deletes them when exiting the group
       (gnus-summary-show-article)
     (let ((gnus-visible-headers (or (get 'gnus-visible-headers 'standard-value)
 				    gnus-visible-headers))
+	  (gnus-mime-display-attachment-buttons-in-header nil)
 	  ;; As we insert a <hr>, there's no need for the body boundary.
 	  (gnus-treat-body-boundary nil))
       (gnus-summary-show-article)))
@@ -4411,6 +4412,7 @@ If variable `gnus-use-long-file-name' is non-nil, it is
 
   "e" gnus-article-read-summary-keys
   "\C-d" gnus-article-read-summary-keys
+  "\C-c\C-f" gnus-summary-mail-forward
   "\M-*" gnus-article-read-summary-keys
   "\M-#" gnus-article-read-summary-keys
   "\M-^" gnus-article-read-summary-keys
@@ -5838,6 +5840,7 @@ all parts."
 	     "" "..."))
 	(gnus-tmp-length (with-current-buffer (mm-handle-buffer handle)
 			   (buffer-size)))
+        (help-echo "mouse-2: toggle the MIME part; down-mouse-3: more options")
 	gnus-tmp-type-long b e)
     (when (string-match ".*/" gnus-tmp-name)
       (setq gnus-tmp-name (replace-match "" t t gnus-tmp-name)))
@@ -5846,6 +5849,16 @@ all parts."
 					  (concat "; " gnus-tmp-name))))
     (unless (equal gnus-tmp-description "")
       (setq gnus-tmp-type-long (concat " --- " gnus-tmp-type-long)))
+    (when (zerop gnus-tmp-length)
+      (setq gnus-tmp-type-long
+            (concat
+             gnus-tmp-type-long
+             (substitute-command-keys
+              (concat "\\<gnus-summary-mode-map> (not downloaded, "
+                      "\\[gnus-summary-show-complete-article] to fetch.)"))))
+      (setq help-echo
+            (concat "Type \\[gnus-summary-show-complete-article] "
+                    "to download complete article. " help-echo)))
     (setq b (point))
     (gnus-eval-format
      gnus-mime-button-line-format gnus-mime-button-line-format-alist
@@ -5863,8 +5876,8 @@ all parts."
      b e
      'keymap gnus-mime-button-map
      'face gnus-article-button-face
-     'help-echo
-     "mouse-2: toggle the MIME part; down-mouse-3: more options")))
+     'follow-link t
+     'help-echo help-echo)))
 
 (defvar gnus-displaying-mime nil)
 
@@ -6146,6 +6159,7 @@ If nil, don't show those extra buttons."
 	     keymap ,gnus-mime-button-map
 	     mouse-face ,gnus-article-mouse-face
 	     face ,gnus-article-button-face
+	     follow-link t
 	     gnus-part ,id
 	     button t
 	     article-type multipart
@@ -6169,6 +6183,7 @@ If nil, don't show those extra buttons."
 	       keymap ,gnus-mime-button-map
 	       mouse-face ,gnus-article-mouse-face
 	       face ,gnus-article-button-face
+	       follow-link t
 	       gnus-part ,id
 	       button t
 	       gnus-data ,handle
@@ -6666,7 +6681,7 @@ not have a face in `gnus-article-boring-faces'."
   (interactive "P")
   (gnus-article-check-buffer)
   (let ((nosaves
-	 '("q" "Q" "r" "\C-c\C-f" "m"  "a" "f" "WDD" "WDW"
+	 '("q" "Q" "r" "m"  "a" "f" "WDD" "WDW"
 	   "Zc" "ZC" "ZE" "ZQ" "ZZ" "Zn" "ZR" "ZG" "ZN" "ZP"
 	   "=" "^" "\M-^" "|"))
 	(nosave-but-article
@@ -6674,14 +6689,17 @@ not have a face in `gnus-article-boring-faces'."
 	   "An" "Ap" [?A (meta return)] [?A delete]))
 	(nosave-in-article
 	 '("AS" "\C-d"))
-	keys new-sum-point)
+	keys new-sum-point gnus-pick-mode func)
     (with-current-buffer gnus-article-current-summary
-      (let (gnus-pick-mode)
-	(setq unread-command-events (nconc unread-command-events
-					   (list (or key last-command-event)))
-	      keys (read-key-sequence nil t))))
+      (setq unread-command-events (nconc unread-command-events
+					 (list (or key last-command-event)))
+	    keys (read-key-sequence nil t)
+	    func (key-binding keys t)))
 
     (message "")
+
+    (when (eq func 'undefined)
+      (error "%s is undefined" keys))
 
     (cond
      ((eq (aref keys (1- (length keys))) ?\C-h)
@@ -6689,28 +6707,23 @@ not have a face in `gnus-article-boring-faces'."
      ((or (member keys nosaves)
 	  (member keys nosave-but-article)
 	  (member keys nosave-in-article))
-      (let (func)
-	(with-current-buffer gnus-article-current-summary
-	  ;; We disable the pick minor mode commands.
-	  (let (gnus-pick-mode)
-	    (setq func (key-binding keys t))))
-	(if (or (not func)
-		(numberp func))
-	    (ding)
-	  (unless (member keys nosave-in-article)
-	    (set-buffer gnus-article-current-summary))
-	  (when (and (symbolp func)
-		     (get func 'disabled))
-	    (error "Function %s disabled" func))
-	  (call-interactively func)
-	  (setq new-sum-point (point)))
-	(when (member keys nosave-but-article)
-	  (pop-to-buffer gnus-article-buffer))))
+      (if (or (not func)
+	      (numberp func))
+	  (ding)
+	(unless (member keys nosave-in-article)
+	  (set-buffer gnus-article-current-summary))
+	(when (and (symbolp func)
+		   (get func 'disabled))
+	  (error "Function %s disabled" func))
+	(call-interactively func)
+	(setq new-sum-point (point)))
+      (when (member keys nosave-but-article)
+	(pop-to-buffer gnus-article-buffer)))
      (t
       ;; These commands should restore window configuration.
       (let ((obuf (current-buffer))
 	    (owin (current-window-configuration))
-	    win func in-buffer selected new-sum-start new-sum-hscroll err)
+	    win in-buffer selected new-sum-start new-sum-hscroll err)
 	(cond (not-restore-window
 	       (pop-to-buffer gnus-article-current-summary)
 	       (setq win (selected-window)))
@@ -6729,9 +6742,6 @@ not have a face in `gnus-article-boring-faces'."
 		 (select-frame-set-input-focus (window-frame win))
 		 (select-window win))))
 	(setq in-buffer (current-buffer))
-	;; We disable the pick minor mode commands.
-	(setq func (let (gnus-pick-mode)
-		     (key-binding keys t)))
 	(when (and (symbolp func)
 		   (get func 'disabled))
 	  (error "Function %s disabled" func))
@@ -7715,6 +7725,15 @@ positives are possible."
      0 (>= gnus-button-emacs-level 1) gnus-button-handle-apropos-variable 1)
     ("M-x[ \t\n]+apropos-documentation[ \t\n]+RET[ \t\n]+\\([^ \t\n]+\\)[ \t\n]+RET\\>"
      0 (>= gnus-button-emacs-level 1) gnus-button-handle-apropos-documentation 1)
+    ;; This is how URLs _should_ be embedded in text (RFC 1738, RFC 2396)...
+    ("<URL: *\\([^\n<>]*\\)>"
+     1 (>= gnus-button-browse-level 0) gnus-button-embedded-url 1)
+    ;; RFC 2396 (2.4.3., delims) ...
+    ("\"URL: *\\([^\n\"]*\\)\""
+     1 (>= gnus-button-browse-level 0) gnus-button-embedded-url 1)
+    ;; Raw URLs.
+    (gnus-button-url-regexp
+     0 (>= gnus-button-browse-level 0) browse-url-button-open-url 0)
     ;; The following entries may lead to many false positives so don't enable
     ;; them by default (use a high button level).
     ("/\\([a-z][-a-z0-9]+\\.el\\)\\>[^.?]"
@@ -7738,15 +7757,6 @@ positives are possible."
      ;; Unlike the other regexps we really have to require quoting
      ;; here to determine where it ends.
      1 (>= gnus-button-emacs-level 1) gnus-button-handle-describe-key 3)
-    ;; This is how URLs _should_ be embedded in text (RFC 1738, RFC 2396)...
-    ("<URL: *\\([^\n<>]*\\)>"
-     1 (>= gnus-button-browse-level 0) gnus-button-embedded-url 1)
-    ;; RFC 2396 (2.4.3., delims) ...
-    ("\"URL: *\\([^\n\"]*\\)\""
-     1 (>= gnus-button-browse-level 0) gnus-button-embedded-url 1)
-    ;; Raw URLs.
-    (gnus-button-url-regexp
-     0 (>= gnus-button-browse-level 0) browse-url-button-open-url 0)
     ;; man pages
     ("\\b\\([a-z][a-z]+([1-9])\\)\\W"
      0 (and (>= gnus-button-man-level 1) (< gnus-button-man-level 3))
@@ -7781,11 +7791,11 @@ also be Lisp expression evaluating to a string),
 BUTTON: is the number of the regexp grouping actually matching the button,
 FORM: is a Lisp expression which must eval to true for the button to
 be added,
-CALLBACK: is the function to call when the user push this button, and each
+CALLBACK: is the function to call when the user pushes this button, and each
 PAR: is a number of a regexp grouping whose text will be passed to CALLBACK.
 
-CALLBACK can also be a variable, in that case the value of that
-variable it the real callback function."
+CALLBACK can also be a variable, in which case the value of that
+variable is the real callback function."
   :group 'gnus-article-buttons
   :type '(repeat (list (choice regexp variable sexp)
 		       (integer :tag "Button")
@@ -8076,6 +8086,7 @@ url is put as the `gnus-button-url' overlay property on the button."
 		'button-data data
 		'action fun
 		'keymap gnus-url-button-map
+		'follow-link t
 		'category t
 		'button t)
 	  (and data (list 'gnus-data data))))
@@ -8402,6 +8413,7 @@ url is put as the `gnus-button-url' overlay property on the button."
      gnus-prev-page-line-format nil
      `(keymap ,gnus-prev-page-map
 	      gnus-prev t
+	      follow-link t
 	      gnus-callback gnus-article-button-prev-page
 	      article-type annotation))
     (setq e (if (bolp)
@@ -8433,6 +8445,7 @@ url is put as the `gnus-button-url' overlay property on the button."
     (gnus-eval-format gnus-next-page-line-format nil
 		      `(keymap ,gnus-next-page-map
                                gnus-next t
+			       follow-link t
                                gnus-callback gnus-article-button-next-page
                                article-type annotation))
     (setq e (if (bolp)
@@ -8820,11 +8833,12 @@ For example:
      gnus-mime-security-button-line-format
      gnus-mime-security-button-line-format-alist
      `(keymap ,gnus-mime-security-button-map
-	 gnus-callback gnus-mime-security-press-button
-	 gnus-line-format ,gnus-mime-security-button-line-format
-	 gnus-mime-details ,gnus-mime-security-button-pressed
-	 article-type annotation
-	 gnus-data ,handle))
+	      gnus-callback gnus-mime-security-press-button
+	      gnus-line-format ,gnus-mime-security-button-line-format
+	      gnus-mime-details ,gnus-mime-security-button-pressed
+	      article-type annotation
+	      follow-link t
+	      gnus-data ,handle))
     (setq e (if (bolp)
 		;; Exclude a newline.
 		(1- (point))

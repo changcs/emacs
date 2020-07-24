@@ -1,6 +1,6 @@
 ;;; css-mode.el --- Major mode to edit CSS files  -*- lexical-binding: t -*-
 
-;; Copyright (C) 2006-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2006-2020 Free Software Foundation, Inc.
 
 ;; Author: Stefan Monnier <monnier@iro.umontreal.ca>
 ;; Maintainer: Simen Heggestøyl <simenheg@gmail.com>
@@ -119,7 +119,6 @@
     ("cue" cue-before cue-after)
     ("cue-after" uri "none")
     ("cue-before" uri "none")
-    ("direction" "ltr" "rtl")
     ("display" "inline" "block" "list-item" "inline-block" "table"
      "inline-table" "table-row-group" "table-header-group"
      "table-footer-group" "table-row" "table-column-group"
@@ -180,7 +179,6 @@
     ("stress" number)
     ("table-layout" "auto" "fixed")
     ("top" length percentage "auto")
-    ("unicode-bidi" "normal" "embed" "bidi-override")
     ("vertical-align" "baseline" "sub" "super" "top" "text-top"
      "middle" "bottom" "text-bottom" percentage length)
     ("visibility" "visible" "hidden" "collapse")
@@ -277,6 +275,10 @@
     ;; (http://www.w3.org/TR/css3-color/#property)
     ("color" color)
     ("opacity" alphavalue)
+
+    ;; CSS Containment Module Level 1
+    ;; (https://www.w3.org/TR/css-contain-1/#property-index)
+    ("contain" "none" "strict" "content" "size" "layout" "paint")
 
     ;; CSS Grid Layout Module Level 1
     ;; (https://www.w3.org/TR/css-grid-1/#property-index)
@@ -489,6 +491,16 @@
     ;; CSS Will Change Module Level 1
     ;; (https://www.w3.org/TR/css-will-change-1/#property-index)
     ("will-change" "auto" animateable-feature)
+
+    ;; CSS Writing Modes Level 3
+    ;; (https://www.w3.org/TR/css-writing-modes-3/#property-index)
+    ;; "glyph-orientation-vertical" is obsolete and left out.
+    ("direction" "ltr" "rtl")
+    ("text-combine-upright" "none" "all")
+    ("text-orientation" "mixed" "upright" "sideways")
+    ("unicode-bidi" "normal" "embed" "isolate" "bidi-override"
+     "isolate-override" "plaintext")
+    ("writing-mode" "horizontal-tb" "vertical-rl" "vertical-lr")
 
     ;; Filter Effects Module Level 1
     ;; (http://www.w3.org/TR/filter-effects/#property-index)
@@ -874,7 +886,7 @@ cannot be completed sensibly: `custom-ident',
 
 (defconst css-escapes-re
   "\\\\\\(?:[^\000-\037\177]\\|[[:xdigit:]]+[ \n\t\r\f]?\\)")
-(defconst css-nmchar-re (concat "\\(?:[-[:alnum:]]\\|" css-escapes-re "\\)"))
+(defconst css-nmchar-re (concat "\\(?:[-_[:alnum:]]\\|" css-escapes-re "\\)"))
 (defconst css-nmstart-re (concat "\\(?:[[:alpha:]]\\|" css-escapes-re "\\)"))
 (defconst css-ident-re ;; (concat css-nmstart-re css-nmchar-re "*")
   ;; Apparently, "at rules" names can start with a dash, e.g. @-moz-keyframes.
@@ -1137,17 +1149,6 @@ returns, point will be at the end of the recognized color."
    ;; Evaluate to the color if the name is found.
    ((css--named-color start-point match))))
 
-(defun css--contrasty-color (name)
-  "Return a color that contrasts with NAME.
-NAME is of any form accepted by `color-distance'.
-The returned color will be usable by Emacs and will contrast
-with NAME; in particular so that if NAME is used as a background
-color, the returned color can be used as the foreground and still
-be readable."
-  ;; See bug#25525 for a discussion of this.
-  (if (> (color-distance name "black") 292485)
-      "black" "white"))
-
 (defcustom css-fontify-colors t
   "Whether CSS colors should be fontified using the color as the background.
 When non-`nil', a text representing CSS color will be fontified
@@ -1187,7 +1188,8 @@ START and END are buffer positions."
 		    (add-text-properties
 		     start (point)
 		     (list 'face (list :background color
-				       :foreground (css--contrasty-color color)
+				       :foreground (readable-foreground-color
+                                                    color)
 				       :box '(:line-width -1))))))))))))
     extended-region))
 

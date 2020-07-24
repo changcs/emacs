@@ -1,6 +1,6 @@
 ;;; man.el --- browse UNIX manual pages -*- lexical-binding: t -*-
 
-;; Copyright (C) 1993-1994, 1996-1997, 2001-2019 Free Software
+;; Copyright (C) 1993-1994, 1996-1997, 2001-2020 Free Software
 ;; Foundation, Inc.
 
 ;; Author: Barry A. Warsaw <bwarsaw@cen.com>
@@ -182,6 +182,18 @@ The value also can be a positive integer for a fixed width."
                  (integer :tag "Fixed width" :value 65))
   :group 'man)
 
+(defcustom Man-width-max 80
+  "Maximum number of columns allowed for the width of manual pages.
+It defines the maximum width for the case when `Man-width' is customized
+to a dynamically calculated value depending on the frame/window width.
+If the width calculated for `Man-width' is larger than the maximum width,
+it will be automatically reduced to the width defined by this variable.
+When nil, there is no limit on maximum width."
+  :type '(choice (const :tag "No limit" nil)
+                 (integer :tag "Max width" :value 80))
+  :version "27.1"
+  :group 'man)
+
 (defcustom Man-frame-parameters nil
   "Frame parameter list for creating a new frame for a manual page."
   :type '(repeat (cons :format "%v"
@@ -241,7 +253,7 @@ the associated section number."
   "Regexp that matches the text that precedes the command's name.
 Used in `bookmark-set' to get the default bookmark name."
   :version "24.1"
-  :type 'string :group 'bookmark)
+  :type 'regexp :group 'bookmark)
 
 (defcustom manual-program "man"
   "Program used by `man' to produce man pages."
@@ -984,7 +996,11 @@ An \"apropos\" query with -k gives a buffer of matching page
 names or descriptions.  The pattern argument is usually an
 \"grep -E\" style regexp.
 
-    -k pattern"
+    -k pattern
+
+Note that in some cases you will need to use \\[quoted-insert] to quote the
+SPC character in the above examples, because this command attempts
+to auto-complete your input based on the installed manual pages."
 
   (interactive
    (list (let* ((default-entry (Man-default-man-entry))
@@ -1022,6 +1038,22 @@ names or descriptions.  The pattern argument is usually an
       (error "No item under point")
     (man man-args)))
 
+(defvar Man-columns nil)
+
+(defun Man-columns ()
+  (let ((width (cond
+                ((and (integerp Man-width) (> Man-width 0))
+                 Man-width)
+                (Man-width
+                 (let ((window (get-buffer-window nil t)))
+                   (frame-width (and window (window-frame window)))))
+                (t
+                 (window-width (get-buffer-window nil t))))))
+    (when (and (integerp Man-width-max)
+               (> Man-width-max 0))
+      (setq width (min width Man-width-max)))
+    width))
+
 (defmacro Man-start-calling (&rest body)
   "Start the man command in `body' after setting up the environment."
   `(let ((process-environment (copy-sequence process-environment))
@@ -1058,20 +1090,8 @@ names or descriptions.  The pattern argument is usually an
 	      (not (or (getenv "MANWIDTH") (getenv "COLUMNS"))))
       ;; Since the page buffer is displayed beforehand,
       ;; we can select its window and get the window/frame width.
-      (setenv "COLUMNS" (number-to-string
-			 (cond
-			  ((and (integerp Man-width) (> Man-width 0))
-			   Man-width)
-			  (Man-width
-			   (if (window-live-p (get-buffer-window (current-buffer) t))
-			       (with-selected-window (get-buffer-window (current-buffer) t)
-				 (frame-width))
-			     (frame-width)))
-			  (t
-			   (if (window-live-p (get-buffer-window (current-buffer) t))
-			       (with-selected-window (get-buffer-window (current-buffer) t)
-				 (window-width))
-			     (window-width)))))))
+      (setq-local Man-columns (Man-columns))
+      (setenv "COLUMNS" (number-to-string Man-columns)))
     ;; Since man-db 2.4.3-1, man writes plain text with no escape
     ;; sequences when stdout is not a tty.	In 2.5.0, the following
     ;; env-var was added to allow control of this (see Debian Bug#340673).
@@ -1156,6 +1176,25 @@ Return the buffer in which the manpage will appear."
 	 (if (> old-size (buffer-size))
 	     (search-backward text nil t))
 	 (search-forward text nil t)))))
+
+(defvar Man--window-state-change-timer nil)
+
+(defun Man--window-state-change (window)
+  (unless (integerp Man-width)
+    (when (timerp Man--window-state-change-timer)
+      (cancel-timer Man--window-state-change-timer))
+    (setq Man--window-state-change-timer
+          (run-with-idle-timer 1 nil #'Man-fit-to-window window))))
+
+(defun Man-fit-to-window (window)
+  "Adjust width of the buffer to fit columns into WINDOW boundaries."
+  (when (window-live-p window)
+    (with-current-buffer (window-buffer window)
+      (when (and (derived-mode-p 'Man-mode)
+                 (not (eq Man-columns (Man-columns))))
+        (let ((proc (get-buffer-process (current-buffer))))
+          (unless (and proc (not (eq (process-status proc) 'exit)))
+            (Man-update-manpage)))))))
 
 (defun Man-notify-when-ready (man-buffer)
   "Notify the user when MAN-BUFFER is ready.
@@ -1389,7 +1428,7 @@ manpage command."
   (let ((Man-buffer (if (stringp process) (get-buffer process)
 		      (process-buffer process)))
 	(delete-buff nil)
-	(err-mess nil))
+	message)
 
     (if (null (buffer-name Man-buffer)) ;; deleted buffer
 	(or (stringp process)
@@ -1402,9 +1441,9 @@ manpage command."
 	    (goto-char (point-min))
 	    (cond ((or (looking-at "No \\(manual \\)*entry for")
 		       (looking-at "[^\n]*: nothing appropriate$"))
-		   (setq err-mess (buffer-substring (point)
-						    (progn
-						      (end-of-line) (point)))
+		   (setq message (buffer-substring (point)
+						   (progn
+						     (end-of-line) (point)))
 			 delete-buff t))
 
 		  ;; "-k foo", successful exit, but no output (from man-db)
@@ -1415,7 +1454,7 @@ manpage command."
 			(eq (process-status process) 'exit)
 			(= (process-exit-status process) 0)
 			(= (point-min) (point-max)))
-		   (setq err-mess (format "%s: no matches" Man-arguments)
+		   (setq message (format "%s: no matches" Man-arguments)
 			 delete-buff t))
 
 		  ((or (stringp process)
@@ -1423,7 +1462,7 @@ manpage command."
 				 (= (process-exit-status process) 0))))
 		   (or (zerop (length msg))
 		       (progn
-			 (setq err-mess
+			 (setq message
 			       (concat (buffer-name Man-buffer)
 				       ": process "
 				       (let ((eos (1- (length msg))))
@@ -1432,11 +1471,7 @@ manpage command."
 			 (goto-char (point-max))
 			 (insert (format "\nprocess %s" msg))))
 		   ))
-	    (if delete-buff
-		(if (window-live-p (get-buffer-window Man-buffer t))
-		    (quit-restore-window
-		     (get-buffer-window Man-buffer t) 'kill)
-		  (kill-buffer Man-buffer))
+	    (unless delete-buff
 
 	      (run-hooks 'Man-cooked-hook)
 
@@ -1447,10 +1482,8 @@ manpage command."
 
 	      (if (not Man-page-list)
 		  (let ((args Man-arguments))
-		    (if (window-live-p (get-buffer-window (current-buffer) t))
-			(quit-restore-window
-			 (get-buffer-window (current-buffer) t) 'kill)
-		      (kill-buffer (current-buffer)))
+		    (setq delete-buff t)
+
                     ;; Entries hyphenated due to the window's width
                     ;; won't be found in the man database, so remove
                     ;; the hyphenation -- assuming Groff hyphenates
@@ -1460,22 +1493,27 @@ manpage command."
 		    (if (string-match "[-‐­]" args)
 			(let ((str (replace-match "" nil nil args)))
 			  (Man-getpage-in-background str))
-                      (message "Can't find the %s manpage"
-                               (Man-page-from-arguments args))))
+                      (setq message (format "Can't find the %s manpage"
+                                            (Man-page-from-arguments args)))))
 
 		(if Man-fontify-manpage-flag
-		    (message "%s man page formatted"
-			     (Man-page-from-arguments Man-arguments))
-		  (message "%s man page cleaned up"
-			   (Man-page-from-arguments Man-arguments)))
+		    (setq message (format "%s man page formatted"
+			                  (Man-page-from-arguments Man-arguments)))
+		  (setq message (format "%s man page cleaned up"
+			                (Man-page-from-arguments Man-arguments))))
 		(unless (and (processp process)
 			     (not (eq (process-status process) 'exit)))
 		  (setq mode-line-process nil))
-		(set-buffer-modified-p nil)))))
+		(set-buffer-modified-p nil))))))
 
-	(if err-mess
-	    (message "%s" err-mess))
-	))))
+      (when delete-buff
+        (if (window-live-p (get-buffer-window Man-buffer t))
+            (quit-restore-window
+             (get-buffer-window Man-buffer t) 'kill)
+          (kill-buffer Man-buffer)))
+
+      (when message
+        (message "%s" message)))))
 
 (defun Man-page-from-arguments (args)
   ;; Skip arguments and only print the page name.
@@ -1544,7 +1582,8 @@ The following key bindings are currently in effect in the buffer:
   (set (make-local-variable 'outline-regexp) Man-heading-regexp)
   (set (make-local-variable 'outline-level) (lambda () 1))
   (set (make-local-variable 'bookmark-make-record-function)
-       'Man-bookmark-make-record))
+       'Man-bookmark-make-record)
+  (add-hook 'window-state-change-functions #'Man--window-state-change nil t))
 
 (defun Man-build-section-list ()
   "Build the list of manpage sections."

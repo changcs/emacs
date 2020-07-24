@@ -1,5 +1,5 @@
 /* Terminal control module for terminals described by TERMCAP
-   Copyright (C) 1985-1987, 1993-1995, 1998, 2000-2019 Free Software
+   Copyright (C) 1985-1987, 1993-1995, 1998, 2000-2020 Free Software
    Foundation, Inc.
 
 This file is part of GNU Emacs.
@@ -563,8 +563,8 @@ encode_terminal_code (struct glyph *src, int src_len,
 	    {
 	      cmp = composition_table[src->u.cmp.id];
 	      required = cmp->glyph_len;
-	      required *= MAX_MULTIBYTE_LENGTH;
 	    }
+	  required *= MAX_MULTIBYTE_LENGTH;
 
 	  if (encode_terminal_src_size - nbytes < required)
 	    {
@@ -2568,6 +2568,14 @@ handle_one_term_event (struct tty_display_info *tty, Gpm_Event *event,
   else {
     f->mouse_moved = 0;
     term_mouse_click (&ie, event, f);
+    if (tty_handle_tab_bar_click (f, event->x, event->y,
+                                 (ie.modifiers & down_modifier) != 0, &ie))
+      {
+       /* tty_handle_tab_bar_click stores 2 events in the event
+          queue, so we are done here.  */
+       count += 2;
+       return count;
+      }
   }
 
  done:
@@ -4158,6 +4166,15 @@ use the Bourne shell command 'TERM=...; export TERM' (C-shell:\n\
 	    /* If the used Terminfo library supports only 16-bit
 	       signed values, tgetnum("Co") and tigetnum("colors")
 	       could return 32767.  */
+	    tty->TN_max_colors = 16777216;
+	  }
+	/* Fall back to xterm+direct (semicolon version) if requested
+	   by the COLORTERM environment variable.  */
+	else if ((bg = getenv("COLORTERM")) != NULL
+		 && strcasecmp(bg, "truecolor") == 0)
+	  {
+	    tty->TS_set_foreground = "\033[%?%p1%{8}%<%t3%p1%d%e38;2;%p1%{65536}%/%d;%p1%{256}%/%{255}%&%d;%p1%{255}%&%d%;m";
+	    tty->TS_set_background = "\033[%?%p1%{8}%<%t4%p1%d%e48;2;%p1%{65536}%/%d;%p1%{256}%/%{255}%&%d;%p1%{255}%&%d%;m";
 	    tty->TN_max_colors = 16777216;
 	  }
       }

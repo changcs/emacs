@@ -1,6 +1,6 @@
 ;;; benchmark.el --- support for benchmarking code  -*- lexical-binding: t -*-
 
-;; Copyright (C) 2003-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2003-2020 Free Software Foundation, Inc.
 
 ;; Author: Dave Love <fx@gnu.org>
 ;; Keywords: lisp, extensions
@@ -81,7 +81,7 @@ result.  The overhead of the `lambda's is accounted for."
 	(gcs (make-symbol "gcs"))
 	(gc (make-symbol "gc"))
 	(code (byte-compile `(lambda () ,@forms)))
-	(lambda-code (byte-compile '(lambda ()))))
+        (lambda-code (byte-compile '(lambda ()))))
     `(let ((,gc gc-elapsed)
 	   (,gcs gcs-done))
        (list ,(if (or (symbolp repetitions) (> repetitions 1))
@@ -106,6 +106,30 @@ For non-interactive use see also `benchmark-run' and
 	(message "Elapsed time: %fs" (car result))
       (message "Elapsed time: %fs (%fs in %d GCs)" (car result)
 	       (nth 2 result) (nth 1 result)))))
+
+;;;###autoload
+(defmacro benchmark-progn (&rest body)
+  "Evaluate BODY and message the time taken.
+The return value is the value of the final form in BODY."
+  (declare (debug body) (indent 0))
+  (let ((value (make-symbol "value"))
+	(start (make-symbol "start"))
+	(gcs (make-symbol "gcs"))
+	(gc (make-symbol "gc")))
+    `(let ((,gc gc-elapsed)
+	   (,gcs gcs-done)
+           (,start (current-time))
+           (,value (progn
+                     ,@body)))
+       (message "Elapsed time: %fs%s"
+                (float-time (time-since ,start))
+                (if (> (- gcs-done ,gcs) 0)
+                    (format " (%fs in %d GCs)"
+	                    (- gc-elapsed ,gc)
+	                    (- gcs-done ,gcs))
+                  ""))
+       ;; Return the value of the body.
+       ,value)))
 
 (provide 'benchmark)
 

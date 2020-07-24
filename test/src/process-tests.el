@@ -1,6 +1,6 @@
-;;; process-tests.el --- Testing the process facilities
+;;; process-tests.el --- Testing the process facilities -*- lexical-binding: t -*-
 
-;; Copyright (C) 2013-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2013-2020 Free Software Foundation, Inc.
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -33,7 +33,7 @@
   (let ((proc (start-process "test" nil "bash" "-c" "exit 20"))
 	(sentinel-called nil)
 	(start-time (float-time)))
-    (set-process-sentinel proc (lambda (proc msg)
+    (set-process-sentinel proc (lambda (_proc _msg)
 				 (setq sentinel-called t)))
     (while (not (or sentinel-called
 		    (> (- (float-time) start-time)
@@ -88,7 +88,7 @@
 			     :stderr stderr-buffer))
 	 (sentinel-called nil)
 	 (start-time (float-time)))
-    (set-process-sentinel proc (lambda (proc msg)
+    (set-process-sentinel proc (lambda (_proc _msg)
 				 (setq sentinel-called t)))
     (while (not (or sentinel-called
 		    (> (- (float-time) start-time)
@@ -120,13 +120,13 @@
 						    "exit 20"))
 			     :stderr stderr-proc))
 	 (start-time (float-time)))
-    (set-process-filter proc (lambda (proc input)
+    (set-process-filter proc (lambda (_proc input)
 			       (push input stdout-output)))
-    (set-process-sentinel proc (lambda (proc msg)
+    (set-process-sentinel proc (lambda (_proc _msg)
 				 (setq sentinel-called t)))
-    (set-process-filter stderr-proc (lambda (proc input)
+    (set-process-filter stderr-proc (lambda (_proc input)
 				      (push input stderr-output)))
-    (set-process-sentinel stderr-proc (lambda (proc input)
+    (set-process-sentinel stderr-proc (lambda (_proc _input)
 					(setq stderr-sentinel-called t)))
     (while (not (or sentinel-called
 		    (> (- (float-time) start-time)
@@ -337,7 +337,8 @@ See Bug#30460."
   (skip-unless (not (getenv "EMACS_HYDRA_CI")))
   (should-error (network-lookup-address-info "google.com" 'both))
   (should (network-lookup-address-info "google.com" 'ipv4))
-  (should (network-lookup-address-info "google.com" 'ipv6)))
+  (when (featurep 'make-network-process '(:family ipv6))
+    (should (network-lookup-address-info "google.com" 'ipv6))))
 
 (ert-deftest lookup-unicode-domains ()
   "Unicode domains should fail"
@@ -354,11 +355,11 @@ See Bug#30460."
   "Check that we can look up google IP addresses"
   (skip-unless (not (getenv "EMACS_HYDRA_CI")))
   (let ((addresses-both (network-lookup-address-info "google.com"))
-        (addresses-v4 (network-lookup-address-info "google.com" 'ipv4))
-        (addresses-v6 (network-lookup-address-info "google.com" 'ipv6)))
+        (addresses-v4 (network-lookup-address-info "google.com" 'ipv4)))
     (should addresses-both)
-    (should addresses-v4)
-    (should addresses-v6)))
+    (should addresses-v4))
+  (when (featurep 'make-network-process '(:family ipv6))
+    (should (network-lookup-address-info "google.com" 'ipv6))))
 
 (ert-deftest non-existent-lookup-failure ()
   (skip-unless (not (getenv "EMACS_HYDRA_CI")))

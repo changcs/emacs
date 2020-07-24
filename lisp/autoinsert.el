@@ -1,6 +1,6 @@
 ;;; autoinsert.el --- automatic mode-dependent insertion of text into new files  -*- lexical-binding: t -*-
 
-;; Copyright (C) 1985-1987, 1994-1995, 1998, 2000-2019 Free Software
+;; Copyright (C) 1985-1987, 1994-1995, 1998, 2000-2020 Free Software
 ;; Foundation, Inc.
 
 ;; Author: Charlie Martin <crm@cs.duke.edu>
@@ -32,7 +32,7 @@
 ;;  auto-mode-alist.
 ;;
 ;;  To use:
-;;     (add-hook 'find-file-hook 'auto-insert)
+;;     (auto-insert-mode t)
 ;;     setq auto-insert-directory to an appropriate slash-terminated value
 ;;
 ;;  You can also customize the variable `auto-insert-mode' to load the
@@ -161,6 +161,29 @@ If this contains a %s, that will be replaced by the matching rule."
      '(if (search-backward "&" (line-beginning-position) t)
 	  (replace-match (capitalize (user-login-name)) t t))
      '(end-of-line 1) " <" (progn user-mail-address) ">\n")
+
+    (".dir-locals.el"
+     nil
+     ";;; Directory Local Variables\n"
+     ";;; For more information see (info \"(emacs) Directory Variables\")\n\n"
+     "(("
+     '(setq v1 (let (modes)
+                 (mapatoms (lambda (mode)
+                             (let ((name (symbol-name mode)))
+                               (when (string-match "-mode$" name)
+                                 (push name modes)))))
+                 (sort modes 'string<)))
+     (completing-read "Local variables for mode: " v1 nil t)
+     " . (("
+     (let ((all-variables
+            (apropos-internal ".*"
+                              (lambda (symbol)
+			        (and (boundp symbol)
+				     (get symbol 'variable-documentation))))))
+       (completing-read "Variable to set: " all-variables))
+     " . "
+     (completing-read "Value to set it to: " nil)
+     "))))\n")
 
     (("\\.el\\'" . "Emacs Lisp header")
      "Short description: "
@@ -315,7 +338,7 @@ described above, e.g. [\"header.insert\" date-and-author-update]."
                 ;; There's no custom equivalent of "repeat" for vectors.
                 :value-type (choice file function
                                     (sexp :tag "Skeleton or vector")))
-  :version "25.1")
+  :version "27.1")
 
 
 ;; Establish a default value for auto-insert-directory
@@ -373,7 +396,7 @@ Matches the visited file name against the elements of `auto-insert-alist'."
 		     ;; which might ask the user for something
 		     (switch-to-buffer (current-buffer))
 		     (if (and (consp action)
-			      (not (eq (car action) 'lambda)))
+			      (not (functionp action)))
 			 (skeleton-insert action)
 		       (funcall action)))))
 	       (if (vectorp action)

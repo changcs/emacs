@@ -1,6 +1,6 @@
 /* Big numbers for Emacs.
 
-Copyright 2018-2019 Free Software Foundation, Inc.
+Copyright 2018-2020 Free Software Foundation, Inc.
 
 This file is part of GNU Emacs.
 
@@ -22,12 +22,7 @@ along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 #ifndef BIGNUM_H
 #define BIGNUM_H
 
-#ifdef HAVE_GMP
-# include <gmp.h>
-#else
-# include "mini-gmp.h"
-#endif
-
+#include <gmp.h>
 #include "lisp.h"
 
 /* Number of data bits in a limb.  */
@@ -49,7 +44,13 @@ extern bool mpz_to_intmax (mpz_t const, intmax_t *) ARG_NONNULL ((1, 2));
 extern bool mpz_to_uintmax (mpz_t const, uintmax_t *) ARG_NONNULL ((1, 2));
 extern void mpz_set_intmax_slow (mpz_t, intmax_t) ARG_NONNULL ((1));
 extern void mpz_set_uintmax_slow (mpz_t, uintmax_t) ARG_NONNULL ((1));
-extern double mpz_get_d_rounded (mpz_t const);
+extern void emacs_mpz_mul (mpz_t, mpz_t const, mpz_t const)
+  ARG_NONNULL ((1, 2, 3));
+extern void emacs_mpz_mul_2exp (mpz_t, mpz_t const, EMACS_INT)
+  ARG_NONNULL ((1, 2));
+extern void emacs_mpz_pow_ui (mpz_t, mpz_t const, unsigned long)
+  ARG_NONNULL ((1, 2));
+extern double mpz_get_d_rounded (mpz_t const) ATTRIBUTE_CONST;
 
 INLINE_HEADER_BEGIN
 
@@ -102,7 +103,8 @@ bignum_integer (mpz_t *tmp, Lisp_Object i)
   if (FIXNUMP (i))
     {
       mpz_set_intmax (*tmp, XFIXNUM (i));
-      return tmp;
+      /* The unnecessary cast pacifies a buggy GCC 4.8.5.  */
+      return (mpz_t const *) tmp;
     }
   return xbignum_val (i);
 }

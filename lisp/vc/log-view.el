@@ -1,6 +1,6 @@
 ;;; log-view.el --- Major mode for browsing revision log histories -*- lexical-binding: t -*-
 
-;; Copyright (C) 1999-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1999-2020 Free Software Foundation, Inc.
 
 ;; Author: Stefan Monnier <monnier@iro.umontreal.ca>
 ;; Keywords: tools, vc
@@ -196,15 +196,15 @@ If it is nil, `log-view-toggle-entry-display' does nothing.")
 
 (defface log-view-file
   '((((class color) (background light))
-     (:background "grey70" :weight bold))
-    (t (:weight bold)))
+     (:background "grey70" :weight bold :extend t))
+    (t (:weight bold :extend t)))
   "Face for the file header line in `log-view-mode'."
   :group 'log-view)
 
 (defface log-view-message
   '((((class color) (background light))
-     (:background "grey85"))
-    (t (:weight bold)))
+     (:background "grey85" :extend t))
+    (t (:weight bold :extend t)))
   "Face for the message header line in `log-view-mode'."
   :group 'log-view)
 

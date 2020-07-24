@@ -1,6 +1,6 @@
 ;;; gnus-group.el --- group mode commands for Gnus
 
-;; Copyright (C) 1996-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1996-2020 Free Software Foundation, Inc.
 
 ;; Author: Lars Magne Ingebrigtsen <larsi@gnus.org>
 ;; Keywords: news
@@ -1129,8 +1129,8 @@ The following commands are available:
   (gnus-update-group-mark-positions)
   (when gnus-use-undo
     (gnus-undo-mode 1))
-  (when gnus-slave
-    (gnus-slave-mode)))
+  (when gnus-child
+    (gnus-child-mode)))
 
 (defun gnus-update-group-mark-positions ()
   (save-excursion
@@ -2973,11 +2973,7 @@ and NEW-NAME will be prompted for."
       (setq info (copy-tree info))
       (setcar info new-group)
       (unless (gnus-server-equal method "native")
-	(unless (nthcdr 3 info)
-	  (nconc info (list nil nil)))
-	(unless (nthcdr 4 info)
-	  (nconc info (list nil)))
-	(gnus-info-set-method info method))
+	(gnus-info-set-method info method t))
       (gnus-group-set-info info))
     (gnus-group-update-group (or new-group group))
     (gnus-group-position-point)))
@@ -3374,14 +3370,12 @@ If REVERSE, sort in reverse order."
   "Sort only the selected GROUPS, using FUNC.
 If REVERSE is non-nil, reverse the sorting."
   (let ((infos (sort
-		(mapcar (lambda (g)
-			  (gnus-get-info g))
-			groups)
+		(mapcar #'gnus-get-info groups)
 		func))
 	sorted-groups)
     (when reverse
       (setq infos (nreverse infos)))
-    (setq sorted-groups (mapcar (lambda (i) (gnus-info-group i)) infos))
+    (setq sorted-groups (mapcar #'gnus-info-group infos))
 
     ;; Find the original locations of GROUPS in `gnus-group-list', and
     ;; replace each one, in order, with a group from SORTED-GROUPS.
@@ -3532,16 +3526,16 @@ Obeys the process/prefix convention."
       `(progn
 	 (gnus-request-set-mark ,group ',action)
 	 (gnus-info-set-marks ',info ',(gnus-info-marks info) t)
-	 (gnus-info-set-read ',info ',(gnus-info-read info))
+	 (setf (gnus-info-read ',info) ',(gnus-info-read info))
 	 (when (gnus-group-jump-to-group ,group)
 	   (gnus-get-unread-articles-in-group ',info ',(gnus-active group) t)
 	   (gnus-group-update-group-line))))
     (setq action (mapcar (lambda (el) (list (nth 0 el) 'del (nth 2 el)))
 			 action))
     (gnus-request-set-mark group action)
-    (gnus-info-set-read info nil)
+    (setf (gnus-info-read info) nil)
     (when (gnus-info-marks info)
-      (gnus-info-set-marks info nil))))
+      (setf (gnus-info-marks info) nil))))
 
 ;; Group catching up.
 
@@ -3767,10 +3761,10 @@ group line."
      (newsrc
       ;; Toggle subscription flag.
       (gnus-group-change-level
-       newsrc (if level level (if (<= (gnus-info-level (nth 1 newsrc))
-				      gnus-level-subscribed)
-				  (1+ gnus-level-subscribed)
-				gnus-level-default-subscribed)))
+       newsrc (or level (if (<= (gnus-info-level (nth 1 newsrc))
+				gnus-level-subscribed)
+			    (1+ gnus-level-subscribed)
+			  gnus-level-default-subscribed)))
       (unless silent
 	(gnus-group-update-group group)))
      ((and (stringp group)
@@ -3779,7 +3773,7 @@ group line."
       ;; Add new newsgroup.
       (gnus-group-change-level
        group
-       (if level level gnus-level-default-subscribed)
+       (or level gnus-level-default-subscribed)
        (or (and (member group gnus-zombie-list)
 		gnus-level-zombie)
 	   gnus-level-killed)
@@ -4030,9 +4024,9 @@ otherwise all levels below ARG will be scanned too."
     (gnus-run-hooks 'gnus-get-top-new-news-hook)
     (gnus-run-hooks 'gnus-get-new-news-hook)
 
-    ;; Read any slave files.
-    (unless gnus-slave
-      (gnus-master-read-slave-newsrc))
+    ;; Read any child files.
+    (unless gnus-child
+      (gnus-parent-read-child-newsrc))
 
     (gnus-get-unread-articles (gnus-group-default-level arg t)
 			      nil one-level)
@@ -4465,12 +4459,14 @@ and the second element is the address."
 	      (setcar entry (length
 			     (gnus-list-of-unread-articles (car info)))))
 	    ;; The above `setcar' will only affect the hashtable, not
-	    ;; the alist: update the alist separately.
-	    (push info (cdr (setq gnus-newsrc-alist
-				   (remove (assoc-string
-					    (gnus-info-group info)
-					    gnus-newsrc-alist)
-					   gnus-newsrc-alist)))))
+	    ;; the alist: update the alist separately, but only if
+	    ;; it's been initialized.
+	    (when gnus-newsrc-alist
+	      (push info (cdr (setq gnus-newsrc-alist
+				    (remove (assoc-string
+					     (gnus-info-group info)
+					     gnus-newsrc-alist)
+					    gnus-newsrc-alist))))))
 	(error "No such group: %s" (gnus-info-group info))))))
 
 ;; Ad-hoc function for inserting data from a different newsrc.eld

@@ -1,6 +1,6 @@
 @c -*-texinfo-*-
 @c This is part of the GNU Emacs Lisp Reference Manual.
-@c Copyright (C) 1990-1995, 1998-1999, 2001-2019 Free Software
+@c Copyright (C) 1990--1995, 1998--1999, 2001--2020 Free Software
 @c Foundation, Inc.
 @c See the file elisp.texi for copying conditions.
 @node Windows
@@ -2874,7 +2874,7 @@ Ordering}).
 A major client of this is @code{display-buffer-reuse-window}, but all
 other action functions that try to reuse a window are affected as
 well.  @code{display-buffer-in-previous-window} consults it when
-searching for a window that previosuly displayed the buffer on another
+searching for a window that previously displayed the buffer on another
 frame.
 
 @vindex inhibit-switch-frame@r{, a buffer display action alist entry}
@@ -3048,6 +3048,16 @@ since there is no guarantee that an arbitrary caller of
 @code{display-buffer} will be able to handle the case that no window
 will display the buffer.  @code{display-buffer-no-window} is the only
 action function that cares about this entry.
+
+@vindex body-function@r{, a buffer display action alist entry}
+@item body-function
+The value must be a function taking one argument (a displayed window).
+This function can be used to fill the displayed window's body with
+some contents that might depend on dimensions of the displayed window.
+It is called @emph{after} the buffer is displayed, and @emph{before}
+the entries @code{window-height}, @code{window-width} and
+@code{preserve-size} are applied that could resize the window to fit
+it to the inserted contents.
 @end table
 
 By convention, the entries @code{window-height}, @code{window-width}
@@ -3920,8 +3930,13 @@ or killed, or has been already shown by a recent invocation of
 If repeated invocations of this command have already shown all buffers
 previously shown in @var{window}, further invocations will show buffers
 from the buffer list of the frame @var{window} appears on (@pxref{Buffer
-List}), trying to skip buffers that are already shown in another window
-on that frame.
+List}).
+
+The option @code{switch-to-prev-buffer-skip} described below can be
+used to inhibit switching to certain buffers, for example, to those
+already shown in another window.  Also, if @var{window}'s frame has a
+@code{buffer-predicate} parameter (@pxref{Buffer Parameters}), that
+predicate may inhibit switching to certain buffers.
 @end deffn
 
 @deffn Command switch-to-next-buffer &optional window
@@ -3933,20 +3948,65 @@ defaults to the selected one.
 If there is no recent invocation of @code{switch-to-prev-buffer} that
 can be undone, this function tries to show a buffer from the buffer list
 of the frame @var{window} appears on (@pxref{Buffer List}).
+
+The option @code{switch-to-prev-buffer-skip} and the
+@code{buffer-predicate} (@pxref{Buffer Parameters}) of @var{window}'s
+frame affect this command as they do for @code{switch-to-prev-buffer}.
 @end deffn
 
-By default @code{switch-to-prev-buffer} and @code{switch-to-next-buffer}
-can switch to a buffer that is already shown in another window on the
-same frame.  The following option can be used to override this behavior.
+By default @code{switch-to-prev-buffer} and
+@code{switch-to-next-buffer} can switch to a buffer that is already
+shown in another window.  The following option can be used to override
+this behavior.
 
-@defopt switch-to-visible-buffer
-If this variable is non-@code{nil}, @code{switch-to-prev-buffer} and
-@code{switch-to-next-buffer} may switch to a buffer that is already
-visible on the same frame, provided the buffer was shown in the
-relevant window before.  If it is @code{nil},
-@code{switch-to-prev-buffer} and @code{switch-to-next-buffer} always
-try to avoid switching to a buffer that is already visible in another
-window on the same frame.  The default is @code{t}.
+@defopt switch-to-prev-buffer-skip
+If this variable is @code{nil}, @code{switch-to-prev-buffer} may
+switch to any buffer, including those already shown in other windows.
+
+If this variable is non-@code{nil}, @code{switch-to-prev-buffer} will
+refrain from switching to certain buffers.  The following values can
+be used:
+
+@itemize @bullet
+@item
+@code{this} means do not switch to a buffer shown on the frame that
+hosts the window @code{switch-to-prev-buffer} is acting upon.
+
+@item
+@code{visible} means do not switch to a buffer shown on any visible
+frame.
+
+@item
+0 (the number zero) means do not switch to a buffer shown on any
+visible or iconified frame.
+
+@item
+@code{t} means do not switch to a buffer shown on any live frame.
+
+@item
+A function that takes three arguments---the @var{window} argument of
+@code{switch-to-prev-buffer}, a buffer @code{switch-to-prev-buffer}
+intends to switch to and the @var{bury-or-kill} argument of
+@code{switch-to-prev-buffer}.  If that function returns
+non-@code{nil}, @code{switch-to-prev-buffer} will refrain from
+switching to the buffer specified by the second argument.
+@end itemize
+
+The command @code{switch-to-next-buffer} obeys this option in a
+similar way.  If this option specifies a function,
+@code{switch-to-next-buffer} will call that function with the third
+argument always @code{nil}.
+
+Note that since @code{switch-to-prev-buffer} is called by
+@code{bury-buffer}, @code{replace-buffer-in-windows} and
+@code{quit-restore-window} as well, customizing this option may also
+affect the behavior of Emacs when a window is quit or a buffer gets
+buried or killed.
+
+Note also that under certain circumstances
+@code{switch-to-prev-buffer} and @code{switch-to-next-buffer} may
+ignore this option, for example, when there is only one buffer left
+these functions can switch to.
 @end defopt
 
 
@@ -5811,25 +5871,26 @@ which window parameters (if any) are saved by this function.
 
 @defun set-window-configuration configuration
 This function restores the configuration of windows and buffers as
-specified by @var{configuration}, for the frame that @var{configuration}
-was created for.
+specified by @var{configuration}, for the frame that
+@var{configuration} was created for, regardless of whether that frame
+is selected or not.  The argument @var{configuration} must be a value
+that was previously returned by @code{current-window-configuration}
+for that frame.
 
-The argument @var{configuration} must be a value that was previously
-returned by @code{current-window-configuration}.  The configuration is
-restored in the frame from which @var{configuration} was made, whether
-that frame is selected or not.  In some rare cases this may trigger
-execution of the @code{window-size-change-functions} (@pxref{Window
-Hooks}) even if the size of windows did not change at all.  The
-@code{window-configuration-change-hook} functions will be called if and
-only if at least one window was added to or deleted from the frame.
+If the frame from which @var{configuration} was saved is dead, all
+this function does is to restore the value of the variable
+@code{minibuffer-scroll-window} and to adjust the value returned by
+@code{minibuffer-selected-window}.  In this case, the function returns
+@code{nil}.  Otherwise, it returns @code{t}.
 
-If the frame from which @var{configuration} was saved is dead, all this
-function does is restore the three variables @code{window-min-height},
-@code{window-min-width} and @code{minibuffer-scroll-window}.  In this
-case, the function returns @code{nil}.  Otherwise, it returns @code{t}.
+If the buffer of a window of @var{configuration} has been killed since
+@var{configuration} was made, that window is, as a rule, removed from
+the restored configuration.  However, if that window is the last
+window remaining in the restored configuration, another live buffer is
+shown in it.
 
-Here is a way of using this function to get the same effect
-as @code{save-window-excursion}:
+Here is a way of using this function to get the same effect as
+@code{save-window-excursion}:
 
 @example
 @group
@@ -5865,10 +5926,6 @@ This function compares two window configurations as regards the
 structure of windows, but ignores the values of point and the
 saved scrolling positions---it can return @code{t} even if those
 aspects differ.
-
-The function @code{equal} can also compare two window configurations; it
-regards configurations as unequal if they differ in any respect, even a
-saved point.
 @end defun
 
 @defun window-configuration-frame config

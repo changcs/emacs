@@ -1,6 +1,6 @@
 ;;; calculator.el --- a calculator for Emacs  -*- lexical-binding: t -*-
 
-;; Copyright (C) 1998, 2000-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1998, 2000-2020 Free Software Foundation, Inc.
 
 ;; Author: Eli Barzilay <eli@barzilay.org>
 ;; Keywords: tools, convenience
@@ -240,7 +240,7 @@ Examples:
 ;;;=====================================================================
 ;;; Code:
 
-(eval-when-compile (require 'cl-lib))
+(require 'cl-lib)
 
 ;;;---------------------------------------------------------------------
 ;;; Variables
@@ -858,13 +858,11 @@ The result should not exceed the screen width."
   "Convert the given STR to a number, according to the value of
 `calculator-input-radix'."
   (if calculator-input-radix
-    (string-to-number str (cadr (assq calculator-input-radix
-                                      '((bin 2) (oct 8) (hex 16)))))
-    (let* ((str (replace-regexp-in-string
-                 "\\.\\([^0-9].*\\)?$" ".0\\1" str))
-           (str (replace-regexp-in-string
-                 "[eE][+-]?\\([^0-9].*\\)?$" "e0\\1" str)))
-      (string-to-number str))))
+      (string-to-number str (cadr (assq calculator-input-radix
+                                        '((bin 2) (oct 8) (hex 16)))))
+    ;; Allow entry of "1.e3".
+    (let ((str (replace-regexp-in-string (rx "." (any "eE")) "e" str)))
+      (float (string-to-number str)))))
 
 (defun calculator-push-curnum ()
   "Push the numeric value of the displayed number to the stack."
@@ -1619,30 +1617,12 @@ To use this, apply a binary operator (evaluate it), then call this."
   "Compute X^Y, dealing with errors appropriately."
   (condition-case nil
       (expt x y)
-    (domain-error 0.0e+NaN)
-    (range-error
-     (cond ((and (< x 1.0) (> x -1.0))
-            ;; For small x, the range error comes from large y.
-            0.0)
-           ((and (> x 0.0) (< y 0.0))
-            ;; For large positive x and negative y, the range error
-            ;; comes from large negative y.
-            0.0)
-           ((and (> x 0.0) (> y 0.0))
-            ;; For large positive x and positive y, the range error
-            ;; comes from large y.
-            1.0e+INF)
-           ;; For the rest, x must be large and negative.
-           ;; The range errors come from large integer y.
-           ((< y 0.0)
-            0.0)
-           ((eq (logand (truncate y) 1) 1)   ; expansion of cl `oddp'
-            ;; If y is odd
-            -1.0e+INF)
-           (t
-            ;;
-            1.0e+INF)))
-    (error 0.0e+NaN)))
+    (overflow-error
+     ;; X and Y must be integers, as expt silently returns floating-point
+     ;; infinity on floating-point overflow.
+     (if (or (natnump x) (zerop (logand y 1)))
+	 1.0e+INF
+       -1.0e+INF))))
 
 (defun calculator-fact (x)
   "Simple factorial of X."

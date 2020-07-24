@@ -1,6 +1,6 @@
 ;;; epa.el --- the EasyPG Assistant -*- lexical-binding: t -*-
 
-;; Copyright (C) 2006-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2006-2020 Free Software Foundation, Inc.
 
 ;; Author: Daiki Ueno <ueno@unixuser.org>
 ;; Keywords: PGP, GnuPG
@@ -25,7 +25,9 @@
 (require 'epg)
 (require 'font-lock)
 (require 'widget)
-(eval-when-compile (require 'wid-edit))
+(eval-when-compile
+  (require 'subr-x)
+  (require 'wid-edit))
 (require 'derived)
 
 (defgroup epa nil
@@ -56,11 +58,6 @@ If neither t nor nil, ask user for confirmation."
   :type 'integer
   :group 'epa)
 
-(defgroup epa-faces nil
-  "Faces for epa-mode."
-  :version "23.1"
-  :group 'epa)
-
 (defcustom epa-mail-aliases nil
   "Alist of aliases of email addresses that stand for encryption keys.
 Each element is a list of email addresses (ALIAS EXPANSIONS...).
@@ -75,6 +72,11 @@ The command `epa-mail-encrypt' uses this."
   :type '(repeat (cons (string :tag "Alias") (repeat (string :tag "Expansion"))))
   :group 'epa
   :version "24.4")
+
+(defgroup epa-faces nil
+  "Faces for epa-mode."
+  :version "23.1"
+  :group 'epa)
 
 (defface epa-validity-high
   '((default :weight bold)
@@ -117,13 +119,15 @@ The command `epa-mail-encrypt' uses this."
   '((default :weight bold)
     (((class color) (background dark)) :foreground "PaleTurquoise"))
   "Face for the name of the attribute field."
-  :group 'epa)
+  :version "28.1"
+  :group 'epa-faces)
 
 (defface epa-field-body
   '((default :slant italic)
     (((class color) (background dark)) :foreground "turquoise"))
   "Face for the body of the attribute field."
-  :group 'epa)
+  :version "28.1"
+  :group 'epa-faces)
 
 (defcustom epa-validity-face-alist
   '((unknown . epa-validity-disabled)
@@ -138,8 +142,9 @@ The command `epa-mail-encrypt' uses this."
     (full . epa-validity-high)
     (ultimate . epa-validity-high))
   "An alist mapping validity values to faces."
+  :version "28.1"
   :type '(repeat (cons symbol face))
-  :group 'epa)
+  :group 'epa-faces)
 
 (defvar epa-font-lock-keywords
   '(("^\\*"
@@ -179,11 +184,14 @@ You should bind this variable with `let', but do not set it globally.")
 (defvar epa-list-keys-arguments nil)
 (defvar epa-info-buffer nil)
 (defvar epa-error-buffer nil)
+(defvar epa-suppress-error-buffer nil)
 (defvar epa-last-coding-system-specified nil)
 
 (defvar epa-key-list-mode-map
   (let ((keymap (make-sparse-keymap))
 	(menu-map (make-sparse-keymap)))
+    (set-keymap-parent keymap widget-keymap)
+    (define-key keymap "\C-m" 'epa-show-key)
     (define-key keymap "m" 'epa-mark-key)
     (define-key keymap "u" 'epa-unmark-key)
     (define-key keymap "d" 'epa-decrypt-file)
@@ -331,8 +339,7 @@ If ARG is non-nil, mark the key."
   (epa-mark-key (not arg)))
 
 (defun epa-exit-buffer ()
-  "Exit the current buffer.
-`epa-exit-buffer-function' is called if it is set."
+  "Exit the current buffer using `epa-exit-buffer-function'."
   (interactive)
   (funcall epa-exit-buffer-function))
 
@@ -360,7 +367,10 @@ If ARG is non-nil, mark the key."
 				 'start-open t
 				 'end-open t)))))
 
-(defun epa--list-keys (name secret)
+(defun epa--list-keys (name secret &optional doc)
+  "NAME specifies which key to list.
+SECRET says list data on the secret key (default, the public key).
+DOC is documentation text to insert at the start."
   (unless (and epa-keys-buffer
 	       (buffer-live-p epa-keys-buffer))
     (setq epa-keys-buffer (generate-new-buffer "*Keys*")))
@@ -370,16 +380,30 @@ If ARG is non-nil, mark the key."
 	buffer-read-only
 	(point (point-min))
 	(context (epg-make-context epa-protocol)))
+
+    ;; Find the end of the documentation text at the start.
+    ;; Set POINT to where it ends, or nil if ends at eob.
     (unless (get-text-property point 'epa-list-keys)
       (setq point (next-single-property-change point 'epa-list-keys)))
+
+    ;; If caller specified documentation text for that, replace the old
+    ;; documentation text (if any) with what was specified.
+    ;; Otherwise, preserve whatever intro text is present.
+    (when doc
+      (if (or point (not (eobp)))
+          (delete-region (point-min) point))
+      (insert doc)
+      (setq point (point)))
+
+    ;; Now delete the key description text, if any.
     (when point
       (delete-region point
 		     (or (next-single-property-change point 'epa-list-keys)
 			 (point-max)))
       (goto-char point))
+
     (epa--insert-keys (epg-list-keys context name secret))
-    (widget-setup)
-    (set-keymap-parent (current-local-map) widget-keymap))
+    (widget-setup))
   (make-local-variable 'epa-list-keys-arguments)
   (setq epa-list-keys-arguments (list name secret))
   (goto-char (point-min))
@@ -395,7 +419,13 @@ If ARG is non-nil, mark the key."
 				    (car epa-list-keys-arguments)))))
 	 (list (if (equal name "") nil name)))
      (list nil)))
-  (epa--list-keys name nil))
+  (epa--list-keys name nil
+                  "The letters at the start of a line have these meanings.
+e  expired key.  n  never trust.  m  trust marginally.  u  trust ultimately.
+f  trust fully (keys you have signed, usually).
+q  trust status questionable.  -  trust status unspecified.
+ See GPG documentaion for more explanation.
+\n"))
 
 ;;;###autoload
 (defun epa-list-secret-keys (&optional name)
@@ -474,6 +504,14 @@ the keys are listed.
 If SECRET is non-nil, list secret keys instead of public keys."
   (let ((keys (epg-list-keys context names secret)))
     (epa--select-keys prompt keys)))
+
+(defun epa-show-key ()
+  "Show a key on the current line."
+  (interactive)
+  (if-let ((key (get-text-property (point) 'epa-key)))
+      (save-selected-window
+        (epa--show-key key))
+    (error "No key on this line")))
 
 (defun epa--show-key (key)
   (let* ((primary-sub-key (car (epg-key-sub-key-list key)))
@@ -578,7 +616,8 @@ If SECRET is non-nil, list secret keys instead of public keys."
     (message "%s" info)))
 
 (defun epa-display-error (context)
-  (unless (equal (epg-context-error-output context) "")
+  (unless (or (equal (epg-context-error-output context) "")
+              epa-suppress-error-buffer)
     (let ((buffer (get-buffer-create "*Error*")))
       (save-selected-window
 	(unless (and epa-error-buffer (buffer-live-p epa-error-buffer))

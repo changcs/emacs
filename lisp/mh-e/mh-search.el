@@ -1,6 +1,6 @@
 ;;; mh-search  ---  MH-Search mode
 
-;; Copyright (C) 1993, 1995, 2001-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1993, 1995, 2001-2020 Free Software Foundation, Inc.
 
 ;; Author: Indexed search by Satyaki Das <satyaki@theforce.stanford.edu>
 ;; Maintainer: Bill Wohler <wohler@newt.com>
@@ -1329,7 +1329,7 @@ is used to search."
   "Read the next result.
 Parse it and return the message folder, message index and the
 match. If no other matches left then return nil. If the current
-record is invalid return 'error."
+record is invalid return `error'."
   (prog1
       (cl-block nil
         (when (eobp)

@@ -1,6 +1,6 @@
 ;;; image-mode.el --- support for visiting image files  -*- lexical-binding: t -*-
 ;;
-;; Copyright (C) 2005-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2005-2020 Free Software Foundation, Inc.
 ;;
 ;; Author: Richard Stallman <rms@gnu.org>
 ;; Keywords: multimedia
@@ -53,11 +53,37 @@ See `image-mode-winprops'.")
   "Special hook run when image data is requested in a new window.
 It is called with one argument, the initial WINPROPS.")
 
-;; FIXME this doesn't seem mature yet. Document in manual when it is.
+(defcustom image-auto-resize t
+  "Non-nil to resize the image upon first display.
+Its value should be one of the following:
+ - nil, meaning no resizing.
+ - t, meaning to fit the image to the window height and width.
+ - `fit-height', meaning to fit the image to the window height.
+ - `fit-width', meaning to fit the image to the window width.
+ - A number, which is a scale factor (the default size is 1)."
+  :type '(choice (const :tag "No resizing" nil)
+                 (other :tag "Fit height and width" t)
+                 (const :tag "Fit height" fit-height)
+                 (const :tag "Fit width" fit-width)
+                 (number :tag "Scale factor" 1))
+  :version "27.1"
+  :group 'image)
+
+(defcustom image-auto-resize-on-window-resize 1
+  "Non-nil to resize the image whenever the window's dimensions change.
+This will always keep the image fit to the window.
+When non-nil, the value should be a number of seconds to wait before
+resizing according to the value specified in `image-auto-resize'."
+  :type '(choice (const :tag "No auto-resize on window size change" nil)
+                 (integer :tag "Wait for number of seconds before resize" 1))
+  :version "27.1"
+  :group 'image)
+
 (defvar-local image-transform-resize nil
   "The image resize operation.
 Its value should be one of the following:
  - nil, meaning no resizing.
+ - t, meaning to fit the image to the window height and width.
  - `fit-height', meaning to fit the image to the window height.
  - `fit-width', meaning to fit the image to the window width.
  - A number, which is a scale factor (the default size is 1).")
@@ -121,7 +147,7 @@ otherwise it defaults to t, used for times when the buffer is not displayed."
 
 (defun image-set-window-vscroll (vscroll)
   (setf (image-mode-window-get 'vscroll) vscroll)
-  (set-window-vscroll (selected-window) vscroll))
+  (set-window-vscroll (selected-window) vscroll t))
 
 (defun image-set-window-hscroll (ncol)
   (setf (image-mode-window-get 'hscroll) ncol)
@@ -139,7 +165,7 @@ otherwise it defaults to t, used for times when the buffer is not displayed."
            (vscroll (image-mode-window-get 'vscroll winprops)))
       (when (image-get-display-property) ;Only do it if we display an image!
 	(if hscroll (set-window-hscroll (selected-window) hscroll))
-	(if vscroll (set-window-vscroll (selected-window) vscroll))))))
+	(if vscroll (set-window-vscroll (selected-window) vscroll t))))))
 
 (defun image-mode-setup-winprops ()
   ;; Record current scroll settings.
@@ -215,16 +241,18 @@ Stop if the left edge of the image is reached."
   "Scroll image in current window upward by N lines.
 Stop if the bottom edge of the image is reached."
   (interactive "p")
+  ;; Convert N to pixels.
+  (setq n (* n (frame-char-height)))
   (cond ((= n 0) nil)
 	((< n 0)
-	 (image-set-window-vscroll (max 0 (+ (window-vscroll) n))))
+	 (image-set-window-vscroll (max 0 (+ (window-vscroll nil t) n))))
 	(t
 	 (let* ((image (image-get-display-property))
-		(edges (window-inside-edges))
+		(edges (window-edges nil t t))
 		(win-height (- (nth 3 edges) (nth 1 edges)))
-		(img-height (ceiling (cdr (image-display-size image)))))
+		(img-height (ceiling (cdr (image-display-size image t)))))
 	   (image-set-window-vscroll (min (max 0 (- img-height win-height))
-					  (+ n (window-vscroll))))))))
+					  (+ n (window-vscroll nil t))))))))
 
 (defun image-previous-line (&optional n)
   "Scroll image in current window downward by N lines.
@@ -351,10 +379,11 @@ stopping if the top or bottom edge of the image is reached."
   (interactive)
   (let* ((image (image-get-display-property))
 	 (edges (window-inside-edges))
+	 (pixel-edges (window-edges nil t t))
 	 (win-width (- (nth 2 edges) (nth 0 edges)))
 	 (img-width (ceiling (car (image-display-size image))))
-	 (win-height (- (nth 3 edges) (nth 1 edges)))
-	 (img-height (ceiling (cdr (image-display-size image)))))
+	 (win-height (- (nth 3 pixel-edges) (nth 1 pixel-edges)))
+	 (img-height (ceiling (cdr (image-display-size image t)))))
     (image-set-window-hscroll (max 0 (- img-width win-width)))
     (image-set-window-vscroll (max 0 (- img-height win-height)))))
 
@@ -415,24 +444,42 @@ call."
 
 (defvar image-mode-map
   (let ((map (make-sparse-keymap)))
+
+    ;; Toggling keys
     (define-key map "\C-c\C-c" 'image-toggle-display)
     (define-key map "\C-c\C-x" 'image-toggle-hex-display)
-    (define-key map (kbd "SPC")       'image-scroll-up)
-    (define-key map (kbd "S-SPC")     'image-scroll-down)
-    (define-key map (kbd "DEL")       'image-scroll-down)
-    (define-key map (kbd "RET")       'image-toggle-animation)
+
+    ;; Transformation keys
+    (define-key map "sf" 'image-mode-fit-frame)
+    (define-key map "sh" 'image-transform-fit-to-height)
+    (define-key map "sw" 'image-transform-fit-to-width)
+    (define-key map "sb" 'image-transform-fit-both)
+    (define-key map "ss" 'image-transform-set-scale)
+    (define-key map "sr" 'image-transform-set-rotation)
+    (define-key map "so" 'image-transform-original)
+    (define-key map "s0" 'image-transform-reset)
+
+    ;; Multi-frame keys
+    (define-key map (kbd "RET") 'image-toggle-animation)
     (define-key map "F" 'image-goto-frame)
     (define-key map "f" 'image-next-frame)
     (define-key map "b" 'image-previous-frame)
-    (define-key map "n" 'image-next-file)
-    (define-key map "p" 'image-previous-file)
     (define-key map "a+" 'image-increase-speed)
     (define-key map "a-" 'image-decrease-speed)
     (define-key map "a0" 'image-reset-speed)
     (define-key map "ar" 'image-reverse-speed)
+
+    ;; File keys
+    (define-key map "n" 'image-next-file)
+    (define-key map "p" 'image-previous-file)
     (define-key map "w" 'image-mode-copy-file-name-as-kill)
     (define-key map "m" 'image-mode-mark-file)
     (define-key map "u" 'image-mode-unmark-file)
+
+    ;; Scrolling keys
+    (define-key map (kbd "SPC")   'image-scroll-up)
+    (define-key map (kbd "S-SPC") 'image-scroll-down)
+    (define-key map (kbd "DEL")   'image-scroll-down)
     (define-key map [remap forward-char] 'image-forward-hscroll)
     (define-key map [remap backward-char] 'image-backward-hscroll)
     (define-key map [remap right-char] 'image-forward-hscroll)
@@ -449,6 +496,7 @@ call."
     (define-key map [remap move-end-of-line] 'image-eol)
     (define-key map [remap beginning-of-buffer] 'image-bob)
     (define-key map [remap end-of-buffer] 'image-eob)
+
     (easy-menu-define image-mode-menu map "Menu for Image mode."
       '("Image"
 	["Show as Text" image-toggle-display :active t
@@ -456,18 +504,28 @@ call."
     ["Show as Hex" image-toggle-hex-display :active t
      :help "Show image as hex"]
 	"--"
+	["Fit Frame to Image" image-mode-fit-frame :active t
+	 :help "Resize frame to match image"]
+	["Fit Image to Window (Best Fit)" image-transform-fit-both
+	 :help "Resize image to match the window height and width"]
 	["Fit to Window Height" image-transform-fit-to-height
-	 :visible (eq image-type 'imagemagick)
 	 :help "Resize image to match the window height"]
 	["Fit to Window Width" image-transform-fit-to-width
-	 :visible (eq image-type 'imagemagick)
 	 :help "Resize image to match the window width"]
-	["Rotate Image..." image-transform-set-rotation
-	 :visible (eq image-type 'imagemagick)
+	["Zoom In" image-increase-size
+	 :help "Enlarge the image"]
+	["Zoom Out" image-decrease-size
+	 :help "Shrink the image"]
+	["Set Scale..." image-transform-set-scale
+	 :help "Resize image by specified scale factor"]
+	["Rotate Clockwise" image-rotate
 	 :help "Rotate the image"]
-	["Reset Transformations" image-transform-reset
-	 :visible (eq image-type 'imagemagick)
-	 :help "Reset all image transformations"]
+	["Set Rotation..." image-transform-set-rotation
+	 :help "Set rotation angle of the image"]
+	["Original Size" image-transform-original
+	 :help "Reset image to actual size"]
+	["Reset to Default Size" image-transform-reset
+	 :help "Reset all image transformations to initial size"]
 	"--"
 	["Show Thumbnails"
 	 (lambda ()
@@ -475,16 +533,13 @@ call."
 	   (image-dired default-directory))
 	 :active default-directory
 	 :help "Show thumbnails for all images in this directory"]
-	["Next Image" image-next-file :active buffer-file-name
-         :help "Move to next image in this directory"]
 	["Previous Image" image-previous-file :active buffer-file-name
          :help "Move to previous image in this directory"]
+	["Next Image" image-next-file :active buffer-file-name
+         :help "Move to next image in this directory"]
 	["Copy File Name" image-mode-copy-file-name-as-kill
          :active buffer-file-name
          :help "Copy the current file name to the kill ring"]
-	"--"
-	["Fit Frame to Image" image-mode-fit-frame :active t
-	 :help "Resize frame to match image"]
 	"--"
 	["Animate Image" image-toggle-animation :style toggle
 	 :selected (let ((image (image-get-display-property)))
@@ -519,10 +574,10 @@ call."
 	["Reset Animation Speed" image-reset-speed
 	 :active image-multi-frame
 	 :help "Reset the speed of this image's animation"]
-	["Next Frame" image-next-frame :active image-multi-frame
-	 :help "Show the next frame of this image"]
 	["Previous Frame" image-previous-frame :active image-multi-frame
 	 :help "Show the previous frame of this image"]
+	["Next Frame" image-next-frame :active image-multi-frame
+	 :help "Show the next frame of this image"]
 	["Goto Frame..." image-goto-frame :active image-multi-frame
 	 :help "Show a specific frame of this image"]
 	))
@@ -549,76 +604,86 @@ to toggle between display as an image and display as text or hex.
 Key bindings:
 \\{image-mode-map}"
   (interactive)
-  (condition-case err
+  (unless (display-images-p)
+    (error "Display does not support images"))
+
+  (major-mode-suspend)
+  (setq major-mode 'image-mode)
+  (setq image-transform-resize image-auto-resize)
+
+  (if (not (image-get-display-property))
       (progn
-	(unless (display-images-p)
-	  (error "Display does not support images"))
+        (when (condition-case err
+                (progn
+	          (image-toggle-display-image)
+                  t)
+              (unknown-image-type
+               (image-mode-as-text)
+               (funcall
+                (if (called-interactively-p 'any) 'error 'message)
+                "Unknown image type; consider switching `image-use-external-converter' on")
+               nil)
+              (error
+               (image-mode-as-text)
+               (funcall
+                (if (called-interactively-p 'any) 'error 'message)
+                "Cannot display image: %s" (cdr err))
+               nil))
+	  ;; If attempt to display the image fails.
+	  (if (not (image-get-display-property))
+	      (error "Invalid image"))
+          (image-mode--setup-mode)))
+    ;; Set next vars when image is already displayed but local
+    ;; variables were cleared by kill-all-local-variables
+    (setq cursor-type nil truncate-lines t
+	  image-type (plist-get (cdr (image-get-display-property)) :type))
+    (image-mode--setup-mode)))
 
-        (major-mode-suspend)
-	(setq major-mode 'image-mode)
+(defun image-mode--setup-mode ()
+  (setq mode-name (if image-type (format "Image[%s]" image-type) "Image"))
+  (use-local-map image-mode-map)
 
-	(if (not (image-get-display-property))
-	    (progn
-	      (image-toggle-display-image)
-	      ;; If attempt to display the image fails.
-	      (if (not (image-get-display-property))
-		  (error "Invalid image")))
-	  ;; Set next vars when image is already displayed but local
-	  ;; variables were cleared by kill-all-local-variables
-	  (setq cursor-type nil truncate-lines t
-		image-type (plist-get (cdr (image-get-display-property)) :type)))
+  ;; Use our own bookmarking function for images.
+  (setq-local bookmark-make-record-function
+              #'image-bookmark-make-record)
 
-	(setq mode-name (if image-type (format "Image[%s]" image-type) "Image"))
-	(use-local-map image-mode-map)
+  ;; Keep track of [vh]scroll when switching buffers
+  (image-mode-setup-winprops)
 
-	;; Use our own bookmarking function for images.
-	(setq-local bookmark-make-record-function
-                    #'image-bookmark-make-record)
+  (add-hook 'change-major-mode-hook #'image-toggle-display-text nil t)
+  (add-hook 'after-revert-hook #'image-after-revert-hook nil t)
+  (when image-auto-resize-on-window-resize
+    (add-hook 'window-state-change-functions #'image--window-state-change nil t))
 
-	;; Keep track of [vh]scroll when switching buffers
-	(image-mode-setup-winprops)
-
-	(add-hook 'change-major-mode-hook #'image-toggle-display-text nil t)
-	(add-hook 'after-revert-hook #'image-after-revert-hook nil t)
-	(run-mode-hooks 'image-mode-hook)
-	(let ((image (image-get-display-property))
-	      (msg1 (substitute-command-keys
-             "Type \\[image-toggle-display] or \\[image-toggle-hex-display] to view the image as "))
-	      animated)
-	  (cond
-	   ((null image)
-	    (message "%s" (concat msg1 "an image.")))
-	   ((setq animated (image-multi-frame-p image))
-	    (setq image-multi-frame t
-		  mode-line-process
-		  `(:eval
-		    (concat " "
-			    (propertize
-			     (format "[%s/%s]"
-				     (1+ (image-current-frame ',image))
-				     ,(car animated))
-			     'help-echo "Frames
-mouse-1: Next frame
-mouse-3: Previous frame"
-			     'mouse-face 'mode-line-highlight
-			     'local-map
-			     '(keymap
-			       (mode-line
-				keymap
-				(down-mouse-1 . image-next-frame)
-				(down-mouse-3 . image-previous-frame)))))))
-	    (message "%s"
-		     (concat msg1 "text.  This image has multiple frames.")))
-;;;			     (substitute-command-keys
-;;;			      "\\[image-toggle-animation] to animate."))))
-	   (t
-        (message "%s" (concat msg1 "text or hex."))))))
-
-    (error
-     (image-mode-as-text)
-     (funcall
-      (if (called-interactively-p 'any) 'error 'message)
-      "Cannot display image: %s" (cdr err)))))
+  (run-mode-hooks 'image-mode-hook)
+  (let ((image (image-get-display-property))
+	(msg1 (substitute-command-keys
+               "Type \\[image-toggle-display] or \\[image-toggle-hex-display] to view the image as "))
+	animated)
+    (cond
+     ((null image)
+      (message "%s" (concat msg1 "an image.")))
+     ((setq animated (image-multi-frame-p image))
+      (setq image-multi-frame t
+	    mode-line-process
+	    `(:eval
+	      (concat " "
+		      (propertize
+		       (format "[%s/%s]"
+			       (1+ (image-current-frame ',image))
+			       ,(car animated))
+		       'help-echo "Frames\nmouse-1: Next frame\nmouse-3: Previous frame"
+		       'mouse-face 'mode-line-highlight
+		       'local-map
+		       '(keymap
+			 (mode-line
+			  keymap
+			  (down-mouse-1 . image-next-frame)
+			  (down-mouse-3 . image-previous-frame)))))))
+      (message "%s"
+	       (concat msg1 "text.  This image has multiple frames.")))
+     (t
+      (message "%s" (concat msg1 "text or hex."))))))
 
 ;;;###autoload
 (define-minor-mode image-minor-mode
@@ -745,8 +810,12 @@ was inserted."
 	    filename))
 	 ;; If we have a `fit-width' or a `fit-height', don't limit
 	 ;; the size of the image to the window size.
-	 (edges (and (null image-transform-resize)
-		     (window-inside-pixel-edges (get-buffer-window))))
+	 (edges (when (eq image-transform-resize t)
+		  (window-inside-pixel-edges (get-buffer-window))))
+	 (max-width (when edges
+		      (- (nth 2 edges) (nth 0 edges))))
+	 (max-height (when edges
+		       (- (nth 3 edges) (nth 1 edges))))
 	 (type (if (image--imagemagick-wanted-p filename)
 		   'imagemagick
 		 (image-type file-or-data nil data-p)))
@@ -756,19 +825,24 @@ was inserted."
 	 props image)
 
     ;; Get the rotation data from the file, if any.
-    (setq image-transform-rotation
-          (or (exif-orientation
-               (ignore-error exif-error
-                 (exif-parse-buffer)))
-              0.0))
+    (when (zerop image-transform-rotation) ; don't reset modified value
+      (setq image-transform-rotation
+            (or (exif-orientation
+                 (ignore-error exif-error
+                   (exif-parse-buffer)))
+                0.0)))
+    ;; Swap width and height when changing orientation
+    ;; between portrait and landscape.
+    (when (and edges (zerop (mod (+ image-transform-rotation 90) 180)))
+      (setq max-width (prog1 max-height (setq max-height max-width))))
 
     ;; :scale 1: If we do not set this, create-image will apply
     ;; default scaling based on font size.
     (setq image (if (not edges)
 		    (create-image file-or-data type data-p :scale 1)
 		  (create-image file-or-data type data-p :scale 1
-				:max-width (- (nth 2 edges) (nth 0 edges))
-				:max-height (- (nth 3 edges) (nth 1 edges)))))
+				:max-width max-width
+				:max-height max-height)))
 
     ;; Discard any stale image data before looking it up again.
     (image-flush image)
@@ -846,6 +920,34 @@ Otherwise, display the image by calling `image-mode'."
     (mapc (lambda (window) (redraw-frame (window-frame window)))
           (get-buffer-window-list (current-buffer) 'nomini 'visible))
     (image-toggle-display-image)))
+
+(defun image--window-state-change (window)
+  ;; Wait for a bit of idle-time before actually performing the change,
+  ;; so as to batch together sequences of closely consecutive size changes.
+  ;; `image-fit-to-window' just changes one value in a plist.  The actual
+  ;; image resizing happens later during redisplay.  So if those
+  ;; consecutive calls happen without any redisplay between them,
+  ;; the costly operation of image resizing should happen only once.
+  (when (numberp image-auto-resize-on-window-resize)
+    (run-with-idle-timer image-auto-resize-on-window-resize nil
+                         #'image-fit-to-window window)))
+
+(defun image-fit-to-window (window)
+  "Adjust size of image to display it exactly in WINDOW boundaries."
+  (when (window-live-p window)
+    (with-current-buffer (window-buffer window)
+      (when (derived-mode-p 'image-mode)
+        (let ((spec (image-get-display-property)))
+          (when (eq (car-safe spec) 'image)
+            (let* ((image-width  (plist-get (cdr spec) :max-width))
+                   (image-height (plist-get (cdr spec) :max-height))
+                   (edges (window-inside-pixel-edges window))
+                   (window-width  (- (nth 2 edges) (nth 0 edges)))
+                   (window-height (- (nth 3 edges) (nth 1 edges))))
+              (when (and image-width image-height
+                         (or (not (= image-width  window-width))
+                             (not (= image-height window-height))))
+                (image-toggle-display-image)))))))))
 
 
 ;;; Animated images
@@ -979,7 +1081,19 @@ replacing the current Image mode buffer."
 	    (throw 'image-visit-next-file (1+ idx)))
 	(setq idx (1+ idx))))
     (setq idx (mod (+ idx (or n 1)) (length images)))
-    (find-alternate-file (nth idx images))))
+    (let ((image (nth idx images))
+          (dir (file-name-directory buffer-file-name)))
+      (find-alternate-file image)
+      ;; If we have dired buffer(s) open to where this image is, then
+      ;; place point on it.
+      (dolist (buffer (buffer-list))
+	(with-current-buffer buffer
+	  (when (and (derived-mode-p 'dired-mode)
+	             (equal (file-truename dir)
+		            (file-truename default-directory)))
+            (save-window-excursion
+              (switch-to-buffer (current-buffer) t t)
+              (dired-goto-file (expand-file-name image dir)))))))))
 
 (defun image-previous-file (&optional n)
   "Visit the preceding image in the same directory as the current file.
@@ -1201,8 +1315,7 @@ Do this for an image of type `imagemagick' to make sure that the
 elisp code matches the way ImageMagick computes the bounding box
 of a rotated image."
   (when (and (not (numberp image-transform-resize))
-	     (boundp 'image-type)
-	     (eq image-type 'imagemagick))
+	     (boundp 'image-type))
     (let ((size (image-display-size (image-get-display-property) t)))
       (cond ((eq image-transform-resize 'fit-width)
 	     (cl-assert (= (car size)
@@ -1219,12 +1332,9 @@ of a rotated image."
   "Return rescaling/rotation properties for image SPEC.
 These properties are determined by the Image mode variables
 `image-transform-resize' and `image-transform-rotation'.  The
-return value is suitable for appending to an image spec.
-
-Rescaling and rotation properties only take effect if Emacs is
-compiled with ImageMagick support."
+return value is suitable for appending to an image spec."
   (setq image-transform-scale 1.0)
-  (when (or image-transform-resize
+  (when (or (not (memq image-transform-resize '(nil t)))
 	    (/= image-transform-rotation 0.0))
     ;; Note: `image-size' looks up and thus caches the untransformed
     ;; image.  There's no easy way to prevent that.
@@ -1253,43 +1363,47 @@ compiled with ImageMagick support."
 	    (list :rotation image-transform-rotation))))))
 
 (defun image-transform-set-scale (scale)
-  "Prompt for a number, and resize the current image by that amount.
-This command has no effect unless Emacs is compiled with
-ImageMagick support."
+  "Prompt for a number, and resize the current image by that amount."
   (interactive "nScale: ")
   (setq image-transform-resize scale)
   (image-toggle-display-image))
 
 (defun image-transform-fit-to-height ()
-  "Fit the current image to the height of the current window.
-This command has no effect unless Emacs is compiled with
-ImageMagick support."
+  "Fit the current image to the height of the current window."
   (interactive)
   (setq image-transform-resize 'fit-height)
   (image-toggle-display-image))
 
 (defun image-transform-fit-to-width ()
-  "Fit the current image to the width of the current window.
-This command has no effect unless Emacs is compiled with
-ImageMagick support."
+  "Fit the current image to the width of the current window."
   (interactive)
   (setq image-transform-resize 'fit-width)
   (image-toggle-display-image))
 
+(defun image-transform-fit-both ()
+  "Fit the current image both to the height and width of the current window."
+  (interactive)
+  (setq image-transform-resize t)
+  (image-toggle-display-image))
+
 (defun image-transform-set-rotation (rotation)
   "Prompt for an angle ROTATION, and rotate the image by that amount.
-ROTATION should be in degrees.  This command has no effect unless
-Emacs is compiled with ImageMagick support."
+ROTATION should be in degrees."
   (interactive "nRotation angle (in degrees): ")
   (setq image-transform-rotation (float (mod rotation 360)))
   (image-toggle-display-image))
 
-(defun image-transform-reset ()
-  "Display the current image with the default size and rotation.
-This command has no effect unless Emacs is compiled with
-ImageMagick support."
+(defun image-transform-original ()
+  "Display the current image with the original (actual) size and rotation."
   (interactive)
   (setq image-transform-resize nil
+	image-transform-scale 1)
+  (image-toggle-display-image))
+
+(defun image-transform-reset ()
+  "Display the current image with the default (initial) size and rotation."
+  (interactive)
+  (setq image-transform-resize image-auto-resize
 	image-transform-rotation 0.0
 	image-transform-scale 1)
   (image-toggle-display-image))

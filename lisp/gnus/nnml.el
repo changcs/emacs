@@ -1,6 +1,6 @@
 ;;; nnml.el --- mail spool access for Gnus
 
-;; Copyright (C) 1995-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1995-2020 Free Software Foundation, Inc.
 
 ;; Authors: Didier Verna <didier@didierverna.net> (adding compaction)
 ;;	Simon Josefsson <simon@josefsson.org>
@@ -361,7 +361,7 @@ non-nil.")
 
 (deffoo nnml-request-move-article
     (article group server accept-form &optional last move-is-internal)
-  (let ((buf (get-buffer-create " *nnml move*"))
+  (let ((buf (gnus-get-buffer-create " *nnml move*"))
 	(file-name-coding-system nnmail-pathname-coding-system)
 	result)
     (nnml-possibly-change-directory group server)
@@ -572,7 +572,7 @@ non-nil.")
 
 ;; Find an article number in the current group given the Message-ID.
 (defun nnml-find-group-number (id server)
-  (with-current-buffer (get-buffer-create " *nnml id*")
+  (with-current-buffer (gnus-get-buffer-create " *nnml id*")
     (let ((alist nnml-group-alist)
 	  number)
       ;; We want to look through all .overview files, but we want to
@@ -772,11 +772,10 @@ article number.  This function is called narrowed to an article."
 	headers))))
 
 (defun nnml-get-nov-buffer (group &optional incrementalp)
-  (let ((buffer (get-buffer-create (format " *nnml %soverview %s*"
-					    (if incrementalp
-						"incremental "
-					      "")
-					    group)))
+  (let ((buffer (gnus-get-buffer-create
+                 (format " *nnml %soverview %s*"
+			 (if incrementalp "incremental " "")
+			 group)))
 	 (file-name-coding-system nnmail-pathname-coding-system))
     (with-current-buffer buffer
       (set (make-local-variable 'nnml-nov-buffer-file-name)
@@ -873,7 +872,7 @@ Unless no-active is non-nil, update the active file too."
 (defun nnml-generate-nov-file (dir files)
   (let* ((dir (file-name-as-directory dir))
 	 (nov (concat dir nnml-nov-file-name))
-	 (nov-buffer (get-buffer-create " *nov*"))
+	 (nov-buffer (gnus-get-buffer-create " *nov*"))
 	 chars file headers)
     (with-current-buffer nov-buffer
       ;; Init the nov buffer.
@@ -902,7 +901,7 @@ Unless no-active is non-nil, update the active file too."
 		(nnheader-insert-nov headers)))
 	    (widen))))
       (with-current-buffer nov-buffer
-	(nnmail-write-region (point-min) (point-max) nov nil 'nomesg)
+	(nnmail-write-region (point-min) (point-max) nov nil 'nomesg nil 'excl)
 	(kill-buffer (current-buffer))))))
 
 (defun nnml-nov-delete-article (group article)
@@ -1067,7 +1066,7 @@ Use the nov database for the current group if available."
 		  (when (gnus-member-of-range old-number read)
 		    (setq read (gnus-remove-from-range read (list old-number)))
 		    (setq read (gnus-add-to-range read (list new-number))))
-		  (gnus-info-set-read info read))
+		  (setf (gnus-info-read info) read))
 		;; 2 b/ marked articles:
 		(let ((oldmarks (gnus-info-marks info))
 		      mark newmarks)
@@ -1080,7 +1079,7 @@ Use the nov database for the current group if available."
 		      (setcdr mark (gnus-add-to-range (cdr mark)
 						      (list new-number))))
 		    (push mark newmarks))
-		  (gnus-info-set-marks info newmarks))
+		  (setf (gnus-info-marks info) newmarks))
 		;; 3/ Update the NOV entry for this article:
 		(unless nnml-nov-is-evil
 		  (with-current-buffer (nnml-open-nov group)

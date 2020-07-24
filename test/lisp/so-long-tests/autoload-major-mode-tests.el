@@ -1,6 +1,6 @@
 ;;; autoload-major-mode-tests.el --- Test suite for so-long.el  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2019 Free Software Foundation, Inc.
+;; Copyright (C) 2019-2020 Free Software Foundation, Inc.
 
 ;; Author: Phil Sainty <psainty@orcon.net.nz>
 ;; Keywords: convenience
@@ -38,6 +38,7 @@
 (ert-deftest so-long-tests-autoload-major-mode ()
   "File-local -*- so-long -*-"
   (with-temp-buffer
+    (display-buffer (current-buffer))
     (so-long-tests-remember)
     (insert "-*- so-long -*-\n")
     (normal-mode)

@@ -1,6 +1,6 @@
 /* Client process that communicates with GNU Emacs acting as server.
 
-Copyright (C) 1986-1987, 1994, 1999-2019 Free Software Foundation, Inc.
+Copyright (C) 1986-1987, 1994, 1999-2020 Free Software Foundation, Inc.
 
 This file is part of GNU Emacs.
 
@@ -80,7 +80,7 @@ char *w32_getenv (const char *);
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include <dosname.h>
+#include <filename.h>
 #include <intprops.h>
 #include <min-max.h>
 #include <pathmax.h>
@@ -924,21 +924,22 @@ open_config (char const *home, char const *xdg, char const *config_file)
   char *configname = xmalloc (max (xdgsubdirsize, homesubdirsizemax)
 			      + strlen (config_file));
   FILE *config;
-  if (xdg || home)
+
+  if (home)
     {
-      strcpy ((xdg
-	       ? stpcpy (stpcpy (configname, xdg), "/emacs/server/")
-	       : stpcpy (stpcpy (configname, home), "/.config/emacs/server/")),
-	      config_file);
+      strcpy (stpcpy (stpcpy (configname, home), "/.emacs.d/server/"),
+              config_file);
       config = fopen (configname, "rb");
     }
   else
     config = NULL;
 
-  if (! config && home)
+  if (! config && (xdg || home))
     {
-      strcpy (stpcpy (stpcpy (configname, home), "/.emacs2.d/server/"),
-	      config_file);
+      strcpy ((xdg
+               ? stpcpy (stpcpy (configname, xdg), "/emacs/server/")
+               : stpcpy (stpcpy (configname, home), "/.config/emacs/server/")),
+              config_file);
       config = fopen (configname, "rb");
     }
 

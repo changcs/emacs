@@ -1,6 +1,6 @@
 /* JSON parsing and serialization.
 
-Copyright (C) 2017-2019 Free Software Foundation, Inc.
+Copyright (C) 2017-2020 Free Software Foundation, Inc.
 
 This file is part of GNU Emacs.
 
@@ -228,7 +228,7 @@ json_encode (Lisp_Object string)
 {
   /* FIXME: Raise an error if STRING is not a scalar value
      sequence.  */
-  return code_convert_string (string, Qutf_8_unix, Qt, true, true, true);
+  return encode_string_utf_8 (string, Qnil, false, Qt, Qt);
 }
 
 static AVOID
@@ -365,6 +365,7 @@ lisp_to_json_toplevel_1 (Lisp_Object lisp,
           Lisp_Object key = HASH_KEY (h, i);
           if (!EQ (key, Qunbound))
             {
+              CHECK_STRING (key);
               Lisp_Object ekey = json_encode (key);
               /* We can't specify the length, so the string must be
                NUL-terminated.  */
@@ -975,6 +976,7 @@ usage: (json-parse-string STRING &rest ARGS) */)
 #endif
 
   Lisp_Object string = args[0];
+  CHECK_STRING (string);
   Lisp_Object encoded = json_encode (string);
   check_string_without_embedded_nuls (encoded);
   struct json_configuration conf =
@@ -1121,7 +1123,6 @@ syms_of_json (void)
 
   DEFSYM (Qstring_without_embedded_nulls_p, "string-without-embedded-nulls-p");
   DEFSYM (Qjson_value_p, "json-value-p");
-  DEFSYM (Qutf_8_string_p, "utf-8-string-p");
 
   DEFSYM (Qjson_error, "json-error");
   DEFSYM (Qjson_out_of_memory, "json-out-of-memory");

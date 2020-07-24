@@ -1,6 +1,6 @@
 ;;; nnvirtual.el --- virtual newsgroups access for Gnus
 
-;; Copyright (C) 1994-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1994-2020 Free Software Foundation, Inc.
 
 ;; Author: David Moore <dmoore@ucsd.edu>
 ;;	Lars Magne Ingebrigtsen <larsi@gnus.org>
@@ -97,7 +97,7 @@ component group will show up when you enter the virtual group.")
       (if (stringp (car articles))
 	  'headers
 	(let ((vbuf (nnheader-set-temp-buffer
-		     (get-buffer-create " *virtual headers*")))
+		     (gnus-get-buffer-create " *virtual headers*")))
 	      (carticles (nnvirtual-partition-sequence articles))
 	      (sysname (system-name))
 	      cgroup carticle article result prefix)
@@ -463,11 +463,10 @@ If UPDATE-P is not nil, call gnus-group-update-group on the components."
 	(dolist (group nnvirtual-component-groups)
 	  (when (and (setq info (gnus-get-info group))
 		     (gnus-info-marks info))
-	    (gnus-info-set-marks
-	     info
-	     (if (assq 'score (gnus-info-marks info))
-		 (list (assq 'score (gnus-info-marks info)))
-	       nil))))
+	    (setf (gnus-info-marks info)
+		  (if (assq 'score (gnus-info-marks info))
+		      (list (assq 'score (gnus-info-marks info)))
+		    nil))))
 
 	;; Ok, currently type-marks is an assq list with keys of a mark type,
 	;; with data of an assq list with keys of component group names

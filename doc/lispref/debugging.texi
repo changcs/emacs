@@ -1,6 +1,6 @@
 @c -*-texinfo-*-
 @c This is part of the GNU Emacs Lisp Reference Manual.
-@c Copyright (C) 1990-1994, 1998-1999, 2001-2019 Free Software
+@c Copyright (C) 1990--1994, 1998--1999, 2001--2020 Free Software
 @c Foundation, Inc.
 @c See the file elisp.texi for copying conditions.
 @node Debugging
@@ -402,7 +402,7 @@ assumptions are false if the debugger is running interpreted.
 @cindex backtrace buffer
 
 Debugger mode is derived from Backtrace mode, which is also used to
-show backtraces by Edebug and ERT.  (@pxref{Edebug}, and @ref{Top,the
+show backtraces by Edebug and ERT@.  (@pxref{Edebug}, and @ref{Top,the
 ERT manual,, ert, ERT: Emacs Lisp Regression Testing}.)
 
 @cindex stack frame
@@ -1041,9 +1041,9 @@ functions written in Lisp, it cannot profile Emacs primitives.
 @cindex benchmarking
 You can measure the time it takes to evaluate individual Emacs Lisp
 forms using the @file{benchmark} library.  See the macros
-@code{benchmark-run} and @code{benchmark-run-compiled} in
-@file{benchmark.el}.  You can also use the @code{benchmark} command
-for timing forms interactively.
+@code{benchmark-run}, @code{benchmark-run-compiled} and
+@code{benchmark-progn} in @file{benchmark.el}.  You can also use the
+@code{benchmark} command for timing forms interactively.
 
 @c Not worth putting in the printed manual.
 @ifnottex

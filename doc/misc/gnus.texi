@@ -8,7 +8,7 @@
 @syncodeindex pg cp
 
 @copying
-Copyright @copyright{} 1995--2019 Free Software Foundation, Inc.
+Copyright @copyright{} 1995--2020 Free Software Foundation, Inc.
 
 @quotation
 Permission is granted to copy, distribute and/or modify this document
@@ -436,7 +436,7 @@ Starting Gnus
 
 * Finding the News::            Choosing a method for getting news.
 * The Server is Down::          How can I read my mail then?
-* Slave Gnusae::                You can have more than one Gnus active at a time.
+* Child Gnusae::                You can have more than one Gnus active at a time.
 * Fetching a Group::            Starting Gnus just to read a group.
 * New Groups::                  What is Gnus supposed to do with new groups?
 * Changing Servers::            You may want to move from one server to another.
@@ -813,6 +813,7 @@ Various
 * Symbolic Prefixes::           How to supply some Gnus functions with options.
 * Formatting Variables::        You can specify what buffers should look like.
 * Window Layout::               Configuring the Gnus buffer windows.
+* Tabbed Interface::            Configuring the Gnus tabs.
 * Faces and Fonts::             How to change how faces look.
 * Mode Lines::                  Displaying information in the mode lines.
 * Highlighting and Menus::      Making buffers look all nice and cozy.
@@ -975,7 +976,7 @@ terminology section (@pxref{Terminology}).
 @menu
 * Finding the News::      Choosing a method for getting news.
 * The Server is Down::    How can I read my mail then?
-* Slave Gnusae::          You can have more than one Gnus active at a time.
+* Child Gnusae::          You can have more than one Gnus active at a time.
 * New Groups::            What is Gnus supposed to do with new groups?
 * Changing Servers::      You may want to move from one server to another.
 * Startup Files::         Those pesky startup files---@file{.newsrc}.
@@ -1089,9 +1090,9 @@ your primary server---instead, it will just activate all groups on level
 levels.)  Also @pxref{Group Levels}.
 
 
-@node Slave Gnusae
-@section Slave Gnusae
-@cindex slave
+@node Child Gnusae
+@section Child Gnusae
+@cindex child
 
 You might want to run more than one Emacs with more than one Gnus at the
 same time.  If you are using different @file{.newsrc} files (e.g., if you
@@ -1102,31 +1103,27 @@ The problem appears when you want to run two Gnusae that use the same
 @file{.newsrc} file.
 
 To work around that problem some, we here at the Think-Tank at the Gnus
-Towers have come up with a new concept: @dfn{Masters} and
-@dfn{slaves}.  (We have applied for a patent on this concept, and have
-taken out a copyright on those words.  If you wish to use those words in
-conjunction with each other, you have to send $1 per usage instance to
-me.  Usage of the patent (@dfn{Master/Slave Relationships In Computer
-Applications}) will be much more expensive, of course.)
+Towers have come up with a new concept: @dfn{Parents} and
+@dfn{children}.
 
-@findex gnus-slave
+@findex gnus-child
 Anyway, you start one Gnus up the normal way with @kbd{M-x gnus} (or
-however you do it).  Each subsequent slave Gnusae should be started with
-@kbd{M-x gnus-slave}.  These slaves won't save normal @file{.newsrc}
-files, but instead save @dfn{slave files} that contain information only
-on what groups have been read in the slave session.  When a master Gnus
-starts, it will read (and delete) these slave files, incorporating all
-information from them.  (The slave files will be read in the sequence
+however you do it).  Each subsequent child Gnusae should be started with
+@kbd{M-x gnus-child}.  These children won't save normal @file{.newsrc}
+files, but instead save @dfn{child files} that contain information only
+on what groups have been read in the child session.  When a parent Gnus
+starts, it will read (and delete) these child files, incorporating all
+information from them.  (The child files will be read in the sequence
 they were created, so the latest changes will have precedence.)
 
-Information from the slave files has, of course, precedence over the
-information in the normal (i.e., master) @file{.newsrc} file.
+Information from the child files has, of course, precedence over the
+information in the normal (i.e., parent) @file{.newsrc} file.
 
-If the @file{.newsrc*} files have not been saved in the master when the
-slave starts, you may be prompted as to whether to read an auto-save
-file.  If you answer ``yes'', the unsaved changes to the master will be
-incorporated into the slave.  If you answer ``no'', the slave may see some
-messages as unread that have been read in the master.
+If the @file{.newsrc*} files have not been saved in the parent when the
+child starts, you may be prompted as to whether to read an auto-save
+file.  If you answer ``yes'', the unsaved changes to the parent will be
+incorporated into the child.  If you answer ``no'', the child may see some
+messages as unread that have been read in the parent.
 
 
 
@@ -1561,12 +1558,6 @@ secondary select methods.
 @section Startup Variables
 
 @table @code
-
-@item gnus-load-hook
-@vindex gnus-load-hook
-A hook run while Gnus is being loaded.  Note that this hook will
-normally be run just once in each Emacs session, no matter how many
-times you start Gnus.
 
 @item gnus-before-startup-hook
 @vindex gnus-before-startup-hook
@@ -2628,9 +2619,6 @@ type.  @xref{Document Groups}.
 Create one of the groups mentioned in @code{gnus-useful-groups}
 (@code{gnus-group-make-useful-group}).
 
-@c FIXME: Gmane.org is no longer working; fix the Gmane referrences
-@c in this file accordingly.
-
 @item G w
 @kindex G w @r{(Group)}
 @findex gnus-group-make-web-group
@@ -2641,7 +2629,7 @@ Make an ephemeral group based on a web search
 (@code{gnus-group-make-web-group}).  If you give a prefix to this
 command, make a solid group instead.  You will be prompted for the
 search engine type and the search string.  Valid search engine types
-include @code{google}, @code{dejanews}, and @code{gmane}.
+include @code{google} and @code{dejanews}.
 @xref{Web Searches}.
 
 If you use the @code{google} search engine, you can limit the search
@@ -2694,25 +2682,6 @@ The following commands create ephemeral groups.  They can be called not
 only from the Group buffer, but in any Gnus buffer.
 
 @table @code
-@item gnus-read-ephemeral-gmane-group
-@findex gnus-read-ephemeral-gmane-group
-@vindex gnus-gmane-group-download-format
-Read an ephemeral group on Gmane.org.  The articles are downloaded via
-HTTP using the URL specified by @code{gnus-gmane-group-download-format}.
-Gnus will prompt you for a group name, the start article number and an
-the article range.
-
-@item gnus-read-ephemeral-gmane-group-url
-@findex gnus-read-ephemeral-gmane-group-url
-This command is similar to @code{gnus-read-ephemeral-gmane-group}, but
-the group name and the article number and range are constructed from a
-given @acronym{URL}.  Supported @acronym{URL} formats include:
-@indicateurl{http://thread.gmane.org/gmane.foo.bar/12300/focus=12399},
-@indicateurl{http://thread.gmane.org/gmane.foo.bar/12345/},
-@indicateurl{http://article.gmane.org/gmane.foo.bar/12345/},
-@indicateurl{http://permalink.gmane.org/gmane.foo.bar/12345/}, and
-@indicateurl{http://news.gmane.org/group/gmane.foo.bar/thread=12345}.
-
 @item gnus-read-ephemeral-emacs-bug-group
 @findex gnus-read-ephemeral-emacs-bug-group
 Read an Emacs bug report in an ephemeral group.  Gnus will prompt for
@@ -3208,7 +3177,7 @@ For example:
          (broken-reply-to . t))))
 @end lisp
 
-All clauses that matches the group name will be used, but the last
+All clauses that match the group name will be used, but the last
 setting ``wins''.  So if you have two clauses that both match the
 group name, and both set, say @code{display}, the last setting will
 override the first.
@@ -9090,6 +9059,9 @@ when filling.
 @kindex W Q @r{(Summary)}
 @findex gnus-article-fill-long-lines
 Fill long lines (@code{gnus-article-fill-long-lines}).
+
+You can give the command a numerical prefix to specify the width to use
+when filling.
 
 @item W C
 @kindex W C @r{(Summary)}
@@ -17019,7 +16991,6 @@ before you restore the data.
 @cindex nnweb
 @cindex Google
 @cindex dejanews
-@cindex gmane
 @cindex Usenet searches
 @cindex searching the Usenet
 
@@ -17060,7 +17031,7 @@ Virtual server variables:
 @item nnweb-type
 @vindex nnweb-type
 What search engine type is being used.  The currently supported types
-are @code{google}, @code{dejanews}, and @code{gmane}.  Note that
+are @code{google} and @code{dejanews}.  Note that
 @code{dejanews} is an alias to @code{google}.
 
 @item nnweb-search
@@ -17902,7 +17873,7 @@ presence of 7 special headers.  These headers are of the form
 @code{X-Diary-<something>}, @code{<something>} being one of
 @code{Minute}, @code{Hour}, @code{Dom}, @code{Month}, @code{Year},
 @code{Time-Zone} and @code{Dow}.  @code{Dom} means ``Day of Month'', and
-@code{dow} means ``Day of Week''.  These headers actually behave like
+@code{Dow} means ``Day of Week''.  These headers actually behave like
 crontab specifications and define the event date(s):
 
 @itemize @bullet
@@ -21167,9 +21138,9 @@ through mail and news repositories.  Different backends (like
 @dfn{engines} in @code{nnir} lingo), but all use the same basic search
 interface.
 
-The @code{nnimap} and @code{gmane} search engines should work with no
-configuration.  Other engines require a local index that needs to be
-created and maintained outside of Gnus.
+The @code{nnimap} search engine should work with no configuration.
+Other engines require a local index that needs to be created and
+maintained outside of Gnus.
 
 
 @node Basic Usage
@@ -21215,22 +21186,20 @@ special search features for each engine separately.
 @node Setting up nnir
 @subsection Setting up nnir
 
-To set up nnir you may need to do some prep work.  Firstly, you may need
-to configure the search engines you plan to use.  Some of them, like
-@code{imap} and @code{gmane}, need no special configuration.  Others,
-like @code{namazu} and @code{swish}, require configuration as described
-below.  Secondly, you need to associate a search engine with a server or
-a backend.
+To set up nnir you may need to do some prep work.  Firstly, you may
+need to configure the search engines you plan to use.  Some of them,
+like @code{imap}, need no special configuration.  Others, like
+@code{namazu} and @code{swish}, require configuration as described
+below.  Secondly, you need to associate a search engine with a server
+or a backend.
 
 If you just want to use the @code{imap} engine to search @code{nnimap}
-servers, and the @code{gmane} engine to search @code{gmane} then you
-don't have to do anything.  But you might want to read the details of the
-query language anyway.
+servers then you don't have to do anything.  But you might want to
+read the details of the query language anyway.
 
 @menu
 * Associating Engines::                 How to associate engines.
 * The imap Engine::                     Imap configuration and usage.
-* The gmane Engine::                    Gmane configuration and usage.
 * The swish++ Engine::                  Swish++ configuration and usage.
 * The swish-e Engine::                  Swish-e configuration and usage.
 * The namazu Engine::                   Namazu configuration and usage.
@@ -21262,11 +21231,8 @@ engine for all servers using the @code{nnimap} backend.  In this case you
 can customize the variable @code{nnir-method-default-engines}.  This is
 an alist of pairs of the form @code{(backend . engine)}.  By default this
 variable is set to use the @code{imap} engine for all servers using the
-@code{nnimap} backend, and the @code{gmane} backend for @code{nntp}
-servers.  (Don't worry, the @code{gmane} search engine won't actually try
-to search non-gmane @code{nntp} servers.)  But if you wanted to use
-@code{namazu} for all your servers with an @code{nnimap} backend you
-could change this to
+@code{nnimap} backend.  But if you wanted to use @code{namazu} for all
+your servers with an @code{nnimap} backend you could change this to
 
 @lisp
 '((nnimap . namazu)
@@ -21320,39 +21286,6 @@ customize @code{nnir-imap-default-search-key}.  For example to use
 @lisp
 (setq nnir-imap-default-search-key "Imap")
 @end lisp
-
-@node The gmane Engine
-@subsubsection The gmane Engine
-
-The @code{gmane} engine requires no configuration.
-
-Gmane queries follow a simple query language:
-
-@table @samp
-@item Boolean query operators
-AND, OR, NOT (or AND NOT), and XOR are supported, and brackets can be
-used to control operator precedence, e.g., (emacs OR xemacs) AND linux.
-Note that operators must be written with all capital letters to be
-recognized.
-
-@item Required and excluded terms
-+ and @minus{} can be used to require or exclude terms, e.g., football
-@minus{}american
-
-@item Unicode handling
-The search engine converts all text to utf-8, so searching should work
-in any language.
-
-@item Stopwords
-Common English words (like 'the' and 'a') are ignored by default.  You
-can override this by prefixing such words with a + (e.g., +the) or
-enclosing the word in quotes (e.g., "the").
-
-@end table
-
-The query can be limited to articles by a specific author using a
-prefix-arg.  After inputting the query this will prompt for an author
-name (or part of a name) to match.
 
 @node The swish++ Engine
 @subsubsection The swish++ Engine
@@ -21509,7 +21442,6 @@ Alist of pairs of server backends and search engines.  The default
 associations are
 @example
 (nnimap . imap)
-(nntp . gmane)
 @end example
 
 @item nnir-ignored-newsgroups
@@ -22251,6 +22183,7 @@ to you, using @kbd{G b u} and updating the group will usually fix this.
 * Symbolic Prefixes::           How to supply some Gnus functions with options.
 * Formatting Variables::        You can specify what buffers should look like.
 * Window Layout::               Configuring the Gnus buffer windows.
+* Tabbed Interface::            Configuring the Gnus tabs.
 * Faces and Fonts::             How to change how faces look.
 * Mode Lines::                  Displaying information in the mode lines.
 * Highlighting and Menus::      Making buffers look all nice and cozy.
@@ -23045,6 +22978,36 @@ between summary buffer (top one-sixth) and article buffer (bottom).
 @end lisp
 
 @end itemize
+
+
+@node Tabbed Interface
+@section Tabbed Interface
+@cindex tabbed interface
+@cindex tabs
+
+Gnus supports display of different buffers in dedicated tabs
+that you can select using the tab bar.
+
+To open the group buffer in a new tab named @samp{Gnus}, use:
+
+@lisp
+(push '("\\`\\*Group\\*\\'" .
+        (display-buffer-in-tab
+         (tab-name . "Gnus")))
+      display-buffer-alist)
+@end lisp
+
+To read every summary in a separate explicitly named tab, use:
+
+@lisp
+(push '("\\`\\*Summary .*\\*\\'" .
+        (display-buffer-in-tab
+         (tab-name . (lambda (buffer _alist)
+                       (setq buffer (buffer-name buffer))
+                       (when (string-match "\\`\\*Summary \\(.*\\)\\*\\'" buffer)
+                         (format "Group %s" (match-string 1 buffer)))))))
+      display-buffer-alist)
+@end lisp
 
 
 @node Faces and Fonts
@@ -25704,6 +25667,13 @@ Create non-spam statistics for every file in this directory.  Every
 file is treated as one non-spam mail.
 @end defun
 
+@defvar spam-stat-process-directory-age
+Maximum age of files to be processed, in days.  Without this filter,
+re-training spam-stat with several thousand messages could take a long
+time.  The default is 90, but you might want to set this to a bigger
+value during the initial training.
+@end defvar
+
 Usually you would call @code{spam-stat-process-spam-directory} on a
 directory such as @file{~/Mail/mail/spam} (this usually corresponds to
 the group @samp{nnml:mail.spam}), and you would call
@@ -27694,7 +27664,7 @@ added.  A plethora of new commands and modes have been added.
 @xref{Gnus Unplugged}, for the full story.
 
 @item
-The @code{nndraft} back end has returned, but works differently than
+The @code{nndraft} back end has returned, but works differently from
 before.  All Message buffers are now also articles in the @code{nndraft}
 group, which is created automatically.
 
@@ -27940,7 +27910,7 @@ The revised Gnus @acronym{FAQ} is included in the manual,
 @acronym{TLS} wrapper shipped with Gnus
 
 @acronym{TLS}/@acronym{SSL} is now supported in @acronym{IMAP} and
-@acronym{NNTP} via @file{tls.el} and GnuTLS.
+@acronym{NNTP} via GnuTLS.
 
 @item
 Improved anti-spam features.
@@ -28516,9 +28486,9 @@ entry.
 The format spec @code{%C} for positioning point has changed to @code{%*}.
 
 @item
-@code{gnus-slave-unplugged}
+@code{gnus-child-unplugged}
 
-A new command which starts Gnus offline in slave mode.
+A new command which starts Gnus offline in child mode.
 
 @end itemize
 
@@ -30952,7 +30922,7 @@ description   = <string>
 
 Believe it or not, but some people who use Gnus haven't really used
 Emacs much before they embarked on their journey on the Gnus Love Boat.
-If you are one of those unfortunates whom ``@kbd{C-M-a}'', ``kill the
+If you are one of those unfortunates to whom ``@kbd{C-M-a}'', ``kill the
 region'', and ``set @code{gnus-flargblossen} to an alist where the key
 is a regexp that is used for matching on the group name'' are magical
 phrases with little or no meaning, then this appendix is for you.  If

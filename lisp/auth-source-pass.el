@@ -1,6 +1,6 @@
 ;;; auth-source-pass.el --- Integrate auth-source with password-store -*- lexical-binding: t -*-
 
-;; Copyright (C) 2015, 2017-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2015, 2017-2020 Free Software Foundation, Inc.
 
 ;; Author: Damien Cassou <damien@cassou.me>,
 ;;         Nicolas Petton <nicolas@petton.fr>
@@ -34,8 +34,7 @@
 
 (require 'seq)
 (eval-when-compile (require 'subr-x))
-(eval-when-compile
-  (require 'cl-lib))
+(require 'cl-lib)
 (require 'auth-source)
 (require 'url-parse)
 
@@ -45,7 +44,8 @@
   :group 'auth-source
   :version "27.1")
 
-(defcustom auth-source-pass-filename "~/.password-store"
+(defcustom auth-source-pass-filename
+  (or (getenv "PASSWORD_STORE_DIR") "~/.password-store")
   "Filename of the password-store folder."
   :type 'directory
   :version "27.1")
@@ -190,7 +190,7 @@ CONTENTS is the contents of a password-store formatted file."
   (let ((store-dir (expand-file-name auth-source-pass-filename)))
     (mapcar
      (lambda (file) (file-name-sans-extension (file-relative-name file store-dir)))
-     (directory-files-recursively store-dir "\\.gpg$"))))
+     (directory-files-recursively store-dir "\\.gpg\\'"))))
 
 (defun auth-source-pass--find-match (host user port)
   "Return password-store entry data matching HOST, USER and PORT.
@@ -268,10 +268,15 @@ If ENTRIES is nil, use the result of calling `auth-source-pass-entries' instead.
 
 Based on the supported pathname patterns for HOSTNAME, USER, &
 PORT, return a list of possible suffixes for matching entries in
-the password-store."
+the password-store.
+
+PORT may be a list of ports."
   (let ((domains (auth-source-pass--domains (split-string hostname "\\."))))
-    (seq-mapcat (lambda (n)
-                  (auth-source-pass--name-port-user-suffixes n user port))
+    (seq-mapcat (lambda (domain)
+                  (seq-mapcat
+                   (lambda (p)
+                     (auth-source-pass--name-port-user-suffixes domain user p))
+                   (if (consp port) port (list port))))
                 domains)))
 
 (defun auth-source-pass--domains (name-components)
@@ -287,7 +292,7 @@ components, from longest to shortest."
 (defun auth-source-pass--name-port-user-suffixes (name user port)
   "Return a list of possible path suffixes for NAME, USER, & PORT.
 
-The resulting list is ordered from most specifc to least
+The resulting list is ordered from most specific to least
 specific, with paths matching all of NAME, USER, & PORT first,
 then NAME & USER, then NAME & PORT, then just NAME."
   (seq-mapcat

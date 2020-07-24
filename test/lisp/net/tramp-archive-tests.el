@@ -1,6 +1,6 @@
 ;;; tramp-archive-tests.el --- Tests of file archive access  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2017-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2017-2020 Free Software Foundation, Inc.
 
 ;; Author: Michael Albinus <michael.albinus@gmx.de>
 
@@ -16,6 +16,10 @@
 ;;
 ;; You should have received a copy of the GNU General Public License
 ;; along with this program.  If not, see `https://www.gnu.org/licenses/'.
+
+;;; Commentary:
+
+;; A testsuite for testing file archives.
 
 ;;; Code:
 
@@ -54,11 +58,10 @@
   "A directory file name, which looks like an archive.")
 
 (setq password-cache-expiry nil
-      tramp-verbose 0
       tramp-cache-read-persistent-data t ;; For auth-sources.
       tramp-copy-size-limit nil
-      tramp-message-show-message nil
-      tramp-persistency-file-name nil)
+      tramp-persistency-file-name nil
+      tramp-verbose 0)
 
 (defun tramp-archive--test-make-temp-name ()
   "Return a temporary file name for test.
@@ -569,7 +572,7 @@ This checks also `file-name-as-directory', `file-name-directory',
 	     (looking-at-p
 	      (concat
 	       ;; There might be a summary line.
-	       "\\(total.+[[:digit:]]+\n\\)?"
+	       "\\(total.+[[:digit:]]+ ?[kKMGTPEZY]?i?B?\n\\)?"
 	       ;; We don't know in which order the files appear.
 	       (format
 		"\\(.+ %s\\( ->.+\\)?\n\\)\\{%d\\}"
@@ -665,7 +668,7 @@ This tests also `access-file', `file-readable-p' and `file-regular-p'."
 	  (setq attr (directory-files-and-attributes tmp-name 'full))
 	  (dolist (elt attr)
 	    (should (equal (file-attributes (car elt)) (cdr elt))))
-	  (setq attr (directory-files-and-attributes tmp-name nil "^b"))
+	  (setq attr (directory-files-and-attributes tmp-name nil "\\`b"))
 	  (should (equal (mapcar #'car attr) '("bar"))))
 
       ;; Cleanup.
@@ -959,11 +962,13 @@ This tests also `file-executable-p', `file-writable-p' and `set-file-modes'."
     (tramp-archive-cleanup-hash)))
 
 (defun tramp-archive-test-all (&optional interactive)
-  "Run all tests for \\[tramp-archive]."
+  "Run all tests for \\[tramp-archive].
+If INTERACTIVE is non-nil, the tests are run interactively."
   (interactive "p")
   (funcall
    (if interactive #'ert-run-tests-interactively #'ert-run-tests-batch)
    "^tramp-archive"))
 
 (provide 'tramp-archive-tests)
+
 ;;; tramp-archive-tests.el ends here

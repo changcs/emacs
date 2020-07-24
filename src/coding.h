@@ -1,5 +1,5 @@
 /* Header for coding system handler.
-   Copyright (C) 2001-2019 Free Software Foundation, Inc.
+   Copyright (C) 2001-2020 Free Software Foundation, Inc.
    Copyright (C) 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004,
      2005, 2006, 2007, 2008, 2009, 2010, 2011
      National Institute of Advanced Industrial Science and Technology (AIST)
@@ -642,11 +642,11 @@ struct coding_system
   } while (false)
 
 /* Encode the file name NAME using the specified coding system
-   for file names, if any.  */
+   for file names, if any.  May return NAME itself.  */
 #define ENCODE_FILE(NAME)  encode_file_name (NAME)
 
 /* Decode the file name NAME using the specified coding system
-   for file names, if any.  */
+   for file names, if any.  May return NAME itself.  */
 #define DECODE_FILE(NAME)  decode_file_name (NAME)
 
 /* Encode the string STR using the specified coding system
@@ -691,7 +691,8 @@ extern Lisp_Object code_convert_string_norecord (Lisp_Object, Lisp_Object,
                                                  bool);
 extern Lisp_Object encode_string_utf_8 (Lisp_Object, Lisp_Object, bool,
 					Lisp_Object, Lisp_Object);
-extern Lisp_Object decode_string_utf_8 (Lisp_Object, Lisp_Object, bool,
+extern Lisp_Object decode_string_utf_8 (Lisp_Object, const char *, ptrdiff_t,
+					Lisp_Object, bool,
 					Lisp_Object, Lisp_Object);
 extern Lisp_Object encode_file_name (Lisp_Object);
 extern Lisp_Object decode_file_name (Lisp_Object);

@@ -1,6 +1,6 @@
 ;;; semantic/wisent/grammar.el --- Wisent's input grammar mode
 
-;; Copyright (C) 2002-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2002-2020 Free Software Foundation, Inc.
 ;;
 ;; Author: David Ponce <david@dponce.com>
 ;; Created: 26 Aug 2002
@@ -297,14 +297,13 @@ Return the expanded expression."
   "Return the parser setup code."
   (format
    "(semantic-install-function-overrides\n\
-      '((parse-stream . wisent-parse-stream)))\n\
+      '((semantic-parse-stream . wisent-parse-stream)))\n\
     (setq semantic-parser-name \"LALR\"\n\
           semantic--parse-table %s\n\
           semantic-debug-parser-source %S\n\
           semantic-flex-keywords-obarray %s\n\
           semantic-lex-types-obarray %s)\n\
     ;; Collect unmatched syntax lexical tokens\n\
-    (semantic-make-local-hook 'wisent-discarding-token-functions)\n\
     (add-hook 'wisent-discarding-token-functions\n\
               'wisent-collect-unmatched-syntax nil t)"
    (semantic-grammar-parsetable)
@@ -327,8 +326,8 @@ Menu items are appended to the common grammar menu.")
   "Major mode for editing Wisent grammars."
   (semantic-grammar-setup-menu wisent-grammar-menu)
   (semantic-install-function-overrides
-   '((grammar-parsetable-builder . wisent-grammar-parsetable-builder)
-     (grammar-setupcode-builder  . wisent-grammar-setupcode-builder))))
+   '((semantic-grammar-parsetable-builder . wisent-grammar-parsetable-builder)
+     (semantic-grammar-setupcode-builder  . wisent-grammar-setupcode-builder))))
 
 (defvar-mode-local wisent-grammar-mode semantic-grammar-macros
   '(

@@ -1,6 +1,6 @@
 ;;; msb.el --- customizable buffer-selection with multiple menus
 
-;; Copyright (C) 1993-1995, 1997-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1993-1995, 1997-2020 Free Software Foundation, Inc.
 
 ;; Author: Lars Lindberg <lars.lindberg@home.se>
 ;; Maintainer: emacs-devel@gnu.org
@@ -372,6 +372,8 @@ This is instead of the groups in `msb-menu-cond'."
   :type 'hook
   :set 'msb-custom-set
   :group 'msb)
+(make-obsolete-variable 'msb-after-load-hook
+                        "use `with-eval-after-load' instead." "28.1")
 
 ;;;
 ;;; Internal variables

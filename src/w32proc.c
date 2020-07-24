@@ -1,6 +1,6 @@
 /* Process support for GNU Emacs on the Microsoft Windows API.
 
-Copyright (C) 1992, 1995, 1999-2019 Free Software Foundation, Inc.
+Copyright (C) 1992, 1995, 1999-2020 Free Software Foundation, Inc.
 
 This file is part of GNU Emacs.
 
@@ -2790,11 +2790,11 @@ sys_kill (pid_t pid, int sig)
               /* Set the foreground window to the child.  */
               if (SetForegroundWindow (cp->hwnd))
                 {
-		  /* Record the state of the Ctrl key: the user could
-		     have it depressed while we are simulating Ctrl-C,
-		     in which case we will have to leave the state of
-		     Ctrl depressed when we are done.  */
-		  short ctrl_state = GetKeyState (VK_CONTROL) & 0x8000;
+		  /* Record the state of the left Ctrl key: the user
+		     could have it depressed while we are simulating
+		     Ctrl-C, in which case we will have to leave the
+		     state of that Ctrl depressed when we are done.  */
+		  short ctrl_state = GetKeyState (VK_LCONTROL) & 0x8000;
 
                   /* Generate keystrokes as if user had typed Ctrl-Break or
                      Ctrl-C.  */
@@ -3231,7 +3231,7 @@ such programs cannot be invoked by Emacs anyway.  */)
   char *progname, progname_a[MAX_PATH];
 
   program = Fexpand_file_name (program, Qnil);
-  encoded_progname = ENCODE_FILE (program);
+  encoded_progname = Fcopy_sequence (ENCODE_FILE (program));
   progname = SSDATA (encoded_progname);
   unixtodos_filename (progname);
   filename_to_ansi (progname, progname_a);

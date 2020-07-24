@@ -1,6 +1,6 @@
 ;;; timeclock.el --- mode for keeping track of how much you work  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1999-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1999-2020 Free Software Foundation, Inc.
 
 ;; Author: John Wiegley <johnw@gnu.org>
 ;; Created: 25 Mar 1999
@@ -193,6 +193,8 @@ to today."
 (defcustom timeclock-load-hook nil
   "Hook that gets run after timeclock has been loaded."
   :type 'hook)
+(make-obsolete-variable 'timeclock-load-hook
+                        "use `with-eval-after-load' instead." "28.1")
 
 (defcustom timeclock-in-hook nil
   "A hook run every time an \"in\" event is recorded."

@@ -1,6 +1,6 @@
 ;;; semantic/complete.el --- Routines for performing tag completion
 
-;; Copyright (C) 2003-2005, 2007-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2003-2005, 2007-2020 Free Software Foundation, Inc.
 
 ;; Author: Eric M. Ludlam <zappo@gnu.org>
 ;; Keywords: syntax
@@ -1635,10 +1635,10 @@ This will not happen if you directly set this variable via `setq'."
   :group 'semantic
   :version "24.3"
   :type 'integer
-  :set '(lambda (sym var)
-	  (set-default sym var)
-	  (when (boundp 'x-max-tooltip-size)
-	    (setcdr x-max-tooltip-size (max (1+ var) (cdr x-max-tooltip-size))))))
+  :set (lambda (sym var)
+         (set-default sym var)
+         (when (boundp 'x-max-tooltip-size)
+           (setcdr x-max-tooltip-size (max (1+ var) (cdr x-max-tooltip-size))))))
 
 
 (defclass semantic-displayer-tooltip (semantic-displayer-traditional)
@@ -1666,10 +1666,7 @@ Display mechanism using tooltip for a list of possible completions.")
 
 (cl-defmethod initialize-instance :after ((obj semantic-displayer-tooltip) &rest args)
   "Make sure we have tooltips required."
-  (condition-case nil
-      (require 'tooltip)
-    (error nil))
-  )
+  (require 'tooltip))
 
 (defvar tooltip-mode)
 

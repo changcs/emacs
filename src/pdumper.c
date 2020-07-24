@@ -1,4 +1,4 @@
-/* Copyright (C) 2018-2019 Free Software Foundation, Inc.
+/* Copyright (C) 2018-2020 Free Software Foundation, Inc.
 
 This file is part of GNU Emacs.
 
@@ -630,7 +630,7 @@ dump_set_have_current_referrer (struct dump_context *ctx, bool have)
 #endif
 }
 
-/* Return true if if objects should be enqueued in CTX to refer to an
+/* Return true if objects should be enqueued in CTX to refer to an
    object that the caller should store into CTX->current_referrer.
 
    Until dump_clear_referrer is called, any objects enqueued are being
@@ -1093,7 +1093,7 @@ dump_calc_link_score (dump_off basis,
   return powf (link_score, (float) link_weight / 1000.0f);
 }
 
-/* Compute the score score for a queued object.
+/* Compute the score for a queued object.
 
    OBJECT is the object to query, which must currently be queued for
    dumping.  BASIS is the offset at which we would be
@@ -2239,7 +2239,7 @@ dump_bignum (struct dump_context *ctx, Lisp_Object object)
 static dump_off
 dump_float (struct dump_context *ctx, const struct Lisp_Float *lfloat)
 {
-#if CHECK_STRUCTS && !defined (HASH_Lisp_Float_50A7B216D9)
+#if CHECK_STRUCTS && !defined (HASH_Lisp_Float_7E7D284C02)
 # error "Lisp_Float changed. See CHECK_STRUCTS comment in config.h."
 #endif
   eassert (ctx->header.cold_start);
@@ -2603,7 +2603,7 @@ dump_vectorlike_generic (struct dump_context *ctx,
       Lisp_Object out;
       const Lisp_Object *vslot = &v->contents[i];
       /* In the wide case, we're always misaligned.  */
-#ifndef WIDE_EMACS_INT
+#if INTPTR_MAX == EMACS_INT_MAX
       eassert (ctx->offset % sizeof (out) == 0);
 #endif
       dump_object_start (ctx, &out, sizeof (out));
@@ -2769,7 +2769,7 @@ dump_hash_table (struct dump_context *ctx,
 static dump_off
 dump_buffer (struct dump_context *ctx, const struct buffer *in_buffer)
 {
-#if CHECK_STRUCTS && !defined HASH_buffer_9F2F522174
+#if CHECK_STRUCTS && !defined HASH_buffer_5DC36DBD42
 # error "buffer changed. See CHECK_STRUCTS comment in config.h."
 #endif
   struct buffer munged_buffer = *in_buffer;
@@ -2845,8 +2845,6 @@ dump_buffer (struct dump_context *ctx, const struct buffer *in_buffer)
      ctx->obj_offset + dump_offsetof (struct buffer, text),
      base_offset + dump_offsetof (struct buffer, own_text));
 
-  dump_field_lv_rawptr (ctx, out, buffer, &buffer->next,
-                        Lisp_Vectorlike, WEIGHT_NORMAL);
   DUMP_FIELD_COPY (out, buffer, pt);
   DUMP_FIELD_COPY (out, buffer, pt_byte);
   DUMP_FIELD_COPY (out, buffer, begv);
@@ -2961,7 +2959,7 @@ dump_vectorlike (struct dump_context *ctx,
                  Lisp_Object lv,
                  dump_off offset)
 {
-#if CHECK_STRUCTS && !defined HASH_pvec_type_E55BD36F8E
+#if CHECK_STRUCTS && !defined HASH_pvec_type_A4A6E9984D
 # error "pvec_type changed. See CHECK_STRUCTS comment in config.h."
 #endif
   const struct Lisp_Vector *v = XVECTOR (lv);
@@ -3069,7 +3067,7 @@ dump_vectorlike (struct dump_context *ctx,
 static dump_off
 dump_object (struct dump_context *ctx, Lisp_Object object)
 {
-#if CHECK_STRUCTS && !defined (HASH_Lisp_Type_E2AD97D3F7)
+#if CHECK_STRUCTS && !defined (HASH_Lisp_Type_45F0582FD7)
 # error "Lisp_Type changed. See CHECK_STRUCTS comment in config.h."
 #endif
   eassert (!EQ (object, dead_object ()));
@@ -3604,14 +3602,12 @@ dump_unwind_cleanup (void *data)
   Vprocess_environment = ctx->old_process_environment;
 }
 
-/* Return DUMP_OFFSET, making sure it is within the heap.  */
-static dump_off
+/* Check that DUMP_OFFSET is within the heap.  */
+static void
 dump_check_dump_off (struct dump_context *ctx, dump_off dump_offset)
 {
   eassert (dump_offset > 0);
-  if (ctx)
-    eassert (dump_offset < ctx->end_heap);
-  return dump_offset;
+  eassert (!ctx || dump_offset < ctx->end_heap);
 }
 
 static void
@@ -3734,6 +3730,7 @@ decode_emacs_reloc (struct dump_context *ctx, Lisp_Object lreloc)
           }
         else
           {
+	    eassume (ctx); /* Pacify GCC 9.2.1 -O3 -Wnull-dereference.  */
             eassert (!dump_object_emacs_ptr (target_value));
             reloc.u.dump_offset = dump_recall_object (ctx, target_value);
             if (reloc.u.dump_offset <= 0)
@@ -4003,6 +4000,11 @@ types.  */)
      (Lisp_Object filename, Lisp_Object track_referrers)
 {
   eassert (initialized);
+
+  if (! noninteractive)
+    error ("Dumping Emacs currently works only in batch mode.  "
+           "If you'd like it to work interactively, please consider "
+           "contributing a patch to Emacs.");
 
   if (will_dump_with_unexec_p ())
     error ("This Emacs instance was started under the assumption "

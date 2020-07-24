@@ -1,6 +1,6 @@
 ;;; saveplace.el --- automatically save place in files
 
-;; Copyright (C) 1993-1994, 2001-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1993-1994, 2001-2020 Free Software Foundation, Inc.
 
 ;; Author: Karl Fogel <kfogel@red-bean.com>
 ;; Maintainer: emacs-devel@gnu.org
@@ -248,8 +248,8 @@ may have changed) back to `save-place-alist'."
       (delete-region (point-min) (point-max))
       (when save-place-forget-unreadable-files
 	(save-place-forget-unreadable-files))
-      (insert (format ";;; -*- coding: %s -*-\n"
-                      (symbol-name coding-system-for-write)))
+      (insert (format ";;; -*- coding: %s; mode: lisp-data -*-\n"
+                      coding-system-for-write))
       (let ((print-length nil)
             (print-level nil))
         (pp save-place-alist (current-buffer)))

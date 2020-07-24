@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-## Copyright (C) 2017-2019 Free Software Foundation, Inc.
+## Copyright (C) 2017-2020 Free Software Foundation, Inc.
 
 ## This file is part of GNU Emacs.
 
@@ -26,11 +26,13 @@ import re
 from subprocess import check_output
 
 ## Constants
-EMACS_MAJOR_VERSION="27"
+EMACS_MAJOR_VERSION="28"
 
 # This list derives from the features we want Emacs to compile with.
 PKG_REQ='''mingw-w64-x86_64-giflib
 mingw-w64-x86_64-gnutls
+mingw-w64-x86_64-harfbuzz
+mingw-w64-x86_64-jansson
 mingw-w64-x86_64-lcms2
 mingw-w64-x86_64-libjpeg-turbo
 mingw-w64-x86_64-libpng
@@ -78,7 +80,7 @@ def immediate_deps(pkg):
     ## Split into dependencies
     dependencies = dependencies.strip().split(" ")
 
-    ## Remove > signs TODO can we get any other punctation here?
+    ## Remove > signs TODO can we get any other punctuation here?
     dependencies = [d.split(">")[0] for d in dependencies if d]
     dependencies = [d for d in dependencies if not d == "None"]
 

@@ -1,6 +1,6 @@
 ;;; cmuscheme.el --- Scheme process in a buffer. Adapted from tea.el
 
-;; Copyright (C) 1988, 1994, 1997, 2001-2019 Free Software Foundation,
+;; Copyright (C) 1988, 1994, 1997, 2001-2020 Free Software Foundation,
 ;; Inc.
 
 ;; Author: Olin Shivers <olin.shivers@cs.cmu.edu>
@@ -517,6 +517,8 @@ command to run."
 This is a good place to put keybindings."
   :type 'hook
   :group 'cmuscheme)
+(make-obsolete-variable 'cmuscheme-load-hook
+                        "use `with-eval-after-load' instead." "28.1")
 
 (run-hooks 'cmuscheme-load-hook)
 

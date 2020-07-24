@@ -1,6 +1,6 @@
 ;;; time-date-tests.el --- tests for calendar/time-date.el    -*- lexical-binding:t -*-
 
-;; Copyright (C) 2019 Free Software Foundation, Inc.
+;; Copyright (C) 2019-2020 Free Software Foundation, Inc.
 
 ;; This file is part of GNU Emacs.
 
@@ -31,7 +31,9 @@
 (ert-deftest test-days-in-month ()
   (should (= (date-days-in-month 2004 2) 29))
   (should (= (date-days-in-month 2004 3) 31))
-  (should-not (= (date-days-in-month 1900 3) 28)))
+  (should-not (= (date-days-in-month 1900 3) 28))
+  (should-error (date-days-in-month 2020 15))
+  (should-error (date-days-in-month 2020 'foo)))
 
 (ert-deftest test-ordinal ()
   (should (equal (date-ordinal-to-time 2008 271)

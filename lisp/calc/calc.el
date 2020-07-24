@@ -1,6 +1,6 @@
 ;;; calc.el --- the GNU Emacs calculator  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1990-1993, 2001-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1990-1993, 2001-2020 Free Software Foundation, Inc.
 
 ;; Author: David Gillespie <daveg@synaptics.com>
 ;; Keywords: convenience, extensions
@@ -884,6 +884,8 @@ Used by `calc-user-invocation'.")
 
 (defvar calc-load-hook nil
   "Hook run when calc.el is loaded.")
+(make-obsolete-variable 'calc-load-hook
+                        "use `with-eval-after-load' instead." "28.1")
 
 (defvar calc-window-hook nil
   "Hook called to create the Calc window.")
@@ -2288,7 +2290,7 @@ the United States."
        (calc-alg-digit-entry)
      (setq calc-aborted-prefix nil)
      (let* ((calc-digit-value nil)
-	    (calc-prev-char nil)
+	    (calc-prev-char last-command-event)
 	    (calc-prev-prev-char nil)
 	    (calc-buffer (current-buffer))
 	    (buf
@@ -2427,7 +2429,7 @@ the United States."
 	  (if (and (memq last-command-event '(?@ ?o ?h ?\' ?m))
 		   (string-match " " calc-hms-format))
 	      (insert " "))
-	(if (and (eq this-command last-command)
+	(if (and (memq last-command '(calcDigit-start calcDigit-key))
 		 (eq last-command-event ?.))
 	    (progn
 	      (require 'calc-ext)
@@ -2925,6 +2927,7 @@ the United States."
 
 
 
+(defvar math-comp-selected)
 (defvar calc-selection-cache-entry)
 ;;; Format the number A as a string.  [X N; X Z] [Public]
 (defun math-format-stack-value (entry)
@@ -3400,7 +3403,12 @@ See Info node `(calc)Defining Functions'."
     (cons key key)))
 
 (defun calc-unread-command (&optional input)
-  (push (or input last-command-event) unread-command-events))
+  (let ((event (or input last-command-event)))
+    ;; Avoid recording twice the keys pressed while defining a
+    ;; keyboard macro.
+    (when defining-kbd-macro
+      (setq event (cons 'no-record event)))
+    (push event unread-command-events)))
 
 (defun calc-clear-unread-commands ()
   (setq unread-command-events nil))

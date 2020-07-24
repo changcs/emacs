@@ -1,6 +1,6 @@
 ;;; frame.el --- multi-frame management independent of window systems  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1993-1994, 1996-1997, 2000-2019 Free Software
+;; Copyright (C) 1993-1994, 1996-1997, 2000-2020 Free Software
 ;; Foundation, Inc.
 
 ;; Maintainer: emacs-devel@gnu.org
@@ -673,7 +673,7 @@ Create one if necessary.  Note that the minibuffer frame, if separate,
 is not considered (see `next-frame')."
   (if (equal (next-frame) (selected-frame)) (make-frame) (next-frame)))
 
-(defun next-multiframe-window ()
+(defun next-window-any-frame ()
   "Select the next window, regardless of which frame it is on."
   (interactive)
   (select-window (next-window (selected-window)
@@ -681,13 +681,16 @@ is not considered (see `next-frame')."
 			      0))
   (select-frame-set-input-focus (selected-frame)))
 
-(defun previous-multiframe-window ()
+(defun previous-window-any-frame ()
   "Select the previous window, regardless of which frame it is on."
   (interactive)
   (select-window (previous-window (selected-window)
 				  (> (minibuffer-depth) 0)
 				  0))
   (select-frame-set-input-focus (selected-frame)))
+
+(defalias 'next-multiframe-window 'next-window-any-frame)
+(defalias 'previous-multiframe-window 'previous-window-any-frame)
 
 (defun window-system-for-display (display)
   "Return the window system for DISPLAY.
@@ -709,6 +712,18 @@ The optional argument PARAMETERS specifies additional frame parameters."
                       (format "Make frame on display: ")
                       (x-display-list))))
   (make-frame (cons (cons 'display display) parameters)))
+
+(defun make-frame-on-current-monitor (&optional parameters)
+  "Make a frame on the currently selected monitor.
+Like `make-frame-on-monitor' and with the same PARAMETERS as in `make-frame'."
+  (interactive)
+  (let* ((monitor-workarea
+          (cdr (assq 'workarea (frame-monitor-attributes))))
+         (geometry-parameters
+          (when monitor-workarea
+            `((top . ,(nth 1 monitor-workarea))
+              (left . ,(nth 0 monitor-workarea))))))
+    (make-frame (append geometry-parameters parameters))))
 
 (defun make-frame-on-monitor (monitor &optional display parameters)
   "Make a frame on monitor MONITOR.
@@ -1054,6 +1069,23 @@ that variable should be nil."
 	(setq frame (previous-frame frame)))
       (setq arg (1+ arg)))
     (select-frame-set-input-focus frame)))
+
+(defun other-frame-prefix ()
+  "Display the buffer of the next command in a new frame.
+The next buffer is the buffer displayed by the next command invoked
+immediately after this command (ignoring reading from the minibuffer).
+Creates a new frame before displaying the buffer.
+When `switch-to-buffer-obey-display-actions' is non-nil,
+`switch-to-buffer' commands are also supported."
+  (interactive)
+  (display-buffer-override-next-command
+   (lambda (buffer alist)
+     (cons (display-buffer-pop-up-frame
+            buffer (append '((inhibit-same-window . t))
+                           alist))
+           'frame))
+   nil "[other-frame]")
+  (message "Display next command buffer in a new frame..."))
 
 (defun iconify-or-deiconify-frame ()
   "Iconify the selected frame, or deiconify if it's currently an icon."
@@ -1548,7 +1580,9 @@ often have their own features for raising or lowering frames."
 When called interactively, prompt for the name of the frame.
 On text terminals, the frame name is displayed on the mode line.
 On graphical displays, it is displayed on the frame's title bar."
-  (interactive "sFrame name: ")
+  (interactive
+   (list (read-string "Frame name: " nil nil
+                      (cdr (assq 'name (frame-parameters))))))
   (modify-frame-parameters (selected-frame)
 			   (list (cons 'name name))))
 
@@ -2671,11 +2705,7 @@ See also `toggle-frame-maximized'."
 	      (set-frame-parameter frame 'fullscreen fullscreen-restore)
 	    (set-frame-parameter frame 'fullscreen nil)))
       (modify-frame-parameters
-       frame `((fullscreen . fullboth) (fullscreen-restore . ,fullscreen))))
-    ;; Manipulating a frame without waiting for the fullscreen
-    ;; animation to complete can cause a crash, or other unexpected
-    ;; behavior, on macOS (bug#28496).
-    (when (featurep 'cocoa) (sleep-for 0.5))))
+       frame `((fullscreen . fullboth) (fullscreen-restore . ,fullscreen))))))
 
 
 ;;;; Key bindings
@@ -2684,6 +2714,7 @@ See also `toggle-frame-maximized'."
 (define-key ctl-x-5-map "1" 'delete-other-frames)
 (define-key ctl-x-5-map "0" 'delete-frame)
 (define-key ctl-x-5-map "o" 'other-frame)
+(define-key ctl-x-5-map "5" 'other-frame-prefix)
 (define-key global-map [f11] 'toggle-frame-fullscreen)
 (define-key global-map [(meta f10)] 'toggle-frame-maximized)
 (define-key esc-map    [f10]        'toggle-frame-maximized)
@@ -2720,15 +2751,22 @@ See also `toggle-frame-maximized'."
         line-prefix
         wrap-prefix
         truncate-lines
+        mode-line-format
+        header-line-format
+        tab-line-format
         display-line-numbers
         display-line-numbers-width
         display-line-numbers-current-absolute
         display-line-numbers-widen
+        display-line-numbers-major-tick
+        display-line-numbers-minor-tick
+        display-line-numbers-offset
         display-fill-column-indicator
         display-fill-column-indicator-column
         display-fill-column-indicator-character
         bidi-paragraph-direction
-        bidi-display-reordering))
+        bidi-display-reordering
+        bidi-inhibit-bpa))
 
 (provide 'frame)
 

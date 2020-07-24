@@ -1,6 +1,6 @@
 ;;; gnus-score.el --- scoring code for Gnus
 
-;; Copyright (C) 1995-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1995-2020 Free Software Foundation, Inc.
 
 ;; Author: Per Abrahamsen <amanda@iesd.auc.dk>
 ;;	Lars Magne Ingebrigtsen <larsi@gnus.org>
@@ -826,7 +826,7 @@ HEADER is the header being scored.
 MATCH is the string we are looking for.
 TYPE is the match type: substring, regexp, exact, fuzzy.
 SCORE is the score to add.
-DATE is the expire date, or nil for no expire, or 'now for immediate expire.
+DATE is the expire date, or nil for no expire, or `now' for immediate expire.
 If optional argument `PROMPT' is non-nil, allow user to edit match.
 If optional argument `SILENT' is nil, show effect of score entry.
 If optional argument `EXTRA' is non-nil, it's a non-standard overview header."
@@ -2981,7 +2981,7 @@ The list is determined from the variable `gnus-score-file-alist'."
       (if (file-directory-p (car files))
 	  (setq out (nconc (directory-files
 			    (car files) t
-			    (concat (gnus-score-file-regexp) "$"))))
+			    (concat (gnus-score-file-regexp) "\\'"))))
 	(push (car files) out))
       (setq files (cdr files)))
     (setq gnus-internal-global-score-files out)))

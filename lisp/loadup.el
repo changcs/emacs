@@ -1,6 +1,6 @@
 ;;; loadup.el --- load up standardly loaded Lisp files for Emacs
 
-;; Copyright (C) 1985-1986, 1992, 1994, 2001-2019 Free Software
+;; Copyright (C) 1985-1986, 1992, 1994, 2001-2020 Free Software
 ;; Foundation, Inc.
 
 ;; Maintainer: emacs-devel@gnu.org
@@ -195,7 +195,6 @@
 
 (load "emacs-lisp/nadvice")
 (load "emacs-lisp/cl-preloaded")
-(load "minibuffer")            ;After loaddefs, for define-minor-mode.
 (load "obarray")        ;abbrev.el is implemented in terms of obarrays.
 (load "abbrev")         ;lisp-mode.el and simple.el use define-abbrev-table.
 (load "simple")
@@ -246,7 +245,10 @@
 (load "language/cham")
 
 (load "indent")
-(load "emacs-lisp/cl-generic")
+(let ((max-specpdl-size (max max-specpdl-size 1800)))
+  ;; A particularly demanding file to load; 1600 does not seem to be enough.
+  (load "emacs-lisp/cl-generic"))
+(load "minibuffer") ;Needs cl-generic (and define-minor-mode).
 (load "frame")
 (load "startup")
 (load "term/tty-colors")
@@ -390,10 +392,9 @@ lost after dumping")))
     (let* ((base (concat "emacs-" emacs-version "."))
 	   (exelen (if (eq system-type 'windows-nt) -4))
 	   (files (file-name-all-completions base default-directory))
-	   (versions (mapcar (function
-			      (lambda (name)
-				(string-to-number
-				 (substring name (length base) exelen))))
+	   (versions (mapcar (lambda (name)
+                               (string-to-number
+                                (substring name (length base) exelen)))
 			     files)))
       (setq emacs-repository-version (ignore-errors (emacs-repository-get-version))
             emacs-repository-branch (ignore-errors (emacs-repository-get-branch)))

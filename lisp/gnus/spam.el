@@ -1,6 +1,6 @@
 ;;; spam.el --- Identifying spam
 
-;; Copyright (C) 2002-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2002-2020 Free Software Foundation, Inc.
 
 ;; Author: Lars Magne Ingebrigtsen <larsi@gnus.org>
 ;; Maintainer: Ted Zlatanov <tzz@lifelogs.com>
@@ -579,7 +579,7 @@ This must be a list.  For example, `(\"-C\" \"configfile\")'."
 (defcustom spam-spamassassin-positive-spam-flag-header "YES"
   "The regex on `spam-spamassassin-spam-flag-header' for positive spam
 identification."
-  :type 'string
+  :type 'regexp
   :group 'spam-spamassassin)
 
 (defcustom spam-spamassassin-spam-status-header "X-Spam-Status"
@@ -831,8 +831,8 @@ backend is STATISTICAL."
 
 (defun spam-backend-list (&optional type)
   "Return a list of all the backend symbols, constrained by TYPE.
-When TYPE is 'non-mover, only non-mover backends are returned.
-When TYPE is 'mover, only mover backends are returned."
+When TYPE is `non-mover', only non-mover backends are returned.
+When TYPE is `mover', only mover backends are returned."
   (let (list)
     (dolist (backend spam-backends)
       (when (or
@@ -882,8 +882,8 @@ that the message is definitely a spam."
 
 (defun spam-backend-function (backend classification type)
   "Get the BACKEND function for CLASSIFICATION and TYPE.
-TYPE is 'registration or 'unregistration.
-CLASSIFICATION is 'ham or 'spam."
+TYPE is `registration' or `unregistration'.
+CLASSIFICATION is `ham' or `spam'."
   (if (and
        (spam-classification-valid-p classification)
        (spam-backend-function-type-valid-p type))
@@ -1520,7 +1520,7 @@ In the case of mover backends, checks the setting of
 (defun spam-fetch-field-fast (article field &optional prepared-data-header)
   "Fetch a FIELD for ARTICLE with the internal `gnus-data-find' function.
 When PREPARED-DATA-HEADER is given, don't look in the Gnus data.
-When FIELD is 'number, ARTICLE can be any number (since we want
+When FIELD is `number', ARTICLE can be any number (since we want
 to find it out)."
   (when (numberp article)
     (let* ((data-header (or prepared-data-header

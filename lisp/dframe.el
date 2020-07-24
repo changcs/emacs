@@ -1,12 +1,13 @@
 ;;; dframe --- dedicate frame support modes  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1996-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1996-2020 Free Software Foundation, Inc.
 
 ;; Author: Eric M. Ludlam <zappo@gnu.org>
 ;; Keywords: file, tags, tools
 
 (defvar dframe-version "1.3"
   "The current version of the dedicated frame library.")
+(make-obsolete-variable 'dframe-version nil "28.1")
 
 ;; This file is part of GNU Emacs.
 
@@ -309,8 +310,10 @@ CREATE-HOOK is a hook to run after creating a frame."
 	  (make-frame-visible (symbol-value frame-var))
 	  (select-frame (symbol-value frame-var))
 	  (set-window-dedicated-p (selected-window) nil)
-	  (if (not (eq (current-buffer) (symbol-value buffer-var)))
-	      (switch-to-buffer (symbol-value buffer-var)))
+	  (unless (eq (current-buffer) (symbol-value buffer-var))
+            ;; To avoid that 'switch-to-buffer-obey-display-actions'
+            ;; butts in, use plain 'set-window-buffer' (Bug#37840).
+            (set-window-buffer nil (symbol-value buffer-var)))
 	  (set-window-dedicated-p (selected-window) t)
 	  (raise-frame (symbol-value frame-var))
 	  )
@@ -346,7 +349,9 @@ CREATE-HOOK is a hook to run after creating a frame."
 	;; Put the buffer into the frame
 	(save-excursion
 	  (select-frame (symbol-value frame-var))
-	  (switch-to-buffer (symbol-value buffer-var))
+          ;; To avoid that 'switch-to-buffer-obey-display-actions'
+          ;; butts in, use plain 'set-window-buffer' (Bug#37840).
+	  (set-window-buffer nil (symbol-value buffer-var))
 	  (set-window-dedicated-p (selected-window) t))
 	;; Run hooks (like reposition)
 	(run-hooks create-hook)

@@ -1,6 +1,6 @@
 ;;; semantic/grammar-wy.el --- Generated parser support file
 
-;; Copyright (C) 2002-2004, 2009-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2002-2004, 2009-2020 Free Software Foundation, Inc.
 
 ;; This file is part of GNU Emacs.
 
@@ -421,14 +421,13 @@
 (defun semantic-grammar-wy--install-parser ()
   "Setup the Semantic Parser."
   (semantic-install-function-overrides
-   '((parse-stream . wisent-parse-stream)))
+   '((semantic-parse-stream . wisent-parse-stream)))
   (setq semantic-parser-name "LALR"
 	semantic--parse-table semantic-grammar-wy--parse-table
 	semantic-debug-parser-source "grammar.wy"
 	semantic-flex-keywords-obarray semantic-grammar-wy--keyword-table
 	semantic-lex-types-obarray semantic-grammar-wy--token-table)
   ;; Collect unmatched syntax lexical tokens
-  (semantic-make-local-hook 'wisent-discarding-token-functions)
   (add-hook 'wisent-discarding-token-functions
 	    'wisent-collect-unmatched-syntax nil t))
 

@@ -1,6 +1,6 @@
 ;;; vc-hooks.el --- resident support for version-control  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1992-1996, 1998-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1992-1996, 1998-2020 Free Software Foundation, Inc.
 
 ;; Author: FSF (see vc.el for full credits)
 ;; Maintainer: emacs-devel@gnu.org
@@ -498,7 +498,7 @@ status of this file.  Otherwise, the value returned is one of:
   "Return the repository version from which FILE was checked out.
 If FILE is not registered, this function always returns nil."
   (or (vc-file-getprop file 'vc-working-revision)
-      (progn
+      (let ((default-directory (file-name-directory file)))
         (setq backend (or backend (vc-backend file)))
         (when backend
           (vc-file-setprop file 'vc-working-revision
@@ -972,9 +972,9 @@ In the latter case, VC mode is deactivated for this buffer."
     (bindings--define-key map [vc-ignore]
       '(menu-item "Ignore File..." vc-ignore
 		  :help "Ignore a file under current version control system"))
-    (bindings--define-key map [vc-dir]
-      '(menu-item "VC Dir"  vc-dir
-		  :help "Show the VC status of files in a directory"))
+    (bindings--define-key map [vc-dir-root]
+      '(menu-item "VC Dir"  vc-dir-root
+                  :help "Show the VC status of the repository"))
     map))
 
 (defalias 'vc-menu-map vc-menu-map)

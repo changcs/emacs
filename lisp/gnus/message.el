@@ -1,6 +1,6 @@
 ;;; message.el --- composing mail and news messages -*- lexical-binding: t -*-
 
-;; Copyright (C) 1996-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1996-2020 Free Software Foundation, Inc.
 
 ;; Author: Lars Magne Ingebrigtsen <larsi@gnus.org>
 ;; Keywords: mail, news
@@ -42,13 +42,12 @@
 (require 'mail-parse)
 (require 'mml)
 (require 'rfc822)
-(require 'format-spec)
 (require 'dired)
 (require 'mm-util)
 (require 'rfc2047)
 (require 'puny)
-(require 'rmc)			; read-multiple-choice
-(eval-when-compile (require 'subr-x))	; when-let*
+(require 'rmc)                          ; read-multiple-choice
+(eval-when-compile (require 'subr-x))
 
 (autoload 'mailclient-send-it "mailclient")
 
@@ -215,9 +214,9 @@ Also see `message-required-news-headers' and
   :link '(custom-manual "(message)Message Headers")
   :type '(repeat sexp))
 
-(defcustom message-draft-headers '(References From Date)
+(defcustom message-draft-headers '(References From)
   "Headers to be generated when saving a draft message."
-  :version "22.1"
+  :version "28.1"
   :group 'message-news
   :group 'message-headers
   :link '(custom-manual "(message)Message Headers")
@@ -322,7 +321,7 @@ used."
   :group 'message-various)
 
 (defcustom message-subject-trailing-was-ask-regexp
-  "[ \t]*\\([[(]+[Ww][Aa][Ss]:?[ \t]*.*[])]+\\)"
+  "[ \t]*\\([[(]+[Ww][Aa][Ss].*[])]+\\)"
   "Regexp matching \"(was: <old subject>)\" in the subject line.
 
 The function `message-strip-subject-trailing-was' uses this regexp if
@@ -337,7 +336,7 @@ It is okay to create some false positives here, as the user is asked."
   :type 'regexp)
 
 (defcustom message-subject-trailing-was-regexp
-  "[ \t]*\\((*[Ww][Aa][Ss]:[ \t]*.*)\\)"
+  "[ \t]*\\((*[Ww][Aa][Ss]:.*)\\)"
   "Regexp matching \"(was: <old subject>)\" in the subject line.
 
 If `message-subject-trailing-was-query' is set to t, the subject is
@@ -440,8 +439,8 @@ whitespace)."
 
 (defcustom message-elide-ellipsis "\n[...]\n\n"
   "The string which is inserted for elided text.
-This is a format-spec string, and you can use %l to say how many
-lines were removed, and %c to say how many characters were
+This is a `format-spec' string, and you can use %l to say how
+many lines were removed, and %c to say how many characters were
 removed."
   :type 'string
   :link '(custom-manual "(message)Various Commands")
@@ -854,21 +853,27 @@ Doing so would be even more evil than leaving it out."
   :type 'boolean)
 
 (defcustom message-sendmail-envelope-from
-  ;; `mail-envelope-from' is unavailable unless sendmail.el is loaded.
-  (if (boundp 'mail-envelope-from) mail-envelope-from)
+  'obey-mail-envelope-from
   "Envelope-from when sending mail with sendmail.
 If this is nil, use `user-mail-address'.  If it is the symbol
 `header', use the From: header of the message."
-  :version "23.2"
+  :version "27.1"
   :type '(choice (string :tag "From name")
 		 (const :tag "Use From: header from message" header)
+		 (const :tag "Obey `mail-envelope-from'"
+		        obey-mail-envelope-from)
 		 (const :tag "Use `user-mail-address'" nil))
   :link '(custom-manual "(message)Mail Variables")
   :group 'message-sending)
 
+(defun message--sendmail-envelope-from ()
+  (if (eq message-sendmail-envelope-from 'obey-mail-envelope-from)
+      (if (boundp 'mail-envelope-from) mail-envelope-from)
+    message-sendmail-envelope-from))
+
 (defcustom message-sendmail-extra-arguments nil
-  "Additional arguments to `sendmail-program'."
-  ;; E.g. '("-a" "account") for msmtp
+  "Additional arguments to `sendmail-program'.
+A list of strings, e.g. (\"-a\" \"account\") for msmtp."
   :version "23.1" ;; No Gnus
   :type '(repeat string)
   ;; :link '(custom-manual "(message)Mail Variables")
@@ -1980,6 +1985,7 @@ You must have the \"hashcash\" binary installed, see `hashcash-path'."
 (autoload 'gnus-delay-article "gnus-delay")
 (autoload 'gnus-extract-address-components "gnus-util")
 (autoload 'gnus-find-method-for-group "gnus")
+(autoload 'gnus-get-buffer-create "gnus")
 (autoload 'gnus-group-name-charset "gnus-group")
 (autoload 'gnus-group-name-decode "gnus-group")
 (autoload 'gnus-groups-from-server "gnus")
@@ -3538,50 +3544,61 @@ Message buffers and is not meant to be called directly."
 (defun message-insert-signature (&optional force)
   "Insert a signature.  See documentation for variable `message-signature'."
   (interactive (list 0))
-  (let* ((signature
-	  (cond
-	   ((and (null message-signature)
-		 (eq force 0))
-	    (save-excursion
-	      (goto-char (point-max))
-	      (not (re-search-backward message-signature-separator nil t))))
-	   ((and (null message-signature)
-		 force)
-	    t)
-	   ((functionp message-signature)
-	    (funcall message-signature))
-	   ((listp message-signature)
-	    (eval message-signature))
-	   (t message-signature)))
-	 signature-file)
-    (setq signature
-	  (cond ((stringp signature)
-		 signature)
-		((and (eq t signature) message-signature-file)
-		 (setq signature-file
-		       (if (and message-signature-directory
-				;; don't actually use the signature directory
-				;; if message-signature-file contains a path.
-				(not (file-name-directory
-				      message-signature-file)))
-			   (expand-file-name message-signature-file
-					     message-signature-directory)
-			 message-signature-file))
-		 (file-exists-p signature-file))))
-    (when signature
-      (goto-char (point-max))
-      ;; Insert the signature.
-      (unless (bolp)
-	(newline))
-      (when message-signature-insert-empty-line
-	(newline))
-      (insert "-- ")
-      (newline)
-      (if (eq signature t)
-	  (insert-file-contents signature-file)
-	(insert signature))
-      (goto-char (point-max))
-      (or (bolp) (newline)))))
+  (let ((message-signature message-signature)
+	(message-signature-file message-signature-file))
+    ;; If called interactively and there's no signature to insert,
+    ;; consult the global values to see whether there's anything they
+    ;; have to say for themselves.  This can happen when using
+    ;; `gnus-posting-styles', for instance.
+    (when (and (null message-signature)
+	       (null message-signature-file)
+	       (eq force 0))
+      (setq message-signature (default-value 'message-signature)
+	    message-signature-file (default-value 'message-signature-file)))
+    (let* ((signature
+	    (cond
+	     ((and (null message-signature)
+		   (eq force 0))
+	      (save-excursion
+		(goto-char (point-max))
+		(not (re-search-backward message-signature-separator nil t))))
+	     ((and (null message-signature)
+		   force)
+	      t)
+	     ((functionp message-signature)
+	      (funcall message-signature))
+	     ((listp message-signature)
+	      (eval message-signature))
+	     (t message-signature)))
+	   signature-file)
+      (setq signature
+	    (cond ((stringp signature)
+		   signature)
+		  ((and (eq t signature) message-signature-file)
+		   (setq signature-file
+			 (if (and message-signature-directory
+				  ;; don't actually use the signature directory
+				  ;; if message-signature-file contains a path.
+				  (not (file-name-directory
+					message-signature-file)))
+			     (expand-file-name message-signature-file
+					       message-signature-directory)
+			   message-signature-file))
+		   (file-exists-p signature-file))))
+      (when signature
+	(goto-char (point-max))
+	;; Insert the signature.
+	(unless (bolp)
+	  (newline))
+	(when message-signature-insert-empty-line
+	  (newline))
+	(insert "-- ")
+	(newline)
+	(if (eq signature t)
+	    (insert-file-contents signature-file)
+	  (insert signature))
+	(goto-char (point-max))
+	(or (bolp) (newline))))))
 
 (defun message-insert-importance-high ()
   "Insert header to mark message as important."
@@ -3959,7 +3976,6 @@ This function uses `mail-citation-hook' if that is non-nil."
   "Cite function in the standard Message manner."
   (message-cite-original-1 nil))
 
-(autoload 'format-spec "format-spec")
 (autoload 'gnus-date-get-time "gnus-util")
 
 (defun message-insert-formatted-citation-line (&optional from date tz)
@@ -3984,20 +4000,18 @@ See `message-citation-line-format'."
   (when (or message-reply-headers (and from date))
     (unless from
       (setq from (mail-header-from message-reply-headers)))
-    (let* ((data (condition-case ()
-		     (funcall (if (boundp 'gnus-extract-address-components)
-				  gnus-extract-address-components
-				'mail-extract-address-components)
-			      from)
-		   (error nil)))
+    (let* ((data (ignore-errors
+                   (funcall (or (bound-and-true-p
+                                 gnus-extract-address-components)
+                                #'mail-extract-address-components)
+                            from)))
 	   (name (car data))
 	   (fname name)
 	   (lname name)
-	   (net (car (cdr data)))
-	   (name-or-net (or (car data)
-			    (car (cdr data)) from))
+           (net (cadr data))
+           (name-or-net (or name net from))
 	   (time
-	    (when (string-match "%[^fnNFL]" message-citation-line-format)
+            (when (string-match-p "%[^FLNfn]" message-citation-line-format)
 	      (cond ((numberp (car-safe date)) date) ;; backward compatibility
 		    (date (gnus-date-get-time date))
 		    (t
@@ -4006,68 +4020,53 @@ See `message-citation-line-format'."
 	   (tz (or tz
 		   (when (stringp date)
 		     (nth 8 (parse-time-string date)))))
-	   (flist
-	    (let ((i ?A) lst)
-	      (when (stringp name)
-		;; Guess first name and last name:
-		(let* ((names (delq
-			       nil
-			       (mapcar
-				(lambda (x)
-				  (if (string-match "\\`\\(\\w\\|[-.]\\)+\\'"
-						    x)
-				      x
-				    nil))
-				(split-string name "[ \t]+"))))
-		       (count (length names)))
-		  (cond ((= count 1)
-			 (setq fname (car names)
-			       lname ""))
-			((or (= count 2) (= count 3))
-			 (setq fname (car names)
-			       lname (mapconcat 'identity (cdr names) " ")))
-			((> count 3)
-			 (setq fname (mapconcat 'identity
-						(butlast names (- count 2))
-						" ")
-			       lname (mapconcat 'identity
-						(nthcdr 2 names)
-						" "))))
-                  (when (string-match "\\(.*\\),\\'" fname)
-                    (let ((newlname (match-string 1 fname)))
-                      (setq fname lname lname newlname)))))
-	      ;; The following letters are not used in `format-time-string':
-	      (push ?E lst) (push "<E>" lst)
-	      (push ?F lst) (push (or fname name-or-net) lst)
-	      ;; We might want to use "" instead of "<X>" later.
-	      (push ?J lst) (push "<J>" lst)
-	      (push ?K lst) (push "<K>" lst)
-	      (push ?L lst) (push lname lst)
-	      (push ?N lst) (push name-or-net lst)
-	      (push ?O lst) (push "<O>" lst)
-	      (push ?P lst) (push "<P>" lst)
-	      (push ?Q lst) (push "<Q>" lst)
-	      (push ?f lst) (push from lst)
-	      (push ?i lst) (push "<i>" lst)
-	      (push ?n lst) (push net lst)
-	      (push ?o lst) (push "<o>" lst)
-	      (push ?q lst) (push "<q>" lst)
-	      (push ?t lst) (push "<t>" lst)
-	      (push ?v lst) (push "<v>" lst)
-	      ;; Delegate the rest to `format-time-string':
-	      (while (<= i ?z)
-		(when (and (not (memq i lst))
-			   ;; Skip (Z,a)
-			   (or (<= i ?Z)
-			       (>= i ?a)))
-		  (push i lst)
-		  (push (condition-case nil
-			    (format-time-string (format "%%%c" i) time tz)
-			  (error (format ">%c<" i)))
-			lst))
-		(setq i (1+ i)))
-	      (reverse lst)))
-	   (spec (apply 'format-spec-make flist)))
+           spec)
+      (when (stringp name)
+        ;; Guess first name and last name:
+        (let* ((names (seq-filter
+                       (lambda (s)
+                         (string-match-p (rx bos (+ (in word ?. ?-)) eos) s))
+                       (split-string name "[ \t]+")))
+               (count (length names)))
+          (cond ((= count 1)
+                 (setq fname (car names)
+                       lname ""))
+                ((or (= count 2) (= count 3))
+                 (setq fname (car names)
+                       lname (string-join (cdr names) " ")))
+                ((> count 3)
+                 (setq fname (string-join (butlast names (- count 2))
+                                          " ")
+                       lname (string-join (nthcdr 2 names) " "))))
+          (when (string-match "\\(.*\\),\\'" fname)
+            (let ((newlname (match-string 1 fname)))
+              (setq fname lname lname newlname)))))
+      ;; The following letters are not used in `format-time-string':
+      (push (cons ?E "<E>") spec)
+      (push (cons ?F (or fname name-or-net)) spec)
+      ;; We might want to use "" instead of "<X>" later.
+      (push (cons ?J "<J>") spec)
+      (push (cons ?K "<K>") spec)
+      (push (cons ?L lname) spec)
+      (push (cons ?N name-or-net) spec)
+      (push (cons ?O "<O>") spec)
+      (push (cons ?P "<P>") spec)
+      (push (cons ?Q "<Q>") spec)
+      (push (cons ?f from) spec)
+      (push (cons ?i "<i>") spec)
+      (push (cons ?n net) spec)
+      (push (cons ?o "<o>") spec)
+      (push (cons ?q "<q>") spec)
+      (push (cons ?t "<t>") spec)
+      (push (cons ?v "<v>") spec)
+      ;; Delegate the rest to `format-time-string':
+      (dolist (c (nconc (number-sequence ?A ?Z)
+                        (number-sequence ?a ?z)))
+        (unless (assq c spec)
+          (push (cons c (condition-case nil
+                            (format-time-string (format "%%%c" c) time tz)
+                          (error (format ">%c<" c))))
+                spec)))
       (insert (format-spec message-citation-line-format spec)))
     (newline)))
 
@@ -4123,12 +4122,18 @@ The usage of ARG is defined by the instance that called Message.
 It should typically alter the sending method in some way or other."
   (interactive "P")
   (let ((buf (current-buffer))
+	(position (point-marker))
 	(actions message-exit-actions))
     (when (and (message-send arg)
                (buffer-live-p buf))
-      (message-bury buf)
       (if message-kill-buffer-on-exit
-	  (kill-buffer buf))
+	  (kill-buffer buf)
+	;; Restore the point in the message buffer.
+	(save-window-excursion
+	  (switch-to-buffer buf)
+	  (set-window-point nil position)
+	  (set-marker position nil))
+	(message-bury buf))
       (message-do-actions actions)
       t)))
 
@@ -4230,9 +4235,9 @@ It should typically alter the sending method in some way or other."
 		(let ((fcc (message-fetch-field "Fcc"))
 		      (gcc (message-fetch-field "Gcc")))
 		  (when (or fcc gcc)
-		    (or (eq message-allow-no-recipients 'always)
-			(and (not (eq message-allow-no-recipients 'never))
-			     (setq dont-barf-on-no-method
+		    (setq dont-barf-on-no-method
+			  (or (eq message-allow-no-recipients 'always)
+			      (and (not (eq message-allow-no-recipients 'never))
 				   (y-or-n-p
 				    (format "No receiver, perform %s anyway? "
 					    (cond ((and fcc gcc) "Fcc and Gcc")
@@ -5867,11 +5872,11 @@ give as trustworthy answer as possible."
 
 (defun message-sendmail-envelope-from ()
   "Return the envelope from."
-  (cond ((eq message-sendmail-envelope-from 'header)
+  (cond ((eq (message--sendmail-envelope-from) 'header)
 	 (nth 1 (mail-extract-address-components
 		 (message-fetch-field "from"))))
-	((stringp message-sendmail-envelope-from)
-	 message-sendmail-envelope-from)
+	((stringp (message--sendmail-envelope-from))
+	 (message--sendmail-envelope-from))
 	(t
 	 (message-make-address))))
 
@@ -7287,7 +7292,7 @@ If ARG, allow editing of the cancellation message."
 	;; Make control message.
 	(if arg
 	    (message-news)
-	  (setq buf (set-buffer (get-buffer-create " *message cancel*"))))
+	  (setq buf (set-buffer (gnus-get-buffer-create " *message cancel*"))))
 	(erase-buffer)
 	(insert "Newsgroups: " newsgroups "\n"
 		"From: " from "\n"
@@ -7708,7 +7713,7 @@ is for the internal use."
 	  gcc beg)
       ;; We first set up a normal mail buffer.
       (unless (message-mail-user-agent)
-	(set-buffer (get-buffer-create " *message resend*"))
+	(set-buffer (gnus-get-buffer-create " *message resend*"))
 	(let ((inhibit-read-only t))
 	  (erase-buffer)))
       (let ((message-this-is-mail t)
@@ -7960,7 +7965,7 @@ See `gmm-tool-bar-from-list' for details on the format of the list."
 
 (defcustom message-tool-bar-retro
   '(;; Old Emacs 21 icon for consistency.
-    (message-send-and-exit "gnus/mail-send")
+    (message-send-and-exit "mail/send")
     (message-kill-buffer "close")
     (message-dont-send "cancel")
     (mml-attach-file "attach" mml-mode-map)
@@ -8020,15 +8025,12 @@ When FORCE, rebuild the tool bar."
   :type 'regexp)
 
 (defcustom message-completion-alist
-  ;; FIXME: Make it possible to use the standard completion UI.
-  (list (cons message-newgroups-header-regexp 'message-expand-group)
-	'("^\\(Resent-\\)?\\(To\\|B?Cc\\):" . message-expand-name)
-	'("^\\(Reply-To\\|From\\|Mail-Followup-To\\|Mail-Copies-To\\):"
-	  . message-expand-name)
-	'("^\\(Disposition-Notification-To\\|Return-Receipt-To\\):"
-	  . message-expand-name))
-  "Alist of (RE . FUN).  Use FUN for completion on header lines matching RE."
-  :version "22.1"
+  `((,message-newgroups-header-regexp . ,#'message-expand-group)
+    ("^\\([^ :]*-\\)?\\(To\\|B?Cc\\|From\\):" . ,#'message-expand-name))
+  "Alist of (RE . FUN).  Use FUN for completion on header lines matching RE.
+FUN should be a function that obeys the same rules as those
+of `completion-at-point-functions'."
+  :version "27.1"
   :group 'message
   :type '(alist :key-type regexp :value-type function))
 
@@ -8068,6 +8070,8 @@ regular text mode tabbing command."
 
 (defvar mail-abbrev-mode-regexp)
 
+(defvar message--old-style-completion-functions nil)
+
 (defun message-completion-function ()
   (let ((alist message-completion-alist))
     (while (and alist
@@ -8076,9 +8080,22 @@ regular text mode tabbing command."
       (setq alist (cdr alist)))
     (when (cdar alist)
       (let ((fun (cdar alist)))
-        ;; Even if completion fails, return a non-nil value, so as to avoid
-        ;; falling back to message-tab-body-function.
-        (lambda () (funcall fun) 'completion-attempted)))))
+        (if (member fun message--old-style-completion-functions)
+            (lambda ()
+              (funcall fun)
+              ;; Even if completion fails, return a non-nil value, so as to
+              ;; avoid falling back to message-tab-body-function.
+              'completion-attempted)
+          (let ((ticks-before (buffer-chars-modified-tick))
+                (data (funcall fun)))
+            (if (and (eq ticks-before (buffer-chars-modified-tick))
+                     (or (null data)
+                         (integerp (car-safe data))))
+                data
+              (push fun message--old-style-completion-functions)
+              ;; Completion was already performed, so just return a dummy
+              ;; function that prevents trying any further.
+              (lambda () 'completion-attempted))))))))
 
 (defun message-expand-group ()
   "Expand the group name under point."
@@ -8097,10 +8114,27 @@ regular text mode tabbing command."
 			       gnus-active-hashtb)
 		      (hash-table-keys gnus-active-hashtb))))
     (when collection
-      (completion-in-region b e collection))))
+      ;; FIXME: Add `category' metadata to the collection, so we can use
+      ;; substring matching on it.
+      (list b e collection))))
+
+(defcustom message-expand-name-standard-ui nil
+  "If non-nil, use the standard completion UI in `message-expand-name'.
+E.g. this means it will obey `completion-styles' and other such settings."
+  :version "27.1"
+  :type 'boolean)
 
 (defun message-expand-name ()
-  (cond ((and (memq 'eudc message-expand-name-databases)
+  (cond (message-expand-name-standard-ui
+	 (let ((beg (save-excursion
+                      (skip-chars-backward "^\n:,") (skip-chars-forward " \t")
+                      (point)))
+               (end (save-excursion
+                      (skip-chars-forward "^\n,") (skip-chars-backward " \t")
+                      (point))))
+           (when (< beg end)
+             (list beg end (message--name-table (buffer-substring beg end))))))
+	((and (memq 'eudc message-expand-name-databases)
 		    (boundp 'eudc-protocol)
 		    eudc-protocol)
 	 (eudc-expand-inline))
@@ -8114,6 +8148,58 @@ regular text mode tabbing command."
                (/= starttick (buffer-modified-tick)))))
 	(t
 	 (expand-abbrev))))
+
+(add-to-list 'completion-category-defaults '(email (styles substring)))
+
+(defun message--bbdb-query-with-words (words)
+  ;; FIXME: This (or something like this) should live on the BBDB side.
+  (when (fboundp 'bbdb-records)
+    (require 'bbdb)           ;FIXME: `bbdb-records' is incorrectly autoloaded!
+    (bbdb-records)            ;Make sure BBDB and its database is initialized.
+    (defvar bbdb-hashtable)
+    (declare-function bbdb-record-mail "bbdb" (record))
+    (declare-function bbdb-dwim-mail "bbdb-com" (record &optional mail))
+    (declare-function bbdb-completion-predicate "bbdb-com" (key records))
+    (let ((records '())
+          (responses '()))
+      (dolist (word words)
+	(dolist (c (all-completions word bbdb-hashtable
+	                            #'bbdb-completion-predicate))
+	  (dolist (record (gethash c bbdb-hashtable))
+	    (cl-pushnew record records))))
+      (dolist (record records)
+	(dolist (mail (bbdb-record-mail record))
+	  (push (bbdb-dwim-mail record mail) responses)))
+      responses)))
+
+(defun message--name-table (orig-string)
+  (let ((orig-words (split-string orig-string "[ \t]+"))
+        eudc-responses
+        bbdb-responses)
+    (lambda (string pred action)
+      (pcase action
+        ('metadata '(metadata (category . email)))
+        ('lambda t)
+        ((or 'nil 't)
+         (when orig-words
+           (when (and (memq 'eudc message-expand-name-databases)
+		      (boundp 'eudc-protocol)
+		      eudc-protocol)
+	     (setq eudc-responses (eudc-query-with-words orig-words)))
+	   (when (memq 'bbdb message-expand-name-databases)
+	     (setq bbdb-responses (message--bbdb-query-with-words orig-words)))
+	   (ecomplete-setup)
+	   (setq orig-words nil))
+         (let ((candidates
+	        ;; FIXME: Add `expand-abbrev'!
+	        (append (all-completions string eudc-responses pred)
+	                (all-completions string bbdb-responses pred)
+	                (when (and (bound-and-true-p ecomplete-database)
+	                           (fboundp 'ecomplete-completion-table))
+                          (all-completions string
+                                           (ecomplete-completion-table 'mail)
+                                           pred)))))
+	   (if action candidates (try-completion string candidates))))))))
 
 ;;; Help stuff.
 

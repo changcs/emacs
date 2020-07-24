@@ -1,6 +1,6 @@
 ;; autoload.el --- maintain autoloads in loaddefs.el  -*- lexical-binding: t -*-
 
-;; Copyright (C) 1991-1997, 2001-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1991-1997, 2001-2020 Free Software Foundation, Inc.
 
 ;; Author: Roland McGrath <roland@gnu.org>
 ;; Keywords: maint
@@ -895,7 +895,7 @@ FILE's modification time."
           (cons (lambda () (ignore-errors (delete-file tempfile)))
                 kill-emacs-hook)))
     (unless (= temp-modes desired-modes)
-      (set-file-modes tempfile desired-modes))
+      (set-file-modes tempfile desired-modes 'nofollow))
     (write-region (point-min) (point-max) tempfile nil 1)
     (backup-buffer)
     (rename-file tempfile buffer-file-name t))
@@ -1047,7 +1047,7 @@ write its autoloads into the specified file instead."
                        ;; what is the suffix for the underlying OS.
 		       (unless (string-match "\\.\\(elc\\|so\\|dll\\)" suf)
                          (push suf tmp)))
-                     (concat "^[^=.].*" (regexp-opt tmp t) "\\'")))
+                     (concat "\\`[^=.].*" (regexp-opt tmp t) "\\'")))
 	 (files (apply #'nconc
 		       (mapcar (lambda (dir)
 				 (directory-files (expand-file-name dir)

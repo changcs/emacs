@@ -1,6 +1,6 @@
 ;;; password-cache.el --- Read passwords, possibly using a password cache.  -*- lexical-binding: t -*-
 
-;; Copyright (C) 1999-2000, 2003-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1999-2000, 2003-2020 Free Software Foundation, Inc.
 
 ;; Author: Simon Josefsson <simon@josefsson.org>
 ;; Created: 2003-12-21
@@ -31,7 +31,8 @@
 ;; ;; Minibuffer prompt for password.
 ;;  => "foo"
 ;;
-;; (password-cache-add "test" "foo")
+;; (password-cache-add "test" (read-passwd "Password? "))
+;; ;; Minibuffer prompt from read-passwd, which returns "foo".
 ;;  => nil
 
 ;; (password-read "Password? " "test")

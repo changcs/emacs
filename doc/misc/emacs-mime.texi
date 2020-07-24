@@ -10,7 +10,7 @@
 @copying
 This file documents the Emacs MIME interface functionality.
 
-Copyright @copyright{} 1998--2019 Free Software Foundation, Inc.
+Copyright @copyright{} 1998--2020 Free Software Foundation, Inc.
 
 @quotation
 Permission is granted to copy, distribute and/or modify this document
@@ -917,7 +917,7 @@ Here's an example:
 @lisp
 (add-to-list 'gnus-newsgroup-variables 'mm-coding-system-priorities)
 (setq gnus-parameters
-      (nconc
+      (append
        ;; Some charsets are just examples!
        '(("^cn\\." ;; Chinese
           (mm-coding-system-priorities
@@ -996,8 +996,7 @@ used, of course.
 Things are slightly more complicated when running Emacs with @sc{mule}
 support.  In this case, a list of the @sc{mule} charsets used in the
 part is obtained, and the @sc{mule} charsets are translated to
-@acronym{MIME} charsets by consulting the table provided by Emacs itself
-or the variable @code{mm-mime-mule-charset-alist} for XEmacs.
+@acronym{MIME} charsets by consulting the table provided by Emacs itself.
 If this results in a single @acronym{MIME} charset, this is used to encode
 the part.  But if the resulting list of @acronym{MIME} charsets contains more
 than one element, two things can happen: If it is possible to encode the
@@ -1603,8 +1602,8 @@ An integer or floating point count of seconds.  For instance:
 @code{905595714.0}, @code{905595714}.
 
 @item days
-An integer number representing the number of days since 00000101.  For
-instance: @code{729644}.
+An integer number representing the number of days since Sunday,
+December 31, 1 BC (Gregorian).  For instance: @code{729644}.
 
 @item decoded time
 A list of decoded time.  For instance: @code{(54 21 12 12 9 1998 6 nil

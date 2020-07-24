@@ -1,6 +1,6 @@
 ;;; electric-tests.el --- tests for electric.el
 
-;; Copyright (C) 2013-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2013-2020 Free Software Foundation, Inc.
 
 ;; Author: João Távora <joaotavora@gmail.com>
 ;; Keywords:
@@ -547,6 +547,24 @@ baz\"\""
       (should (equal "" (buffer-string))))))
 
 
+;;; Undoing
+(ert-deftest electric-pair-undo-unrelated-state ()
+  "Make sure `electric-pair-mode' does not confuse `undo' (bug#39680)."
+  (with-temp-buffer
+    (buffer-enable-undo)
+    (electric-pair-local-mode)
+    (let ((last-command-event ?\())
+      (ert-simulate-command '(self-insert-command 1)))
+    (undo-boundary)
+    (let ((last-command-event ?a))
+      (ert-simulate-command '(self-insert-command 1)))
+    (undo-boundary)
+    (ert-simulate-command '(undo))
+    (let ((last-command-event ?\())
+      (ert-simulate-command '(self-insert-command 1)))
+    (should (string= (buffer-string) "(())"))))
+
+
 ;;; Electric newlines between pairs
 ;;; TODO: better tests
 (ert-deftest electric-pair-open-extra-newline ()
@@ -906,7 +924,7 @@ baz\"\""
     (electric-pair-local-mode 1)
     (insert-before-markers "int main () {}")
     (backward-char 1)
-    (let ((last-command-event ?))
+    (let ((last-command-event ?\r))
       (call-interactively (key-binding `[,last-command-event])))
     (should (equal (buffer-string) "int main () {\n  \n}"))))
 
@@ -927,7 +945,7 @@ baz\"\""
                        '(after-stay))))))
     (insert "int main () {}")
     (backward-char 1)
-    (let ((last-command-event ?))
+    (let ((last-command-event ?\r))
       (call-interactively (key-binding `[,last-command-event])))
     (should (equal (buffer-string) "int main () {\n  \n}"))))
 
@@ -948,7 +966,7 @@ baz\"\""
                        '(after-stay)))))
     (insert "int main () {}")
     (backward-char 1)
-    (let ((last-command-event ?))
+    (let ((last-command-event ?\r))
       (call-interactively (key-binding `[,last-command-event])))
     (should (equal (buffer-string) "int main () {\n  \n}"))))
 

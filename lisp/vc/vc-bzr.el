@@ -1,6 +1,6 @@
 ;;; vc-bzr.el --- VC backend for the bzr revision control system  -*- lexical-binding: t -*-
 
-;; Copyright (C) 2006-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2006-2020 Free Software Foundation, Inc.
 
 ;; Author: Dave Love <fx@gnu.org>
 ;; 	   Riccardo Murri <riccardo.murri@gmail.com>
@@ -433,7 +433,7 @@ default if it is available."
 Return value is a cons (STATUS . WARNING), where WARNING is a
 string or nil, and STATUS is one of the symbols: `added',
 `ignored', `kindchanged', `modified', `removed', `renamed', `unknown',
-which directly correspond to `bzr status' output, or 'unchanged
+which directly correspond to `bzr status' output, or `unchanged'
 for files whose copy in the working tree is identical to the one
 in the branch repository (or whose status not be determined)."
 ;; Doc used to also say the following, but AFAICS, it has never been true.
@@ -762,6 +762,7 @@ If LIMIT is non-nil, show no more than this many entries."
 			   ;; Is -c any different to -r in this case?
 			   "-r%s"
 			 "-r..%s") start-revision)))
+            (if (eq vc-log-view-type 'with-diff) (list "-p"))
 	    (when limit (list "-l" (format "%s" limit)))
 	    ;; There is no sensible way to combine --limit and --forward,
 	    ;; and it breaks the meaning of START-REVISION as the
@@ -1314,6 +1315,15 @@ stream.  Standard error output is discarded."
                                      (mapcar (lambda (s) (concat s ":"))
                                              vc-bzr-revision-keywords))
                             string pred)))))
+
+(defun vc-bzr-repository-url (file-or-dir &optional _remote-name)
+  (let ((default-directory (vc-bzr-root file-or-dir)))
+    (with-temp-buffer
+      (vc-bzr-command "info" (current-buffer) 0 nil)
+      (goto-char (point-min))
+      (if (re-search-forward "parent branch: \\(.*\\)$" nil t)
+          (match-string 1)
+        (error "Cannot determine Bzr repository URL")))))
 
 (provide 'vc-bzr)
 

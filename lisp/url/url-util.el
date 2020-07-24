@@ -1,6 +1,6 @@
 ;;; url-util.el --- Miscellaneous helper routines for URL library -*- lexical-binding: t -*-
 
-;; Copyright (C) 1996-1999, 2001, 2004-2019 Free Software Foundation,
+;; Copyright (C) 1996-1999, 2001, 2004-2020 Free Software Foundation,
 ;; Inc.
 
 ;; Author: Bill Perry <wmperry@gnu.org>
@@ -395,9 +395,12 @@ string: \"%\" followed by two upper-case hex digits.
 
 The allowed characters are specified by ALLOWED-CHARS.  If this
 argument is nil, the list `url-unreserved-chars' determines the
-allowed characters.  Otherwise, ALLOWED-CHARS should be a vector
-whose Nth element is non-nil if character N is allowed."
-  (unless allowed-chars
+allowed characters.  Otherwise, ALLOWED-CHARS should be either a
+list of allowed chars, or a vector whose Nth element is non-nil
+if character N is allowed."
+  (if allowed-chars
+      (unless (vectorp allowed-chars)
+        (setq allowed-chars (url--allowed-chars allowed-chars)))
     (setq allowed-chars (url--allowed-chars url-unreserved-chars)))
   (mapconcat (lambda (byte)
 	       (if (aref allowed-chars byte)
@@ -612,9 +615,7 @@ Creates FILE and its parent directories if they do not exist."
         (with-temp-buffer
           (write-region (point-min) (point-max) file nil 'silent nil 'excl)))
     (file-already-exists
-     (if (file-symlink-p file)
-         (error "Danger: `%s' is a symbolic link" file))
-     (set-file-modes file #o0600))))
+     (set-file-modes file #o0600 'nofollow))))
 
 (autoload 'puny-encode-domain "puny")
 (autoload 'url-domsuf-cookie-allowed-p "url-domsuf")

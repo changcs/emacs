@@ -1,6 +1,6 @@
 ;;; reftex-vars.el --- configuration variables for RefTeX
 
-;; Copyright (C) 1997-1999, 2001-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1997-1999, 2001-2020 Free Software Foundation, Inc.
 
 ;; Author: Carsten Dominik <dominik@science.uva.nl>
 ;; Maintainer: auctex-devel@gnu.org
@@ -925,7 +925,7 @@ DOWNCASE    t:   Downcase words before using them."
         "\\<label[[:space:]]*=[[:space:]]*"
         ;; Match the label value; braces around the value are
         ;; optional.
-        "{?\\(?1:[^] ,}\r\n\t%]+\\)}?"
+        "{?\\(?1:[^] ,}\r\n\t%]+\\)"
         ;; We are done.  Just search until the next closing bracket
         "[^]]*\\]"))
     "List of regexps matching \\label definitions.
@@ -1059,9 +1059,9 @@ This is used to string together whole reference sets, like
 
 (defcustom reftex-ref-style-alist
   '(("Default" t
-     (("\\ref" ?\C-m) ("\\pageref" ?p)))
+     (("\\ref" ?\C-m) ("\\Ref" ?R) ("\\pageref" ?p)))
     ("Varioref" "varioref"
-     (("\\vref" ?v) ("\\vpageref" ?g) ("\\Vref" ?V) ("\\Ref" ?R)))
+     (("\\vref" ?v) ("\\Vref" ?V) ("\\vpageref" ?g)))
     ("Fancyref" "fancyref"
      (("\\fref" ?f) ("\\Fref" ?F)))
     ("Hyperref" "hyperref"
@@ -2100,6 +2100,8 @@ construct:  \\bbb [xxx] {aaa}."
   "Hook which is being run when loading reftex.el."
   :group 'reftex-miscellaneous-configurations
   :type 'hook)
+(make-obsolete-variable 'reftex-load-hook
+                        "use `with-eval-after-load' instead." "28.1")
 
 (defcustom reftex-mode-hook nil
   "Hook which is being run when turning on RefTeX mode."

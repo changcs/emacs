@@ -1,6 +1,6 @@
 ;;; mml-smime.el --- S/MIME support for MML
 
-;; Copyright (C) 2000-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2000-2020 Free Software Foundation, Inc.
 
 ;; Author: Simon Josefsson <simon@josefsson.org>
 ;; Keywords: Gnus, MIME, S/MIME, MML
@@ -154,14 +154,9 @@ Whether the passphrase is cached at all is controlled by
 	  (write-region (point-min) (point-max) file))
 	(push file certfiles)
 	(push file tmpfiles)))
-    (if (smime-encrypt-buffer certfiles)
-	(progn
-	  (while (setq tmp (pop tmpfiles))
-	    (delete-file tmp))
-	  t)
-      (while (setq tmp (pop tmpfiles))
-	(delete-file tmp))
-      nil))
+    (smime-encrypt-buffer certfiles)
+    (while (setq tmp (pop tmpfiles))
+      (delete-file tmp)))
   (goto-char (point-max)))
 
 (defvar gnus-extract-address-components)
@@ -348,8 +343,7 @@ Whether the passphrase is cached at all is controlled by
 (autoload 'mml-compute-boundary "mml")
 
 (defun mml-smime-epg-sign (cont)
-  (let ((inhibit-redisplay t)
-	(boundary (mml-compute-boundary cont)))
+  (let ((boundary (mml-compute-boundary cont)))
     (goto-char (point-min))
     (let* ((pair (mml-secure-epg-sign 'CMS cont))
 	   (signature (car pair))

@@ -1,6 +1,6 @@
-;;; bytecomp-tests.el
+;;; bytecomp-tests.el  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2008-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2008-2020 Free Software Foundation, Inc.
 
 ;; Author: Shigeru Fukaya <shigeru.fukaya@gmail.com>
 ;; Author: Stefan Monnier <monnier@iro.umontreal.ca>
@@ -347,7 +347,12 @@
                                 ((eq x 't) 99)
                                 (t 999))))
             '((a c) (b c) (7 c) (-3 c) (nil nil) (t c) (q c) (r c) (s c)
-              (t c) (x "a") (x "c") (x c) (x d) (x e))))
+              (t c) (x "a") (x "c") (x c) (x d) (x e)))
+
+    ;; `substring' bytecode generation (bug#39709).
+    (substring "abcdef")
+    (substring "abcdef" 2)
+    (substring "abcdef" 3 2))
   "List of expression for test.
 Each element will be executed by interpreter and with
 bytecompiled code, and their results compared.")
@@ -358,10 +363,10 @@ bytecompiled code, and their results compared.")
 	(byte-compile-warnings nil)
 	(v0 (condition-case nil
 		(eval pat)
-	      (error nil)))
+	      (error 'bytecomp-check-error)))
 	(v1 (condition-case nil
 		(funcall (byte-compile (list 'lambda nil pat)))
-	      (error nil))))
+	      (error 'bytecomp-check-error))))
     (equal v0 v1)))
 
 (put 'bytecomp-check-1 'ert-explainer 'bytecomp-explain-1)
@@ -369,10 +374,10 @@ bytecompiled code, and their results compared.")
 (defun bytecomp-explain-1 (pat)
   (let ((v0 (condition-case nil
 		(eval pat)
-	      (error nil)))
+	      (error 'bytecomp-check-error)))
 	(v1 (condition-case nil
 		(funcall (byte-compile (list 'lambda nil pat)))
-	      (error nil))))
+	      (error 'bytecomp-check-error))))
     (format "Expression `%s' gives `%s' if directly evalled, `%s' if compiled."
 	    pat v0 v1)))
 
@@ -397,10 +402,10 @@ Subtests signal errors if something goes wrong."
     (dolist (pat byte-opt-testsuite-arith-data)
       (condition-case nil
 	  (setq v0 (eval pat))
-	(error (setq v0 nil)))
+	(error (setq v0 'bytecomp-check-error)))
       (condition-case nil
 	  (setq v1 (funcall (byte-compile (list 'lambda nil pat))))
-	(error (setq v1 nil)))
+	(error (setq v1 'bytecomp-check-error)))
       (insert (format "%s" pat))
       (indent-to-column 65)
       (if (equal v0 v1)
@@ -556,11 +561,11 @@ bytecompiled code, and their results compared.")
 	(byte-compile-warnings nil)
 	(v0 (condition-case nil
 		(eval pat t)
-	      (error nil)))
+	      (error 'bytecomp-check-error)))
 	(v1 (condition-case nil
 		(funcall (let ((lexical-binding t))
                            (byte-compile `(lambda nil ,pat))))
-	      (error nil))))
+	      (error 'bytecomp-check-error))))
     (equal v0 v1)))
 
 (put 'bytecomp-lexbind-check-1 'ert-explainer 'bytecomp-lexbind-explain-1)
@@ -568,11 +573,11 @@ bytecompiled code, and their results compared.")
 (defun bytecomp-lexbind-explain-1 (pat)
   (let ((v0 (condition-case nil
 		(eval pat t)
-	      (error nil)))
+	      (error 'bytecomp-check-error)))
 	(v1 (condition-case nil
 		(funcall (let ((lexical-binding t))
                            (byte-compile (list 'lambda nil pat))))
-	      (error nil))))
+	      (error 'bytecomp-check-error))))
     (format "Expression `%s' gives `%s' if directly evalled, `%s' if compiled."
 	    pat v0 v1)))
 
@@ -614,17 +619,6 @@ literals (Bug#20852)."
       (bytecomp-tests--with-temp-file destination
         (let ((byte-compile-dest-file-function (lambda (_) destination)))
           (should (byte-compile-file source)))))))
-
-(ert-deftest bytecomp-tests--old-style-backquotes ()
-  "Check that byte compiling warns about old-style backquotes."
-  (bytecomp-tests--with-temp-file source
-    (write-region "(` (a b))" nil source)
-    (bytecomp-tests--with-temp-file destination
-      (let* ((byte-compile-dest-file-function (lambda (_) destination))
-             (byte-compile-debug t)
-             (err (should-error (byte-compile-file source))))
-        (should (equal (cdr err) '("Old-style backquotes detected!")))))))
-
 
 (ert-deftest bytecomp-tests-function-put ()
   "Check `function-put' operates during compilation."

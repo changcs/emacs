@@ -1,6 +1,6 @@
 ;;; gnus-agent.el --- unplugged support for Gnus
 
-;; Copyright (C) 1997-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1997-2020 Free Software Foundation, Inc.
 
 ;; Author: Lars Magne Ingebrigtsen <larsi@gnus.org>
 ;; This file is part of GNU Emacs.
@@ -603,11 +603,22 @@ manipulated as follows:
   (gnus))
 
 ;;;###autoload
-(defun gnus-slave-unplugged (&optional arg)
-  "Read news as a slave unplugged."
+(defun gnus-child-unplugged (&optional arg)
+  "Read news as a child unplugged."
   (interactive "P")
   (setq gnus-plugged nil)
-  (gnus arg nil 'slave))
+  (gnus arg nil 'child))
+
+;;;###autoload
+(defun gnus-slave-unplugged (&optional arg)
+  "Read news as a child unplugged."
+  (interactive "P")
+  (setq gnus-plugged nil)
+  (gnus arg nil 'child))
+(make-obsolete 'gnus-slave-unplugged 'gnus-child-unplugged "28.1")
+
+
+
 
 ;;;###autoload
 (defun gnus-agentize ()
@@ -799,7 +810,7 @@ be a select method."
   (let ((gnus-command-method method)
 	(gnus-agent nil))
     (when (file-exists-p (gnus-agent-lib-file "flags"))
-      (set-buffer (get-buffer-create " *Gnus Agent flag synchronize*"))
+      (set-buffer (gnus-get-buffer-create " *Gnus Agent flag synchronize*"))
       (erase-buffer)
       (nnheader-insert-file-contents (gnus-agent-lib-file "flags"))
       (cond ((null gnus-plugged)
@@ -1212,26 +1223,24 @@ This can be added to `gnus-select-article-hook' or
 	      (marks (nth 2 action)))
 	  (dolist (mark marks)
 	    (cond ((eq mark 'read)
-		   (gnus-info-set-read
-		    info
-		    (funcall (if (eq what 'add)
-				 'gnus-range-add
-			       'gnus-remove-from-range)
-			     (gnus-info-read info)
-			     range))
+		   (setf (gnus-info-read info)
+			 (funcall (if (eq what 'add)
+				      #'gnus-range-add
+				    #'gnus-remove-from-range)
+				  (gnus-info-read info)
+				  range))
 		   (gnus-get-unread-articles-in-group
 		    info
 		    (gnus-active (gnus-info-group info))))
 		  ((memq mark '(tick))
 		   (let ((info-marks (assoc mark (gnus-info-marks info))))
 		     (unless info-marks
-                       (gnus-info-set-marks
-                        info (cons (setq info-marks (list mark))
-                                   (gnus-info-marks info))))
+                       (push (setq info-marks (list mark))
+                             (gnus-info-marks info)))
                      (setcdr info-marks
                              (funcall (if (eq what 'add)
-                                          'gnus-range-add
-                                        'gnus-remove-from-range)
+                                          #'gnus-range-add
+                                        #'gnus-remove-from-range)
                                       (cdr info-marks)
                                       range))))))))
 
@@ -1303,12 +1312,11 @@ downloaded into the agent."
           ;; file.
 
           (let ((read (gnus-info-read info)))
-            (gnus-info-set-read
-             info
-             (gnus-range-add
-              read
-              (list (cons (1+ agent-max)
-                          (1- active-min))))))
+            (setf (gnus-info-read info)
+                  (gnus-range-add
+                   read
+                   (list (cons (1+ agent-max)
+                               (1- active-min))))))
 
           ;; Lie about the agent's local range for this group to
           ;; disable the set read each time this server is opened.
@@ -2077,7 +2085,7 @@ doesn't exist, to valid the overview buffer."
 		  (file-attributes (directory-files-and-attributes
 				    (gnus-agent-article-name
 				     "" gnus-agent-read-agentview)
-				    nil "^[0-9]+$" t)))
+				    nil "\\`[0-9]+\\'" t)))
 	     (while file-attributes
 	       (let ((fa (pop file-attributes)))
 		 (unless (file-attribute-type (cdr fa))
@@ -2533,13 +2541,14 @@ modified) original contents, they are first saved to their own file."
 			       (assq mark (gnus-info-marks
 					   (setq info (gnus-get-info group))))))
                           (when (cdr marked-arts)
+                            ;; FIXME: Use `cl-callf'?
                             (setq marks
 				  (delq marked-arts (gnus-info-marks info)))
-                            (gnus-info-set-marks info marks)))))
+                            (setf (gnus-info-marks info) marks)))))
                     (let ((read (gnus-info-read
 				 (or info (setq info (gnus-get-info group))))))
-                      (gnus-info-set-read
-		       info (gnus-add-to-range read unfetched-articles)))
+                      (setf (gnus-info-read info)
+                            (gnus-add-to-range read unfetched-articles)))
 
                     (gnus-group-update-group group t)
                     (sit-for 0)
@@ -3852,7 +3861,8 @@ If REREAD is not nil, downloaded articles are marked as unread."
 			   (sort (delq nil (mapcar (lambda (name)
 						     (and (not (file-directory-p (nnheader-concat dir name)))
 							  (string-to-number name)))
-						   (directory-files dir nil "^[0-9]+$" t)))
+						   (directory-files
+                                                    dir nil "\\`[0-9]+\\'" t)))
 				 '>)
 			 (progn (gnus-make-directory dir) nil)))
            nov-arts
@@ -4112,7 +4122,7 @@ agent has fetched."
 		 (setq delta sum))
 	     (let ((sum (- (nth 2 entry)))
 		   (info (directory-files-and-attributes
-			  path nil "^-?[0-9]+$" t))
+			  path nil "\\`-?[0-9]+\\'" t))
 		   file)
 	       (while (setq file (pop info))
 		 (cl-incf sum (float (or (file-attribute-size (cdr file)) 0))))

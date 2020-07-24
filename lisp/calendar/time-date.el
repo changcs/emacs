@@ -1,6 +1,6 @@
 ;;; time-date.el --- Date and time handling functions
 
-;; Copyright (C) 1998-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1998-2020 Free Software Foundation, Inc.
 
 ;; Author: Lars Magne Ingebrigtsen <larsi@gnus.org>
 ;;	Masanobu Umeda <umerin@mse.kyutech.ac.jp>
@@ -197,8 +197,9 @@ TIME should be either a time value or a date-time string."
 
 ;;;###autoload
 (defun date-to-day (date)
-  "Return the number of days between year 1 and DATE.
-DATE should be a date-time string."
+  "Return the absolute date of DATE, a date-time string.
+The absolute date is the number of days elapsed since the imaginary
+Gregorian date Sunday, December 31, 1 BC."
   (time-to-days (date-to-time date)))
 
 ;;;###autoload
@@ -233,9 +234,9 @@ DATE1 and DATE2 should be date-time strings."
 
 ;;;###autoload
 (defun time-to-days (time)
-  "The number of days between the Gregorian date 0001-12-31bce and TIME.
-TIME should be a time value.
-The Gregorian date Sunday, December 31, 1bce is imaginary."
+  "The absolute date corresponding to TIME, a time value.
+The absolute date is the number of days elapsed since the imaginary
+Gregorian date Sunday, December 31, 1 BC."
   (let* ((tim (decode-time time))
 	 (year (decoded-time-year tim)))
     (+ (time-date--day-in-year tim)	;	Days this year
@@ -354,6 +355,8 @@ is output until the first non-zero unit is encountered."
 
 (defun date-days-in-month (year month)
   "The number of days in MONTH in YEAR."
+  (unless (and (numberp month) (<= 1 month 12))
+    (error "Month %s is invalid" month))
   (if (= month 2)
       (if (date-leap-year-p year)
           29
@@ -514,15 +517,14 @@ TIME is modified and returned."
   (unless (decoded-time-year time)
     (setf (decoded-time-year time) 0))
 
-  ;; When we don't have a time zone and we don't have a DST, then mark
-  ;; it as unknown.
-  (when (and (not (decoded-time-zone time))
-             (not (decoded-time-dst time)))
-    (setf (decoded-time-dst time) -1))
+  ;; When we don't have a time zone, default to DEFAULT-ZONE without
+  ;; DST if DEFAULT-ZONE if given, and to unknown DST otherwise.
+  (unless (decoded-time-zone time)
+    (if default-zone
+	(progn (setf (decoded-time-zone time) default-zone)
+	       (setf (decoded-time-dst time) nil))
+      (setf (decoded-time-dst time) -1)))
 
-  (when (and (not (decoded-time-zone time))
-             default-zone)
-    (setf (decoded-time-zone time) 0))
   time)
 
 (provide 'time-date)

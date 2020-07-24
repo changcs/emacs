@@ -1,6 +1,6 @@
 ;;; bookmark.el --- set bookmarks, maybe annotate them, jump to them later -*- lexical-binding: t -*-
 
-;; Copyright (C) 1993-1997, 2001-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1993-1997, 2001-2020 Free Software Foundation, Inc.
 
 ;; Author: Karl Fogel <kfogel@red-bean.com>
 ;; Created: July, 1993
@@ -734,8 +734,10 @@ CODING is the symbol of the coding-system in which the file is encoded."
   (if (memq (coding-system-base coding) '(undecided prefer-utf-8))
       (setq coding 'utf-8-emacs))
   (insert
-   (format ";;;; Emacs Bookmark Format Version %d ;;;; -*- coding: %S -*-\n"
-           bookmark-file-format-version (coding-system-base coding)))
+   (format
+    ";;;; Emacs Bookmark Format Version %d\
+;;;; -*- coding: %S; mode: lisp-data -*-\n"
+    bookmark-file-format-version (coding-system-base coding)))
   (insert ";;; This format is meant to be slightly human-readable;\n"
           ";;; nevertheless, you probably don't want to edit it.\n"
           ";;; "
@@ -1721,7 +1723,7 @@ deletion, or > if it is flagged for displaying."
 ;; according to `bookmark-bookmarks-timestamp'.
 (defun bookmark-bmenu-set-header ()
   "Set the immutable header line."
-  (let ((header (concat "%% " "Bookmark")))
+  (let ((header (copy-sequence "%% Bookmark")))
     (when bookmark-bmenu-toggle-filenames
       (setq header (concat header
 			   (make-string (- bookmark-bmenu-file-column
@@ -1772,7 +1774,8 @@ Bookmark names preceded by a \"*\" have annotations.
 \\[bookmark-bmenu-show-annotation] -- show the annotation, if it exists, for the current bookmark
   in another buffer.
 \\[bookmark-bmenu-show-all-annotations] -- show the annotations of all bookmarks in another buffer.
-\\[bookmark-bmenu-edit-annotation] -- edit the annotation for the current bookmark."
+\\[bookmark-bmenu-edit-annotation] -- edit the annotation for the current bookmark.
+\\[bookmark-bmenu-search] -- incrementally search for bookmarks."
   (setq truncate-lines t)
   (setq buffer-read-only t))
 
@@ -2321,6 +2324,8 @@ strings returned are not."
 ;; Load Hook
 (defvar bookmark-load-hook nil
   "Hook run at the end of loading library `bookmark.el'.")
+(make-obsolete-variable 'bookmark-load-hook
+                        "use `with-eval-after-load' instead." "28.1")
 
 ;; Exit Hook, called from kill-emacs-hook
 (defvar bookmark-exit-hook nil

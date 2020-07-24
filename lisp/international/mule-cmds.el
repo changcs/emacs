@@ -1,6 +1,6 @@
 ;;; mule-cmds.el --- commands for multilingual environment  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1997-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1997-2020 Free Software Foundation, Inc.
 ;; Copyright (C) 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004,
 ;;   2005, 2006, 2007, 2008, 2009, 2010, 2011
 ;;   National Institute of Advanced Industrial Science and Technology (AIST)
@@ -283,8 +283,42 @@ wrong, use this command again to toggle back to the right mode."
   (interactive)
   (view-file (expand-file-name "HELLO" data-directory)))
 
+(defvar mule-cmds--prefixed-command-next-coding-system nil)
+(defvar mule-cmds--prefixed-command-last-coding-system nil)
+
+(defun mule-cmds--prefixed-command-pch ()
+  (if (not mule-cmds--prefixed-command-next-coding-system)
+      (progn
+        (remove-hook 'pre-command-hook #'mule-cmds--prefixed-command-pch)
+        (remove-hook 'prefix-command-echo-keystrokes-functions
+                     #'mule-cmds--prefixed-command-echo)
+        (remove-hook 'prefix-command-preserve-state-hook
+                     #'mule-cmds--prefixed-command-preserve))
+    (setq this-command
+          (let ((cmd this-command)
+                (coding-system mule-cmds--prefixed-command-next-coding-system))
+            (lambda ()
+              (interactive)
+              (setq this-command cmd)
+              (let ((coding-system-for-read coding-system)
+	            (coding-system-for-write coding-system)
+	            (coding-system-require-warning t))
+	        (call-interactively cmd)))))
+    (setq mule-cmds--prefixed-command-last-coding-system
+          mule-cmds--prefixed-command-next-coding-system)
+    (setq mule-cmds--prefixed-command-next-coding-system nil)))
+
+(defun mule-cmds--prefixed-command-echo ()
+  (when mule-cmds--prefixed-command-next-coding-system
+    (format "With coding-system %S"
+            mule-cmds--prefixed-command-next-coding-system)))
+
+(defun mule-cmds--prefixed-command-preserve ()
+  (setq mule-cmds--prefixed-command-next-coding-system
+        mule-cmds--prefixed-command-last-coding-system))
+
 (defun universal-coding-system-argument (coding-system)
-  "Execute an I/O command using the specified coding system."
+  "Execute an I/O command using the specified CODING-SYSTEM."
   (interactive
    (let ((default (and buffer-file-coding-system
 		       (not (eq (coding-system-type buffer-file-coding-system)
@@ -295,44 +329,13 @@ wrong, use this command again to toggle back to the right mode."
 		(format "Coding system for following command (default %s): " default)
 	      "Coding system for following command: ")
 	    default))))
-  (let* ((keyseq (read-key-sequence
-		  (format "Command to execute with %s:" coding-system)))
-	 (cmd (key-binding keyseq))
-	 prefix)
-    ;; read-key-sequence ignores quit, so make an explicit check.
-    (if (equal last-input-event (nth 3 (current-input-mode)))
-	(keyboard-quit))
-    (when (memq cmd '(universal-argument digit-argument))
-      (call-interactively cmd)
-
-      ;; Process keys bound in `universal-argument-map'.
-      (while (progn
-	       (setq keyseq (read-key-sequence nil t)
-		     cmd (key-binding keyseq t))
-	       (not (eq cmd 'universal-argument-other-key)))
-	(let ((current-prefix-arg prefix-arg)
-	      ;; Have to bind `last-command-event' here so that
-	      ;; `digit-argument', for instance, can compute the
-	      ;; `prefix-arg'.
-	      (last-command-event (aref keyseq 0)))
-	  (call-interactively cmd)))
-
-      ;; This is the final call to `universal-argument-other-key', which
-      ;; sets the final `prefix-arg'.
-      (let ((current-prefix-arg prefix-arg))
-	(call-interactively cmd))
-
-      ;; Read the command to execute with the given `prefix-arg'.
-      (setq prefix prefix-arg
-	    keyseq (read-key-sequence nil t)
-	    cmd (key-binding keyseq)))
-
-    (let ((coding-system-for-read coding-system)
-	  (coding-system-for-write coding-system)
-	  (coding-system-require-warning t)
-	  (current-prefix-arg prefix))
-      (message "")
-      (call-interactively cmd))))
+  (prefix-command-preserve-state)
+  (setq mule-cmds--prefixed-command-next-coding-system coding-system)
+  (add-hook 'pre-command-hook #'mule-cmds--prefixed-command-pch)
+  (add-hook 'prefix-command-echo-keystrokes-functions
+            #'mule-cmds--prefixed-command-echo)
+  (add-hook 'prefix-command-preserve-state-hook
+            #'mule-cmds--prefixed-command-preserve))
 
 (defun set-default-coding-systems (coding-system)
   "Set default value of various coding systems to CODING-SYSTEM.
@@ -703,8 +706,8 @@ DEFAULT is the coding system to use by default in the query."
       ;; buffer is displayed.
       (when (and unsafe (not (stringp from)))
 	(pop-to-buffer bufname)
-	(goto-char (apply 'min (mapcar #'(lambda (x) (car (cadr x)))
-				       unsafe))))
+	(goto-char (apply #'min (mapcar (lambda (x) (or (car (cadr x)) (point-max)))
+				        unsafe))))
       ;; Then ask users to select one from CODINGS while showing
       ;; the reason why none of the defaults are not used.
       (with-output-to-temp-buffer "*Warning*"
@@ -896,6 +899,11 @@ It is highly recommended to fix it before writing to a file."
 	;; other setting.
 	(let ((base (coding-system-base auto-cs)))
 	  (unless (memq base '(nil undecided))
+            ;; For encoding, no-conversion-multibyte is the same as
+            ;; no-conversion.
+            (if (eq base 'no-conversion-multibyte)
+                (setq auto-cs 'no-conversion
+                      base 'no-conversion))
             (setq default-coding-system (list (cons auto-cs base)))
             (setq no-other-defaults t))))
 
@@ -1400,13 +1408,13 @@ The commands `describe-input-method' and `list-input-methods' need
 these duplicated values to show some information about input methods
 without loading the relevant Quail packages.
 \n(fn INPUT-METHOD LANG-ENV ACTIVATE-FUNC TITLE DESCRIPTION &rest ARGS)"
-  (if (symbolp lang-env)
-      (setq lang-env (symbol-name lang-env))
-    (setq lang-env (purecopy lang-env)))
-  (if (symbolp input-method)
-      (setq input-method (symbol-name input-method))
-    (setq input-method (purecopy input-method)))
-  (setq args (mapcar 'purecopy args))
+  (setq lang-env (if (symbolp lang-env)
+                     (symbol-name lang-env)
+                   (purecopy lang-env)))
+  (setq input-method (if (symbolp input-method)
+                         (symbol-name input-method)
+                       (purecopy input-method)))
+  (setq args (mapcar #'purecopy args))
   (let ((info (cons lang-env args))
 	(slot (assoc input-method input-method-alist)))
     (if slot
@@ -2986,7 +2994,9 @@ on encoding."
                (#x16FE0 . #x16FE3)
                ;; (#x17000 . #x187FF) Tangut Ideographs
                ;; (#x18800 . #x18AFF) Tangut Components
-	       ;; (#x18B00 . #x1AFFF) unused
+               ;; (#x18B00 . #x18CFF) Khitan Small Script
+               ;; (#x18D00 . #x18D0F) Tangut Ideograph Supplement
+	       ;; (#x18D10 . #x1AFFF) unused
 	       (#x1B000 . #x1B11F)
                ;; (#x1B120 . #x1B14F) unused
                (#x1B150 . #x1B16F)

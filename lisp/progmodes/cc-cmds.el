@@ -1,6 +1,6 @@
 ;;; cc-cmds.el --- user level commands for CC Mode
 
-;; Copyright (C) 1985, 1987, 1992-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1985, 1987, 1992-2020 Free Software Foundation, Inc.
 
 ;; Authors:    2003- Alan Mackenzie
 ;;             1998- Martin Stjernholm
@@ -48,6 +48,7 @@
 (cc-bytecomp-defvar filladapt-mode)	; c-fill-paragraph contains a kludge
 					; which looks at this.
 (cc-bytecomp-defun electric-pair-post-self-insert-function)
+(cc-bytecomp-defvar c-indent-to-body-directives)
 
 ;; Indentation / Display syntax functions
 (defvar c-fix-backslashes t)
@@ -61,7 +62,7 @@ syntactic information for the current line.  Be silent about syntactic
 errors if the optional argument QUIET is non-nil, even if
 `c-report-syntactic-errors' is non-nil.  Normally the position of
 point is used to decide where the old indentation is on a lines that
-is otherwise empty \(ignoring any line continuation backslash), but
+is otherwise empty (ignoring any line continuation backslash), but
 that's not done if IGNORE-POINT-POS is non-nil.  Returns the amount of
 indentation change \(in columns)."
 
@@ -391,6 +392,16 @@ This action does nothing when the mode only has one comment style."
 	(if c-block-comment-flag
 	    (concat " " c-block-comment-ender)
 	  ""))
+  ;; If necessary, invert the sense of fontification of wrong style comments.
+  (when (and c-mark-wrong-style-of-comment
+	     font-lock-mode
+	     c-block-comment-starter
+	     c-block-comment-ender)
+    (save-excursion
+      (save-restriction
+	(widen)
+	(goto-char (point-min))
+	(c-font-lock-flush (point-min) (point-max)))))
   (c-update-modeline)
   (c-keep-region-active))
 
@@ -485,6 +496,36 @@ function to control that."
       (c-hungry-delete-forward)
     (c-hungry-delete-backwards)))
 
+(defvar c--unsafe-post-self-insert-hook-functions
+  '(electric-pair-post-self-insert-function)
+    "Known unsafe functions when members of `post-self-insert-hook' in CC Mode")
+
+(defun c--call-post-self-insert-hook-more-safely-1 ()
+  ;; Call post-self-insert-hook, having removed from `post-self-insert-hook'
+  ;; functions known not to be safe to CC Mode.  The result is of no
+  ;; significance.  Note that the hook call is NOT absolutely safe.
+  (let ((src post-self-insert-hook)
+	dest)
+    (while src
+      (cond
+       ((memq (car src) c--unsafe-post-self-insert-hook-functions))
+       ((eq (car src) t)
+	(let ((src (default-value 'post-self-insert-hook)))
+	  (while src
+	    (unless (memq (car src) c--unsafe-post-self-insert-hook-functions)
+	      (push (car src) dest))
+	    (setq src (cdr src)))))
+       (t (push (car src) dest)))
+      (setq src (cdr src)))
+    (mapc #'funcall (nreverse dest)))) ; Preserve the order of the functions.
+
+(defmacro c--call-post-self-insert-hook-more-safely ()
+  ;; Call post-self-insert-hook, if such exists.  See comment for
+  ;; `c--call-post-self-insert-hook-more-safely-1'.
+  (if (boundp 'post-self-insert-hook)
+      '(c--call-post-self-insert-hook-more-safely-1)
+    '(progn)))
+
 (defun c-electric-pound (arg)
   "Insert a \"#\".
 If `c-electric-flag' is set, handle it specially according to the variable
@@ -514,7 +555,8 @@ inside a literal or a macro, nothing special happens."
       (insert (c-last-command-char))
       (and (not bolp)
 	   (goto-char (- (point-max) pos)))
-      )))
+      ))
+  (c--call-post-self-insert-hook-more-safely))
 
 (defun c-point-syntax ()
   ;; Return the syntactic context of the construct at point.  (This is NOT
@@ -895,7 +937,8 @@ settings of `c-cleanup-list' are done."
 	 (save-excursion
 	   (c-save-buffer-state nil
 	     (c-backward-syntactic-ws safepos))
-	   (funcall old-blink-paren)))))
+	   (funcall old-blink-paren)))
+    (c--call-post-self-insert-hook-more-safely)))
 
 (defun c-electric-slash (arg)
   "Insert a slash character.
@@ -947,7 +990,8 @@ is inhibited."
     (let (post-self-insert-hook)	; Disable random functionality.
       (self-insert-command (prefix-numeric-value arg)))
     (if indentp
-	(indent-according-to-mode))))
+	(indent-according-to-mode))
+    (c--call-post-self-insert-hook-more-safely)))
 
 (defun c-electric-star (arg)
   "Insert a star character.
@@ -977,7 +1021,8 @@ this indentation is inhibited."
 	       (bolp))))
       (let (c-echo-syntactic-information-p) ; shut this up
 	(indent-according-to-mode))
-    ))
+    )
+  (c--call-post-self-insert-hook-more-safely))
 
 (defun c-electric-semi&comma (arg)
   "Insert a comma or semicolon.
@@ -1049,8 +1094,8 @@ settings of `c-cleanup-list'."
 		(setq add-newline-p (not (eq answer 'stop)))
 		))
 	    (if add-newline-p
-		(c-newline-and-indent))
-	    )))))
+		(c-newline-and-indent)))))
+    (c--call-post-self-insert-hook-more-safely)))
 
 (defun c-electric-colon (arg)
   "Insert a colon.
@@ -1152,8 +1197,8 @@ reindented unless `c-syntactic-indentation' is nil.
 	  ;; does a newline go after the colon?
 	  (if (and (memq 'after (cdr-safe newlines))
 		   (not is-scope-op))
-	      (c-newline-and-indent))
-	  ))))
+	      (c-newline-and-indent))))
+    (c--call-post-self-insert-hook-more-safely)))
 
 (defun c-electric-lt-gt (arg)
   "Insert a \"<\" or \">\" character.
@@ -1243,7 +1288,8 @@ numeric argument is supplied, or the point is inside a literal."
 	;; From now (2016-01-01), the syntax-table text properties on < and >
 	;; are applied in an after-change function, not during redisplay.  Hence
 	;; we no longer need to call (sit-for 0) for blink paren to work.
-	(funcall blink-paren-function)))))
+	(funcall blink-paren-function))))
+  (c--call-post-self-insert-hook-more-safely))
 
 (defun c-electric-paren (arg)
   "Insert a parenthesis.
@@ -1362,7 +1408,8 @@ newline cleanups are done if appropriate; see the variable `c-cleanup-list'."
       ;; Apply `electric-pair-mode' stuff inside a string or comment.
       (when (and (boundp 'electric-pair-mode) electric-pair-mode)
 	(let (post-self-insert-hook)
-	  (electric-pair-post-self-insert-function))))))
+	  (electric-pair-post-self-insert-function))))
+    (c--call-post-self-insert-hook-more-safely)))
 
 (defun c-electric-continued-statement ()
   "Reindent the current line if appropriate.
@@ -1394,6 +1441,98 @@ keyword on the line, the keyword is not inserted inside a literal, and
       (unwind-protect
 	  (indent-according-to-mode)
 	(delete-char -2)))))
+
+(defun c-align-cpp-indent-to-body ()
+  "Align a \"#pragma\" line under the previous line.
+This function is intented for use as a member of `c-special-indent-hook'."
+  (when (assq 'cpp-macro c-syntactic-context)
+    (when
+	(save-excursion
+	  (save-match-data
+	    (back-to-indentation)
+	    (and
+	     (looking-at (concat c-opt-cpp-symbol "[ \t]*\\([a-zA-Z0-9_]+\\)"))
+	     (member (match-string-no-properties 1)
+		     c-cpp-indent-to-body-directives))))
+      (c-indent-line (delete '(cpp-macro) c-syntactic-context)))))
+
+(defvar c-cpp-indent-to-body-flag nil)
+;; Non-nil when CPP directives such as "#pragma" should be indented to under
+;; the preceding statement.
+(make-variable-buffer-local 'c-cpp-indent-to-body-flag)
+
+(defun c-electric-pragma ()
+  "Reindent the current line if appropriate.
+
+This function is used to reindent a preprocessor line when the
+symbol for the directive, typically \"pragma\", triggers this
+function as a hook function of an abbreviation.
+
+The \"#\" of the preprocessor construct is aligned under the
+first anchor point of the line's syntactic context.
+
+The line is reindented if the construct is not in a string or
+comment, there is exactly one \"#\" contained in optional
+whitespace before it on the current line, and `c-electric-flag'
+and `c-syntactic-indentation' are both non-nil."
+  (save-excursion
+    (save-match-data
+      (when
+	  (and
+	   c-cpp-indent-to-body-flag
+	   c-electric-flag
+	   c-syntactic-indentation
+	   last-abbrev-location
+	   c-opt-cpp-symbol		; "#" or nil.
+	   (progn (back-to-indentation)
+		  (looking-at (concat c-opt-cpp-symbol "[ \t]*")))
+	   (>= (match-end 0) last-abbrev-location)
+	   (not (c-literal-limits)))
+	(c-indent-line (delete '(cpp-macro) (c-guess-basic-syntax)))))))
+
+(defun c-add-indent-to-body-to-abbrev-table (d)
+  ;; Create an abbreviation table entry for the directive D, and add it to the
+  ;; current abbreviation table.  Existing abbreviation (e.g. for "else") do
+  ;; not get overwritten.
+  (when (and c-buffer-is-cc-mode
+	     local-abbrev-table
+	     (not (abbrev-symbol d local-abbrev-table)))
+    (condition-case nil
+	(define-abbrev local-abbrev-table d d 'c-electric-pragma 0 t)
+      (wrong-number-of-arguments
+       (define-abbrev local-abbrev-table d d 'c-electric-pragma)))))
+
+(defun c-clear-stale-indent-to-body-abbrevs ()
+  ;; Fill in this comment.  FIXME!!!
+  (when (fboundp 'abbrev-get)
+    (mapatoms (lambda (a)
+		(when (and (abbrev-get a ':system) ; Preserve a user's abbrev!
+			   (not (member (symbol-name a) c-std-abbrev-keywords))
+			   (not (member (symbol-name a)
+					c-cpp-indent-to-body-directives)))
+		  (unintern a local-abbrev-table)))
+	      local-abbrev-table)))
+
+(defun c-toggle-cpp-indent-to-body (&optional arg)
+  "Toggle the C preprocessor indent-to-body feature.
+When enabled, preprocessor directives which are words in
+`c-indent-to-body-directives' are indented as if they were statements.
+
+Optional numeric ARG, if supplied, turns on the feature when positive,
+turns it off when negative, and just toggles it when zero or
+left out."
+  (interactive "P")
+  (setq c-cpp-indent-to-body-flag
+	(c-calculate-state arg c-cpp-indent-to-body-flag))
+  (if c-cpp-indent-to-body-flag
+      (progn
+	(c-clear-stale-indent-to-body-abbrevs)
+	(mapc 'c-add-indent-to-body-to-abbrev-table
+	      c-cpp-indent-to-body-directives)
+	(add-hook 'c-special-indent-hook 'c-align-cpp-indent-to-body nil t))
+    (remove-hook 'c-special-indent-hook 'c-align-cpp-indent-to-body t))
+  (message "c-cpp-indent-to-body %sabled"
+	   (if c-cpp-indent-to-body-flag "en" "dis")))
 
 
 
@@ -1977,6 +2116,23 @@ other top level construct with a brace block."
 	     (c-forward-token-2)
 	     (c-backward-syntactic-ws)
 	     (point))))
+
+	 ((and (c-major-mode-is 'objc-mode) (looking-at "[-+]\\s-*("))     ; Objective-C method
+	  ;; Move to the beginning of the method name.
+	  (c-forward-token-2 2 t)
+	  (let* ((class
+		  (save-excursion
+		    (when (re-search-backward
+			   "^\\s-*@\\(implementation\\|class\\|interface\\)\\s-+\\(\\sw+\\)" nil t)
+		      (match-string-no-properties 2))))
+		 (limit (save-excursion (re-search-forward "[;{]" nil t)))
+		 (method (when (re-search-forward "\\(\\sw+:?\\)" limit t)
+			   (match-string-no-properties 1))))
+	    (when (and class method)
+	      ;; Add the parameter labels onto name.  They always end in ':'.
+	      (while (re-search-forward "\\(\\sw+:\\)" limit 1)
+		(setq method (concat method (match-string-no-properties 1))))
+	      (concat "[" class " " method "]"))))
 
 	 (t				; Normal function or initializer.
 	  (when (looking-at c-defun-type-name-decl-key) ; struct, etc.
@@ -3257,7 +3413,7 @@ to call `c-scan-conditionals' directly instead."
 A prefix argument acts as a repeat count.  With a negative argument,
 move backward across a preprocessor conditional.
 
-If there aren't enough conditionals after \(or before) point, an
+If there aren't enough conditionals after (or before) point, an
 error is signaled.
 
 \"#elif\" is treated like \"#else\" followed by \"#if\", except that
@@ -4083,14 +4239,18 @@ command to conveniently insert and align the necessary backslashes."
 	    ;; `comment-prefix' on a line and indent it to find the
 	    ;; correct column and the correct mix of tabs and spaces.
 	    (setq res
-		  (let (tmp-pre tmp-post)
+		  (let (tmp-pre tmp-post at-close)
 		    (unwind-protect
 			(progn
 
 			  (goto-char (car lit-limits))
 			  (if (looking-at comment-start-regexp)
-			      (goto-char (min (match-end 0)
-					      comment-text-end))
+			      (progn
+				(goto-char (min (match-end 0)
+						comment-text-end))
+				(setq
+				 at-close
+				 (looking-at c-block-comment-ender-regexp)))
 			    (forward-char 2)
 			    (skip-chars-forward " \t"))
 
@@ -4106,8 +4266,13 @@ command to conveniently insert and align the necessary backslashes."
 					   (save-excursion
 					     (skip-chars-backward " \t")
 					     (point))
-					   (point)))))
-
+					   (point))))
+			    ;; If hard up against the comment ender, the
+			    ;; prefix must end in at least two spaces.
+			    (when at-close
+			      (or (string-match "\\s \\s +\\'" comment-prefix)
+				  (setq comment-prefix
+					(concat comment-prefix " ")))))
 			  (setq tmp-pre (point-marker))
 
 			  ;; We insert an extra non-whitespace character
@@ -4776,7 +4941,6 @@ If a fill prefix is specified, it overrides all the above."
 				    (c-collect-line-comments c-lit-limits))
 			      c-lit-type)))
 		     (pos (point))
-		     (start-col (current-column))
 		     (comment-text-end
 		      (or (and (eq c-lit-type 'c)
 			       (save-excursion
@@ -4821,9 +4985,10 @@ If a fill prefix is specified, it overrides all the above."
 			  (goto-char (+ (car c-lit-limits) 2))))
 		   (funcall do-line-break)
 		   (insert-and-inherit (car fill))
-		   (if (> (current-column) start-col)
-		       (move-to-column start-col)))) ; can this hit the
-					             ; middle of a TAB?
+		   (if (and (looking-at c-block-comment-ender-regexp)
+			    (memq (char-before) '(?\  ?\t)))
+		       (backward-char)))) ; can this hit the
+					  ; middle of a TAB?
 	     ;; Inside a comment that should be broken.
 	     (let ((comment-start comment-start)
 		   (comment-end comment-end)

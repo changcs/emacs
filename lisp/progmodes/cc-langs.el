@@ -1,6 +1,6 @@
 ;;; cc-langs.el --- language specific settings for CC Mode -*- coding: utf-8 -*-
 
-;; Copyright (C) 1985, 1987, 1992-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1985, 1987, 1992-2020 Free Software Foundation, Inc.
 
 ;; Authors:    2002- Alan Mackenzie
 ;;             1998- Martin Stjernholm
@@ -86,7 +86,7 @@
 ;; compiled runtime constants ready for use by (the byte compiled) CC
 ;; Mode, and the source definitions in this file don't have to be
 ;; loaded then.  However, if a byte compiled package is loaded that
-;; has been compiled with a different version of CC Mode than the one
+;; has been compiled with a different version of CC Mode from the one
 ;; currently loaded, then the compiled-in values will be discarded and
 ;; new ones will be built when the mode is initialized.  That will
 ;; automatically trig a load of the file(s) containing the source
@@ -545,7 +545,7 @@ buffer local variables c-new-BEG and c-new-END.
 The functions are called even when font locking is disabled.
 
 When the mode is initialized, these functions are called with
-parameters \(point-min), \(point-max) and <buffer size>.")
+parameters (point-min), (point-max) and <buffer size>.")
 
 (c-lang-defconst c-before-context-fontification-functions
   t 'c-context-expand-fl-region
@@ -878,7 +878,7 @@ literal are multiline."
   t (mapcar (lambda (delim)
 	      (cons
 	       delim
-	       (concat "\\(\\\\\\(.\\|\n\\|\r\\)\\|[^\\\n\r"
+	       (concat "\\(\\\\\\(.\\|\n\\)\\|[^\\\n\r"
 		       (string delim)
 		       "]\\)*")))
 	    (and
@@ -1174,7 +1174,7 @@ since CC Mode treats every identifier as an expression."
 
       ;; Exception.
       ,@(when (c-major-mode-is 'c++-mode)
-	  '((prefix "throw")))
+	  '((prefix "throw" "co_await" "co_yield")))
 
       ;; Sequence.
       (left-assoc ","))
@@ -1405,6 +1405,23 @@ operators."
 		    "\\`<."
 		    (lambda (op) (substring op 1)))))
 (c-lang-defvar c-<-op-cont-regexp (c-lang-const c-<-op-cont-regexp))
+
+(c-lang-defconst c-<-pseudo-digraph-cont-regexp
+  "Regexp matching the continuation of a pseudo digraph starting \"<\".
+This is used only in C++ Mode, where \"<::\" is handled as a
+template opener followed by the \"::\" operator - usually."
+  t regexp-unmatchable
+  c++ "::\\([^:>]\\|$\\)")
+(c-lang-defvar c-<-pseudo-digraph-cont-regexp
+	       (c-lang-const c-<-pseudo-digraph-cont-regexp))
+
+(c-lang-defconst c-<-pseudo-digraph-cont-len
+  "The maximum length of the main bit of a `c-<-pseudo-digraph-cont-regexp' match.
+This doesn't count the merely contextual bits of the regexp match."
+  t 0
+  c++ 2)
+(c-lang-defvar c-<-pseudo-digraph-cont-len
+	       (c-lang-const c-<-pseudo-digraph-cont-len))
 
 (c-lang-defconst c->-op-cont-tokens
   ;; A list of second and subsequent characters of all multicharacter tokens
@@ -1689,15 +1706,16 @@ ender."
 (c-lang-defvar c-last-c-comment-end-on-line-re
 	       (c-lang-const c-last-c-comment-end-on-line-re))
 
-(c-lang-defconst c-last-open-c-comment-start-on-line-re
-  "Regexp which matches the last block comment start on the
-current ine, if any, or nil in those languages without block
-comments.  When a match is found, submatch 1 contains the comment
-starter."
-  t "\\(/\\*\\)\\([^*]\\|\\*+\\([^*/]\\|$\\)\\)*$"
-  awk nil)
-(c-lang-defvar c-last-open-c-comment-start-on-line-re
-	       (c-lang-const c-last-open-c-comment-start-on-line-re))
+;; The following is no longer used (2020-02-16).
+;; (c-lang-defconst c-last-open-c-comment-start-on-line-re
+;;   "Regexp which matches the last block comment start on the
+;; current ine, if any, or nil in those languages without block
+;; comments.  When a match is found, submatch 1 contains the comment
+;; starter."
+;;   t "\\(/\\*\\)\\([^*]\\|\\*+\\([^*/]\\|$\\)\\)*$"
+;;   awk nil)
+;; (c-lang-defvar c-last-open-c-comment-start-on-line-re
+;;   (c-lang-const c-last-open-c-comment-start-on-line-re))
 
 (c-lang-defconst c-literal-start-regexp
   ;; Regexp to match the start of comments and string literals.
@@ -1751,7 +1769,7 @@ starter."
 `comment-start-skip' is initialized from this."
   ;; Default: Allow the last char of the comment starter(s) to be
   ;; repeated, then allow any amount of horizontal whitespace.
-  t (concat "\\("
+  t (concat "\\(?:"
 	    (c-concat-separated
 	     (mapcar (lambda (cs)
 		       (when cs
@@ -2022,6 +2040,7 @@ the appropriate place for that."
 (c-lang-defconst c-return-kwds
   "Keywords which return a value to the calling function."
   t '("return")
+  c++ '("return" "co_return")
   idl nil)
 
 (c-lang-defconst c-return-key
@@ -2038,11 +2057,10 @@ the appropriate place for that."
   "Keywords that might act as prefixes for primitive types.  Assumed to
 be a subset of `c-primitive-type-kwds'."
   t       nil
-  (c c++) '("long" "short" "signed" "unsigned")
-  idl     '("long" "unsigned"
+  (c c++ objc) '("long" "short" "signed" "unsigned")
+  idl	  '("long" "unsigned"
 	    ;; In CORBA PSDL:
 	    "strong"))
-
 (c-lang-defconst c-typedef-kwds
   "Prefix keyword(s) like \"typedef\" which make a type declaration out
 of a variable declaration."
@@ -2321,7 +2339,7 @@ will be handled."
 (c-lang-defvar c-typedef-decl-key (c-lang-const c-typedef-decl-key))
 
 (c-lang-defconst c-typeless-decl-kwds
-  "Keywords introducing declarations where the \(first) identifier
+  "Keywords introducing declarations where the (first) identifier
 \(declarator) follows directly after the keyword, without any type.
 
 If any of these also are on `c-type-list-kwds', `c-ref-list-kwds',
@@ -2398,7 +2416,8 @@ If any of these also are on `c-type-list-kwds', `c-ref-list-kwds',
 `c-<>-type-kwds', or `c-<>-arglist-kwds' then the associated clauses
 will be handled."
   t       nil
-  objc    '("@class" "@end" "@defs")
+  objc    '("@class" "@defs" "@end" "@property" "@dynamic" "@synthesize"
+	    "@compatibility_alias")
   java    '("import" "package")
   pike    '("import" "inherit"))
 
@@ -2425,7 +2444,7 @@ Note that unrecognized plain symbols are skipped anyway if they occur
 before the type, so such things are not necessary to mention here.
 Mentioning them here is necessary only if they can occur in other
 places, or if they are followed by a construct that must be skipped
-over \(like the parens in the \"__attribute__\" and \"__declspec\"
+over (like the parens in the \"__attribute__\" and \"__declspec\"
 examples above).  In the last case, they alse need to be present on
 one of `c-type-list-kwds', `c-ref-list-kwds',
 `c-colon-type-list-kwds', `c-paren-nontype-kwds', `c-paren-type-kwds',
@@ -2521,7 +2540,8 @@ one of `c-type-list-kwds', `c-ref-list-kwds',
   "Access protection label keywords in classes."
   t    nil
   c++  '("private" "protected" "public")
-  objc '("@private" "@protected" "@public"))
+  objc '("@private" "@protected" "@package" "@public"
+	 "@required" "@optional"))
 
 (c-lang-defconst c-protection-key
   ;; A regexp match an element of `c-protection-kwds' cleanly.
@@ -2557,7 +2577,7 @@ The keywords on list are assumed to also be present on one of the
 
 (c-lang-defconst c-postfix-decl-spec-kwds
   "Keywords introducing extra declaration specifiers in the region
-between the header and the body \(i.e. the \"K&R-region\") in
+between the header and the body (i.e. the \"K&R-region\") in
 declarations."
   t    nil
   java '("extends" "implements" "throws")
@@ -2736,7 +2756,7 @@ identifiers that follows the type in a normal declaration."
   "Statement keywords followed directly by a substatement."
   t    '("do" "else")
   c++  '("do" "else" "try")
-  objc '("do" "else" "@finally" "@try")
+  objc '("do" "else" "@finally" "@try" "@autoreleasepool")
   java '("do" "else" "finally" "try")
   idl  nil)
 
@@ -2766,7 +2786,7 @@ Keywords here should also be in `c-block-stmt-1-kwds'."
   java '("for" "if" "switch" "while" "catch" "synchronized")
   idl  nil
   pike '("for" "if" "switch" "while" "foreach")
-  awk  '("for" "if" "while"))
+  awk  '("for" "if" "switch" "while"))
 
 (c-lang-defconst c-block-stmt-2-key
   ;; Regexp matching the start of any statement followed by a paren sexp
@@ -2805,6 +2825,7 @@ Keywords here should also be in `c-block-stmt-1-kwds'."
 (c-lang-defconst c-simple-stmt-kwds
   "Statement keywords followed by an expression or nothing."
   t    '("break" "continue" "goto" "return")
+  c++    '("break" "continue" "goto" "return" "co_return")
   objc '("break" "continue" "goto" "return" "@throw")
   ;; Note: `goto' is not valid in Java, but the keyword is still reserved.
   java '("break" "continue" "goto" "return" "throw")
@@ -2845,8 +2866,7 @@ nevertheless contains a list separated with `;' and not `,'."
 (c-lang-defconst c-case-kwds
   "The keyword(s) which introduce a \"case\" like construct.
 This construct is \"<keyword> <expression> :\"."
-  t '("case")
-  awk nil)
+  t '("case"))
 
 (c-lang-defconst c-case-kwds-regexp
   ;; Adorned regexp matching any "case"-like keyword.
@@ -2878,7 +2898,8 @@ This construct is \"<keyword> <expression> :\"."
   c++     (append
            '("nullptr")
            (c-lang-const c-constant-kwds c))
-  objc    '("nil" "Nil" "YES" "NO" "NS_DURING" "NS_HANDLER" "NS_ENDHANDLER")
+  objc    '("nil" "Nil" "YES" "NO" "IBAction" "IBOutlet"
+	    "NS_DURING" "NS_HANDLER" "NS_ENDHANDLER")
   idl     '("TRUE" "FALSE")
   java    '("true" "false" "null") ; technically "literals", not keywords
   pike    '("UNDEFINED")) ;; Not a keyword, but practically works as one.
@@ -2909,7 +2930,7 @@ expressions."
 
 (c-lang-defconst c-inexpr-block-kwds
   "Keywords that start constructs followed by statement blocks which can
-be used in expressions \(the gcc extension for this in C and C++ is
+be used in expressions (the gcc extension for this in C and C++ is
 handled separately by `c-recognize-paren-inexpr-blocks')."
   t    nil
   pike '("catch" "gauge"))
@@ -3013,7 +3034,14 @@ Note that Java specific rules are currently applied to tell this from
 	 ;; can start a declaration.)
 	 "entity" "process" "service" "session" "storage"))
 
-
+(c-lang-defconst c-std-abbrev-keywords
+  "List of keywords which may need to cause electric indentation."
+  t '("else" "while")
+  c++ (append (c-lang-const c-std-abbrev-keywords) '("catch"))
+  java (append (c-lang-const c-std-abbrev-keywords) '("catch" "finally"))
+  idl nil)
+(c-lang-defvar c-std-abbrev-keywords (c-lang-const c-std-abbrev-keywords))
+
 ;;; Constants built from keywords.
 
 ;; Note: No `*-kwds' language constants may be defined below this point.
@@ -3386,10 +3414,16 @@ possible for good performance."
 identifier in a declaration, e.g. the \"*\" in \"char *argv\".  This
 regexp should match \"(\" if parentheses are valid in declarators.
 The end of the first submatch is taken as the end of the operator.
-Identifier syntax is in effect when this is matched \(see
+Identifier syntax is in effect when this is matched (see
 `c-identifier-syntax-table')."
-  t (if (c-lang-const c-type-modifier-kwds)
-	(concat (regexp-opt (c-lang-const c-type-modifier-kwds) t) "\\>")
+  t (if (or (c-lang-const c-type-modifier-kwds) (c-lang-const c-modifier-kwds))
+        (concat
+	 (regexp-opt (c--delete-duplicates
+		      (append (c-lang-const c-type-modifier-kwds)
+			      (c-lang-const c-modifier-kwds))
+		      :test 'string-equal)
+		     t)
+	 "\\>")
       ;; Default to a regexp that never matches.
       regexp-unmatchable)
   ;; Check that there's no "=" afterwards to avoid matching tokens
@@ -3423,11 +3457,11 @@ Identifier syntax is in effect when this is matched \(see
   'dont-doc)
 
 (c-lang-defconst c-type-decl-operator-prefix-key
-  "Regexp matching any declarator operator which isn't a keyword
+  "Regexp matching any declarator operator which isn't a keyword,
 that might precede the identifier in a declaration, e.g. the
 \"*\" in \"char *argv\".  The end of the first submatch is taken
 as the end of the operator.  Identifier syntax is in effect when
-this is matched \(see `c-identifier-syntax-table')."
+this is matched (see `c-identifier-syntax-table')."
   t ;; Default to a regexp that never matches.
     regexp-unmatchable
   ;; Check that there's no "=" afterwards to avoid matching tokens

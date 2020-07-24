@@ -1,6 +1,6 @@
 ;;; scroll-lock.el --- Scroll lock scrolling.
 
-;; Copyright (C) 2005-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2005-2020 Free Software Foundation, Inc.
 
 ;; Author: Ralf Angeli <angeli@iwi.uni-sb.de>
 ;; Maintainer: emacs-devel@gnu.org
@@ -54,7 +54,10 @@
 When enabled, keys that normally move point by line or paragraph
 will scroll the buffer by the respective amount of lines instead
 and point will be kept vertically fixed relative to window
-boundaries during scrolling."
+boundaries during scrolling.
+
+Note that the default key binding to Scroll_Lock will not work on
+MS-Windows systems if `w32-scroll-lock-modifier' is non-nil."
   :lighter " ScrLck"
   :keymap scroll-lock-mode-map
   (if scroll-lock-mode

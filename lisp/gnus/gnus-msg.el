@@ -1,6 +1,6 @@
 ;;; gnus-msg.el --- mail and post interface for Gnus
 
-;; Copyright (C) 1995-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1995-2020 Free Software Foundation, Inc.
 
 ;; Author: Masanobu UMEDA <umerin@flab.flab.fujitsu.junet>
 ;;	Lars Magne Ingebrigtsen <larsi@gnus.org>
@@ -637,7 +637,7 @@ If ARG is 1, prompt for group name to post to.
 
 This function prepares a news even when using mail groups.  This is useful
 for posting messages to mail groups without actually sending them over the
-network.  The corresponding back end must have a 'request-post method."
+network.  The corresponding back end must have a `request-post' method."
   (interactive "P")
   ;; We can't `let' gnus-newsgroup-name here, since that leads
   ;; to local variables leaking.
@@ -714,7 +714,7 @@ If ARG, don't do that.  If ARG is 1, prompt for group name to post to.
 
 This function prepares a news even when using mail groups.  This is useful
 for posting messages to mail groups without actually sending them over the
-network.  The corresponding back end must have a 'request-post method."
+network.  The corresponding back end must have a `request-post' method."
   (interactive "P")
   ;; We can't `let' gnus-newsgroup-name here, since that leads
   ;; to local variables leaking.
@@ -1510,7 +1510,11 @@ If YANK is non-nil, include the original article."
 	(gnus-inews-yank-articles (list (cdr gnus-article-current)))))))
 
 (defun gnus-bug (subject)
-  "Send a bug report to the Emacs maintainers."
+  "Send a bug report to the Emacs maintainers.
+
+Already submitted bugs can be found in the Emacs bug tracker:
+
+  https://debbugs.gnu.org/cgi/pkgreport.cgi?package=emacs;max-bugs=100;base-order=1;bug-rev=1"
   (interactive "sBug Subject: ")
   (report-emacs-bug subject)
   (save-excursion
@@ -1985,13 +1989,14 @@ process-mark several articles, they will all be attached."
                                       buffers t nil nil (car buffers))))
       (gnus-summary-mail-other-window)
       (setq destination (current-buffer)))
+    (gnus-summary-expand-window)
     (gnus-summary-iterate n
       (gnus-summary-select-article)
-      (set-buffer destination)
-      ;; Attach at the end of the buffer.
-      (save-excursion
-	(goto-char (point-max))
-	(message-forward-make-body-mime gnus-original-article-buffer)))
+      (with-current-buffer destination
+       ;; Attach at the end of the buffer.
+       (save-excursion
+	 (goto-char (point-max))
+	 (message-forward-make-body-mime gnus-original-article-buffer))))
     (gnus-configure-windows 'message t)))
 
 (provide 'gnus-msg)

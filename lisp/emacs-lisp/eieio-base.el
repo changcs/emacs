@@ -1,6 +1,6 @@
 ;;; eieio-base.el --- Base classes for EIEIO.  -*- lexical-binding:t -*-
 
-;;; Copyright (C) 2000-2002, 2004-2005, 2007-2019 Free Software
+;;; Copyright (C) 2000-2002, 2004-2005, 2007-2020 Free Software
 ;;; Foundation, Inc.
 
 ;; Author: Eric M. Ludlam <zappo@gnu.org>
@@ -277,8 +277,7 @@ identified, and needing more object creation."
 	  (progn
 	    ;; If OBJCLASS is an eieio autoload object, then we need to
 	    ;; load it.
-	    (eieio-class-un-autoload objclass)
-	    (eieio--class-object objclass))))
+	    (eieio--full-class-object objclass))))
 
     (while slots
       (let ((initarg (car slots))

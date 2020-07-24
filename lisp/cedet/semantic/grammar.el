@@ -1,6 +1,6 @@
 ;;; semantic/grammar.el --- Major mode framework for Semantic grammars
 
-;; Copyright (C) 2002-2005, 2007-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2002-2005, 2007-2020 Free Software Foundation, Inc.
 
 ;; Author: David Ponce <david@dponce.com>
 
@@ -1306,7 +1306,7 @@ the change bounds to encompass the whole nonterminal tag."
   ;; Look within the line for a ; following an even number of backslashes
   ;; after either a non-backslash or the line beginning.
   (set (make-local-variable 'comment-start-skip)
-       "\\(\\(^\\|[^\\\\\n]\\)\\(\\\\\\\\\\)*\\);+ *")
+       "\\(\\(^\\|[^\\\n]\\)\\(\\\\\\\\\\)*\\);+ *")
   (set (make-local-variable 'indent-line-function)
        'semantic-grammar-indent)
   (set (make-local-variable 'fill-paragraph-function)
@@ -1348,11 +1348,9 @@ the change bounds to encompass the whole nonterminal tag."
        '(nonterminal))
   ;; Before each change, clear the cached regexp used to highlight
   ;; macros local in this grammar.
-  (semantic-make-local-hook 'before-change-functions)
   (add-hook 'before-change-functions
             'semantic--grammar-clear-macros-regexp-2 nil t)
   ;; Handle safe re-parse of grammar rules.
-  (semantic-make-local-hook 'semantic-edits-new-change-functions)
   (add-hook 'semantic-edits-new-change-functions
             'semantic-grammar-edits-new-change-hook-fcn
             nil t))
@@ -1665,6 +1663,42 @@ Select the buffer containing the tag's definition, and move point there."
 
 (defvar semantic-grammar-eldoc-last-data (cons nil nil))
 
+(defun semantic--docstring-format-sym-doc (prefix doc &optional face)
+  "Combine PREFIX and DOC, and shorten the result to fit in the echo area.
+
+When PREFIX is a symbol, propertize its symbol name with FACE
+before combining it with DOC.  If FACE is not provided, just
+apply the nil face.
+
+See also: `eldoc-echo-area-use-multiline-p'."
+  ;; Hoisted from old `eldoc-docstring-format-sym-doc'.
+  ;; If the entire line cannot fit in the echo area, the symbol name may be
+  ;; truncated or eliminated entirely from the output to make room for the
+  ;; description.
+  (when (symbolp prefix)
+    (setq prefix (concat (propertize (symbol-name prefix) 'face face) ": ")))
+  (let* ((ea-multi eldoc-echo-area-use-multiline-p)
+         ;; Subtract 1 from window width since emacs will not write
+         ;; any chars to the last column, or in later versions, will
+         ;; cause a wraparound and resize of the echo area.
+         (ea-width (1- (window-width (minibuffer-window))))
+         (strip (- (+ (length prefix)
+                      (length doc))
+                   ea-width)))
+    (cond ((or (<= strip 0)
+               (eq ea-multi t)
+               (and ea-multi (> (length doc) ea-width)))
+           (concat prefix doc))
+          ((> (length doc) ea-width)
+           (substring (format "%s" doc) 0 ea-width))
+          ((>= strip (string-match-p ":? *\\'" prefix))
+           doc)
+          (t
+           ;; Show the end of the partial symbol name, rather
+           ;; than the beginning, since the former is more likely
+           ;; to be unique given package namespace conventions.
+           (concat (substring prefix strip) doc)))))
+
 (defun semantic-grammar-eldoc-get-macro-docstring (macro expander)
   "Return a one-line docstring for the given grammar MACRO.
 EXPANDER is the name of the function that expands MACRO."
@@ -1683,19 +1717,18 @@ EXPANDER is the name of the function that expands MACRO."
         (setq doc (eldoc-function-argstring expander))))
       (when doc
         (setq doc
-	      (eldoc-docstring-format-sym-doc
+	      (semantic--docstring-format-sym-doc
 	       macro (format "==> %s %s" expander doc) 'default))
         (setq semantic-grammar-eldoc-last-data (cons expander doc)))
       doc))
    ((fboundp 'elisp-get-fnsym-args-string) ;; Emacs≥25
-    (elisp-get-fnsym-args-string
-     expander nil
-     (concat (propertize (symbol-name macro)
+    (concat (propertize (symbol-name macro)
                          'face 'font-lock-keyword-face)
              " ==> "
              (propertize (symbol-name macro)
                          'face 'font-lock-function-name-face)
-             ": ")))))
+             ": "
+             (elisp-get-fnsym-args-string expander nil )))))
 
 (define-mode-local-override semantic-idle-summary-current-symbol-info
   semantic-grammar-mode ()
@@ -1740,7 +1773,7 @@ Otherwise return nil."
 (define-mode-local-override semantic-tag-boundary-p
   semantic-grammar-mode (tag)
   "Return non-nil for tags that should have a boundary drawn.
-Only tags of type 'nonterminal will be so marked."
+Only tags of type `nonterminal' will be so marked."
   (let ((c (semantic-tag-class tag)))
     (eq c 'nonterminal)))
 
@@ -1779,7 +1812,7 @@ Only tags of type 'nonterminal will be so marked."
     (if (semantic-grammar-in-lisp-p)
         (with-mode-local emacs-lisp-mode
           (semantic-ctxt-current-class-list))
-      '(nonterminal keyword))))
+      '(nonterminal token keyword))))
 
 (define-mode-local-override semantic-ctxt-current-mode
   semantic-grammar-mode (&optional point)
@@ -1917,14 +1950,14 @@ Optional argument COLOR determines if color is added to the text."
       context-return)))
 
 (define-mode-local-override semantic-analyze-possible-completions
-  semantic-grammar-mode (context)
+  semantic-grammar-mode (context &rest flags)
   "Return a list of possible completions based on CONTEXT."
   (require 'semantic/analyze/complete)
   (if (semantic-grammar-in-lisp-p)
       (with-mode-local emacs-lisp-mode
 	(semantic-analyze-possible-completions context))
     (with-current-buffer (oref context buffer)
-      (let* ((prefix (car (oref context prefix)))
+      (let* ((prefix (car (reverse (oref context prefix))))
 	     (completetext (cond ((semantic-tag-p prefix)
 				  (semantic-tag-name prefix))
 				 ((stringp prefix)

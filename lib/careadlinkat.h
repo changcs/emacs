@@ -1,6 +1,6 @@
 /* Read symbolic links into a buffer without size limitation, relative to fd.
 
-   Copyright (C) 2011-2019 Free Software Foundation, Inc.
+   Copyright (C) 2011-2020 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -47,7 +47,7 @@ struct allocator;
    set errno.  */
 
 char *careadlinkat (int fd, char const *filename,
-                    char *buffer, size_t buffer_size,
+                    char *restrict buffer, size_t buffer_size,
                     struct allocator const *alloc,
                     ssize_t (*preadlinkat) (int, char const *,
                                             char *, size_t));

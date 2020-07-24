@@ -1,6 +1,6 @@
 ;;; srecode/ctxt.el --- Derive a context from the source buffer.
 
-;; Copyright (C) 2007-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2007-2020 Free Software Foundation, Inc.
 
 ;; Author: Eric M. Ludlam <zappo@gnu.org>
 
@@ -36,7 +36,7 @@
 
 ;;; Code:
 
-(define-overload srecode-calculate-context ()
+(define-overloadable-function srecode-calculate-context ()
   "Calculate the context at the current point.
 The returned context is a list, with the top-most context first.
 Each returned context is a string that would show up in a `context'

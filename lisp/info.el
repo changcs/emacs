@@ -1,6 +1,6 @@
 ;; info.el --- Info package for Emacs  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1985-1986, 1992-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1985-1986, 1992-2020 Free Software Foundation, Inc.
 
 ;; Maintainer: emacs-devel@gnu.org
 ;; Keywords: help
@@ -2265,7 +2265,8 @@ End of submatch 0, 1, and 3 are the same, so you can safely concat."
        (match-string-no-properties 1)))
 
 (defun Info-next ()
-  "Go to the next node of this node."
+  "Go to the \"next\" node, staying on the same hierarchical level.
+This command doesn't descend into sub-nodes, like \\<Info-mode-map>\\[Info-forward-node] does."
   (interactive)
   ;; In case another window is currently selected
   (save-window-excursion
@@ -2273,7 +2274,8 @@ End of submatch 0, 1, and 3 are the same, so you can safely concat."
     (Info-goto-node (Info-extract-pointer "next"))))
 
 (defun Info-prev ()
-  "Go to the previous node of this node."
+  "Go to the \"previous\" node, staying on the same hierarchical level.
+This command doesn't go up to the parent node, like \\<Info-mode-map>\\[Info-backward-node] does."
   (interactive)
   ;; In case another window is currently selected
   (save-window-excursion
@@ -2887,7 +2889,13 @@ N is the digit argument used to invoke this command."
       (Info-goto-node (Info-extract-menu-counting nil)))))
 
 (defun Info-forward-node (&optional not-down not-up no-error)
-  "Go forward one node, considering all nodes as forming one sequence."
+  "Go forward one node, considering all nodes as forming one sequence.
+Interactively, if the current node has sub-nodes, descend into the first
+sub-node; otherwise go to the \"next\" node, if it exists, else go \"up\"
+to the parent node.
+When called from Lisp, NOT-DOWN non-nil means don't descend into sub-nodes,
+NOT-UP non-nil means don't go to parent nodes, and NO-ERROR non-nil means
+don't signal a user-error if there's no node to go to."
   (interactive)
   (goto-char (point-min))
   (forward-line 1)
@@ -2922,7 +2930,9 @@ N is the digit argument used to invoke this command."
 	  (t (user-error "No pointer forward from this node")))))
 
 (defun Info-backward-node ()
-  "Go backward one node, considering all nodes as forming one sequence."
+  "Go backward one node, considering all nodes as forming one sequence.
+If the current node has a \"previous\" node, go to it, descending into its
+last sub-node, if any; otherwise go \"up\" to the parent node."
   (interactive)
   (let ((prevnode (Info-extract-pointer "prev[ious]*" t))
 	(upnode (Info-extract-pointer "up" t))
@@ -3780,20 +3790,8 @@ Build a menu of the possible matches."
     ;; there is no "nxml.el" (it's nxml-mode.el).
     ;; But package.el makes the same assumption.
     ;; I think nxml is the only exception - maybe it should be just be renamed.
-    (let ((str (ignore-errors (lm-commentary (find-library-name nodename)))))
-      (if (null str)
-	  (insert "Can’t find package description.\n\n")
-	(insert
-	 (with-temp-buffer
-	   (insert str)
-	   (goto-char (point-min))
-	   (delete-blank-lines)
-	   (goto-char (point-max))
-	   (delete-blank-lines)
-	   (goto-char (point-min))
-	   (while (re-search-forward "^;+ ?" nil t)
-	     (replace-match "" nil nil))
-	   (buffer-string))))))))
+    (insert (or (ignore-errors (lm-commentary (find-library-name nodename)))
+                (insert "Can’t find package description.\n\n"))))))
 
 ;;;###autoload
 (defun info-finder (&optional keywords)
@@ -4091,22 +4089,28 @@ If FORK is non-nil, it is passed to `Info-goto-node'."
     :help "Go to top node of file"]
    ["Final Node" Info-final-node
     :help "Go to final node in this file"]
+   "---"
    ("Menu Item" ["You should never see this" report-emacs-bug t])
    ("Reference" ["You should never see this" report-emacs-bug t])
    ["Search..." Info-search
     :help "Search for regular expression in this Info file"]
    ["Search Next" Info-search-next
     :help "Search for another occurrence of regular expression"]
-   ["Go to Node..." Info-goto-node
+   "---"
+   ("History"
+    ["Back in history" Info-history-back :active Info-history
+     :help "Go back in history to the last node you were at"]
+    ["Forward in history" Info-history-forward :active Info-history-forward
+     :help "Go forward in history"]
+    ["Show History" Info-history :active Info-history-list
+     :help "Go to menu of visited nodes"])
+   ("Go to"
+    ["Go to Node..." Info-goto-node
     :help "Go to a named node"]
-   ["Back in history" Info-history-back :active Info-history
-    :help "Go back in history to the last node you were at"]
-   ["Forward in history" Info-history-forward :active Info-history-forward
-    :help "Go forward in history"]
-   ["History" Info-history :active Info-history-list
-    :help "Go to menu of visited nodes"]
-   ["Table of Contents" Info-toc
-    :help "Go to table of contents"]
+    ["Table of Contents" Info-toc
+     :help "Go to table of contents"]
+    ["Go to Directory" Info-directory
+     :help "Go to the Info directory node."])
    ("Index"
     ["Lookup a String..." Info-index
      :help "Look for a string in the index items"]
@@ -4120,6 +4124,7 @@ If FORK is non-nil, it is passed to `Info-goto-node'."
     :help "Copy the name of the current node into the kill ring"]
    ["Clone Info buffer" clone-buffer
     :help "Create a twin copy of the current Info buffer."]
+   "---"
    ["Exit" quit-window :help "Stop reading Info"]))
 
 
@@ -4297,6 +4302,33 @@ With a zero prefix arg, put the name inside a function call to `info'."
 (defvar Info-mode-font-lock-keywords
   '(("‘\\([‘’]\\|[^‘’]*\\)’" (1 'Info-quoted))))
 
+;; See info-utils.c:degrade_utf8 in Texinfo for the source of the list
+;; below.
+(defvar info-symbols-and-replacements
+  '((?\‘ . "`")
+    (?\’ . "'")
+    (?\“ . "\"")
+    (?\” . "\"")
+    (?© . "(C)")
+    (?\》 . ">>")
+    (?→ . "->")
+    (?⇒ . "=>")
+    (?⊣ . "-|")
+    (?★ . "-!-")
+    (?↦ . "==>")
+    (?‐ . "-")
+    (?‑ . "-")
+    (?‒ . "-")
+    (?– . "-")
+    (?— . "--")
+    (?− . "-")
+    (?… . "...")
+    (?• . "*")
+    )
+  "A list of Unicode symbols used in Info files and their ASCII translations.
+Each element should be a cons cell with its car a character and its cdr
+a string of ASCII characters.")
+
 ;; Autoload cookie needed by desktop.el
 ;;;###autoload
 (define-derived-mode Info-mode nil "Info" ;FIXME: Derive from special-mode?
@@ -4343,6 +4375,7 @@ Moving within a node:
 	  already visible, try to go to the previous menu entry, or up
 	  if there is none.
 \\[beginning-of-buffer]	Go to beginning of node.
+\\[end-of-buffer]	Go to end of node.
 
 Advanced commands:
 \\[Info-search]	Search through this Info file for specified regexp,
@@ -4368,6 +4401,20 @@ Advanced commands:
   (setq case-fold-search t)
   (setq buffer-read-only t)
   (setq Info-tag-table-marker (make-marker))
+  (unless (or (display-multi-font-p)
+              (coding-system-equal
+               (coding-system-base (terminal-coding-system))
+               'utf-8))
+    (dolist (elt info-symbols-and-replacements)
+      (let ((ch (car elt))
+            (repl (cdr elt)))
+        (or (char-displayable-p ch)
+            (aset (or buffer-display-table
+                      (setq buffer-display-table (make-display-table)))
+                  ch (vconcat (mapcar (lambda (c)
+                                        (make-glyph-code c 'homoglyph))
+                                      repl)))))))
+
   (if Info-use-header-line    ; do not override global header lines
       (setq header-line-format
  	    '(:eval (get-text-property (point-min) 'header-line))))
@@ -5094,9 +5141,8 @@ first line or header line, and for breadcrumb links.")
   "Additional menu-items to add to speedbar frame.")
 
 ;; Make sure our special speedbar major mode is loaded
-(if (featurep 'speedbar)
-    (Info-install-speedbar-variables)
-  (add-hook 'speedbar-load-hook 'Info-install-speedbar-variables))
+(with-eval-after-load 'speedbar
+  (Info-install-speedbar-variables))
 
 ;;; Info hierarchy display method
 ;;;###autoload
@@ -5338,7 +5384,16 @@ completion alternatives to currently visited manuals."
 	  (setq found buffer
 		blist nil))))
     (if found
-	(switch-to-buffer found)
+        (let ((window (get-buffer-window found t)))
+          ;; If the buffer is already displayed in a window somewhere,
+          ;; then select that window (and pop its frame to the top).
+          (if window
+              (progn
+                (raise-frame (window-frame window))
+                (select-frame-set-input-focus (window-frame window))
+                (select-window window))
+	    (switch-to-buffer found)))
+      ;; The buffer doesn't exist; create it.
       (info-initialize)
       (info (Info-find-file manual)
 	    (generate-new-buffer-name "*info*")))))

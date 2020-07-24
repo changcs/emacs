@@ -1,6 +1,6 @@
 ;;; easymenu.el --- support the easymenu interface for defining a menu  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1994, 1996, 1998-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1994, 1996, 1998-2020 Free Software Foundation, Inc.
 
 ;; Keywords: emulations
 ;; Author: Richard Stallman <rms@gnu.org>
@@ -183,17 +183,17 @@ This is expected to be bound to a mouse event."
     (when symbol
       (set symbol keymap)
       (defalias symbol
-	`(lambda (event) ,doc (interactive "@e")
+	(lambda (event) (:documentation doc) (interactive "@e")
 	   ;; FIXME: XEmacs uses popup-menu which calls the binding
 	   ;; while x-popup-menu only returns the selection.
 	   (x-popup-menu event
-			 (or (and (symbolp ,symbol)
+			 (or (and (symbolp symbol)
 				  (funcall
-				   (or (plist-get (get ,symbol 'menu-prop)
+				   (or (plist-get (get symbol 'menu-prop)
 						  :filter)
 				       'identity)
-				   (symbol-function ,symbol)))
-			     ,symbol)))))
+				   (symbol-function symbol)))
+			     symbol)))))
     (dolist (map (if (keymapp maps) (list maps) maps))
       (define-key map
         (vector 'menu-bar (easy-menu-intern (car menu)))
@@ -475,7 +475,7 @@ When non-nil, NOEXP indicates that CALLBACK cannot be an expression
                   ;; `functionp' is probably not needed.
                   (functionp callback) noexp)
               callback
-	    `(lambda () (interactive) ,callback)))
+	    (eval `(lambda () (interactive) ,callback) t)))
     command))
 
 ;;;###autoload

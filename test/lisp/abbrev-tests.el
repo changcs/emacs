@@ -1,6 +1,6 @@
 ;;; abbrev-tests.el --- Test suite for abbrevs  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2015-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2015-2020 Free Software Foundation, Inc.
 
 ;; Author: Eli Zaretskii <eliz@gnu.org>
 ;; Keywords: abbrevs
@@ -283,7 +283,7 @@
         (inverse-add-abbrev table "Global" 1)))
     (should (string= (abbrev-expansion "foo" table) "bar"))))
 
-(ert-deftest inverse-add-abbrev-skips-trailing-nonword/postiive-arg ()
+(ert-deftest inverse-add-abbrev-skips-trailing-nonword/positive-arg ()
   "Test that adding an inverse abbrev skips trailing nonword characters."
   (let ((table (make-abbrev-table)))
     (with-temp-buffer

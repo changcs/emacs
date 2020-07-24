@@ -1,6 +1,6 @@
 ;;; nnimap.el --- IMAP interface for Gnus
 
-;; Copyright (C) 2010-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2010-2020 Free Software Foundation, Inc.
 
 ;; Author: Lars Magne Ingebrigtsen <larsi@gnus.org>
 ;;         Simon Josefsson <simon@josefsson.org>
@@ -233,7 +233,7 @@ textual parts.")
     'headers))
 
 (defun nnimap-transform-headers ()
-  "Transform server's FETCH response into parseable headers."
+  "Transform server's FETCH response into parsable headers."
   (goto-char (point-min))
   (let (seen-articles article lines size string labels)
     (cl-block nil
@@ -271,8 +271,8 @@ textual parts.")
 		(save-excursion
 		  (forward-line)
 		  (null (looking-at-p
-			 ;; We're expecting a mail header.
-			 "^[!-9;-~]+:[[:space:]]"))))
+			 ;; We're expecting a mail-ish header.
+			 "^[!-9;-~]+:[[:space:]]?"))))
 	    (delete-region (line-beginning-position)
 			   (1+ (line-end-position)))
 	  (setq lines nil)
@@ -1134,7 +1134,7 @@ If LIMIT, first try to limit the search to the N last articles."
 	  (nnimap-command "UID EXPUNGE %s"
 			  (nnimap-article-ranges articles))
 	(nnheader-message
-	 3 (concat "nnimap-expunge set to 'immediately, but "
+	 3 (concat "nnimap-expunge set to `immediately', but "
 		   "server doesn't support UIDPLUS"))
 	nil))
 
@@ -1189,11 +1189,11 @@ If LIMIT, first try to limit the search to the N last articles."
 	;; response.  If they're successful, they're successful.
 	(dolist (action actions)
 	  (cl-destructuring-bind (range action marks) action
-	    ;; If we add/remove a tick mark, then do the same with the
-	    ;; readedness mark on the IMAP server.  Other IMAP clients
-	    ;; can have marked messages without having them read, but
-	    ;; Gnus can't.
-	    (when (memq 'tick marks)
+	    ;; If we add a tick mark, then also mark the message as
+	    ;; read.  Other IMAP clients can have marked messages
+	    ;; without having them read, but Gnus can't.
+	    (when (and (memq 'tick marks)
+		       (eq action 'add))
 	      (push 'read marks))
 	    (let ((flags (nnimap-marks-to-flags marks)))
 	      (when flags
@@ -1620,7 +1620,7 @@ If LIMIT, first try to limit the search to the N last articles."
 		       read)))
 	      (when (or (not (listp permanent-flags))
 			(memq '%Seen permanent-flags))
-		(gnus-info-set-read info read))
+		(setf (gnus-info-read info) read))
 	      ;; Update the marks.
 	      (setq marks (gnus-info-marks info))
 	      (dolist (type (cdr nnimap-mark-alist))
@@ -1680,14 +1680,13 @@ If LIMIT, first try to limit the search to the N last articles."
 
 (defun nnimap-update-qresync-info (info existing vanished flags)
   ;; Add all the vanished articles to the list of read articles.
-  (gnus-info-set-read
-   info
-   (gnus-add-to-range
-    (gnus-add-to-range
-     (gnus-range-add (gnus-info-read info)
-		     vanished)
-     (cdr (assq '%Flagged flags)))
-    (cdr (assq '%Seen flags))))
+  (setf (gnus-info-read info)
+        (gnus-add-to-range
+         (gnus-add-to-range
+          (gnus-range-add (gnus-info-read info)
+		          vanished)
+	  (cdr (assq '%Flagged flags)))
+	 (cdr (assq '%Seen flags))))
   (let ((marks (gnus-info-marks info)))
     (dolist (type (cdr nnimap-mark-alist))
       (let ((ticks (assoc (car type) marks))
@@ -1938,7 +1937,7 @@ Return the server's response to the SELECT or EXAMINE command."
 (defun nnimap-log-buffer ()
   (let ((name "*imap log*"))
     (or (get-buffer name)
-        (with-current-buffer (get-buffer-create name)
+        (with-current-buffer (gnus-get-buffer-create name)
 	  (setq-local window-point-insertion-type t)
           (current-buffer)))))
 

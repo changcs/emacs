@@ -1,6 +1,6 @@
 ;;; macroexp.el --- Additional macro-expansion support -*- lexical-binding: t -*-
 ;;
-;; Copyright (C) 2004-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2004-2020 Free Software Foundation, Inc.
 ;;
 ;; Author: Miles Bader <miles@gnu.org>
 ;; Keywords: lisp, compiler, macros
@@ -187,7 +187,7 @@ and also to avoid outputting the warning during normal execution."
              (symbolp (car form))
              (get (car form) 'byte-obsolete-info)
              (or (not (fboundp 'byte-compile-warning-enabled-p))
-                 (byte-compile-warning-enabled-p 'obsolete)))
+                 (byte-compile-warning-enabled-p 'obsolete (car form))))
         (let* ((fun (car form))
                (obsolete (get fun 'byte-obsolete-info)))
           (macroexp--warn-and-return

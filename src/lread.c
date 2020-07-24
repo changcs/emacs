@@ -1,6 +1,6 @@
 /* Lisp parsing and input streams.
 
-Copyright (C) 1985-1989, 1993-1995, 1997-2019 Free Software Foundation,
+Copyright (C) 1985-1989, 1993-1995, 1997-2020 Free Software Foundation,
 Inc.
 
 This file is part of GNU Emacs.
@@ -152,12 +152,6 @@ static ptrdiff_t prev_saved_doc_string_length;
 /* This is the file position that string came from.  */
 static file_offset prev_saved_doc_string_position;
 
-/* True means inside a new-style backquote with no surrounding
-   parentheses.  Fread initializes this to the value of
-   `force_new_style_backquotes', so we need not specbind it or worry
-   about what happens to it when there is an error.  */
-static bool new_backquote_flag;
-
 /* A list of file names for files being loaded in Fload.  Used to
    check for recursive loads.  */
 
@@ -231,8 +225,9 @@ readchar (Lisp_Object readcharfun, bool *multibyte)
 	{
 	  /* Fetch the character code from the buffer.  */
 	  unsigned char *p = BUF_BYTE_ADDRESS (inbuffer, pt_byte);
-	  BUF_INC_POS (inbuffer, pt_byte);
-	  c = STRING_CHAR (p);
+	  int clen;
+	  c = string_char_and_length (p, &clen);
+	  pt_byte += clen;
 	  if (multibyte)
 	    *multibyte = 1;
 	}
@@ -260,8 +255,9 @@ readchar (Lisp_Object readcharfun, bool *multibyte)
 	{
 	  /* Fetch the character code from the buffer.  */
 	  unsigned char *p = BUF_BYTE_ADDRESS (inbuffer, bytepos);
-	  BUF_INC_POS (inbuffer, bytepos);
-	  c = STRING_CHAR (p);
+	  int clen;
+	  c = string_char_and_length (p, &clen);
+	  bytepos += clen;
 	  if (multibyte)
 	    *multibyte = 1;
 	}
@@ -300,9 +296,10 @@ readchar (Lisp_Object readcharfun, bool *multibyte)
 	{
 	  if (multibyte)
 	    *multibyte = 1;
-	  FETCH_STRING_CHAR_ADVANCE_NO_CHECK (c, readcharfun,
-					      read_from_string_index,
-					      read_from_string_index_byte);
+	  c = (fetch_string_char_advance_no_check
+	       (readcharfun,
+		&read_from_string_index,
+		&read_from_string_index_byte));
 	}
       else
 	{
@@ -433,7 +430,7 @@ unreadchar (Lisp_Object readcharfun, int c)
       ptrdiff_t bytepos = BUF_PT_BYTE (b);
 
       if (! NILP (BVAR (b, enable_multibyte_characters)))
-	BUF_DEC_POS (b, bytepos);
+	bytepos -= buf_prev_char_len (b, bytepos);
       else
 	bytepos--;
 
@@ -446,7 +443,7 @@ unreadchar (Lisp_Object readcharfun, int c)
 
       XMARKER (readcharfun)->charpos--;
       if (! NILP (BVAR (b, enable_multibyte_characters)))
-	BUF_DEC_POS (b, bytepos);
+	bytepos -= buf_prev_char_len (b, bytepos);
       else
 	bytepos--;
 
@@ -532,13 +529,11 @@ readbyte_from_string (int c, Lisp_Object readcharfun)
 	= string_char_to_byte (string, read_from_string_index);
     }
 
-  if (read_from_string_index >= read_from_string_limit)
-    c = -1;
-  else
-    FETCH_STRING_CHAR_ADVANCE (c, string,
-			       read_from_string_index,
-			       read_from_string_index_byte);
-  return c;
+  return (read_from_string_index < read_from_string_limit
+	  ? fetch_string_char_advance (string,
+				       &read_from_string_index,
+				       &read_from_string_index_byte)
+	  : -1);
 }
 
 
@@ -985,9 +980,7 @@ lisp_file_lexically_bound_p (Lisp_Object readcharfun)
 
 /* Value is a version number of byte compiled code if the file
    associated with file descriptor FD is a compiled Lisp file that's
-   safe to load.  Only files compiled with Emacs are safe to load.
-   Files compiled with XEmacs can lead to a crash in Fbyte_code
-   because of an incompatible change in the byte compiler.  */
+   safe to load.  Only files compiled with Emacs can be loaded.  */
 
 static int
 safe_to_load_version (int fd)
@@ -1035,22 +1028,16 @@ load_error_handler (Lisp_Object data)
   return Qnil;
 }
 
-static AVOID
-load_error_old_style_backquotes (void)
-{
-  if (NILP (Vload_file_name))
-    xsignal1 (Qerror, build_string ("Old-style backquotes detected!"));
-  else
-    {
-      AUTO_STRING (format, "Loading `%s': old-style backquotes detected!");
-      xsignal1 (Qerror, CALLN (Fformat_message, format, Vload_file_name));
-    }
-}
-
 static void
 load_warn_unescaped_character_literals (Lisp_Object file)
 {
-  Lisp_Object warning = call0 (Qbyte_run_unescaped_character_literals_warning);
+  Lisp_Object function
+    = Fsymbol_function (Qbyte_run_unescaped_character_literals_warning);
+  /* If byte-run.el is being loaded,
+     `byte-run--unescaped-character-literals-warning' isn't yet
+     defined.  Since it'll be byte-compiled later, ignore potential
+     unescaped character literals. */
+  Lisp_Object warning = NILP (function) ? Qnil : call0 (function);
   if (!NILP (warning))
     {
       AUTO_STRING (format, "Loading `%s': %s");
@@ -1153,7 +1140,6 @@ Return t if the file exists and loads successfully.  */)
   /* True means we are loading a compiled file.  */
   bool compiled = 0;
   Lisp_Object handler;
-  bool safe_p = 1;
   const char *fmode = "r" FOPEN_TEXT;
   int version;
 
@@ -1199,6 +1185,9 @@ Return t if the file exists and loads successfully.  */)
 	      || suffix_p (file, ".elc")
 #ifdef HAVE_MODULES
 	      || suffix_p (file, MODULES_SUFFIX)
+#ifdef MODULES_SECONDARY_SUFFIX
+              || suffix_p (file, MODULES_SECONDARY_SUFFIX)
+#endif
 #endif
 	      )
 	    must_suffix = Qnil;
@@ -1268,7 +1257,12 @@ Return t if the file exists and loads successfully.  */)
     }
 
 #ifdef HAVE_MODULES
-  bool is_module = suffix_p (found, MODULES_SUFFIX);
+  bool is_module =
+    suffix_p (found, MODULES_SUFFIX)
+#ifdef MODULES_SECONDARY_SUFFIX
+    || suffix_p (found, MODULES_SECONDARY_SUFFIX)
+#endif
+    ;
 #else
   bool is_module = false;
 #endif
@@ -1328,11 +1322,7 @@ Return t if the file exists and loads successfully.  */)
 	  if (version < 0
 	      && ! (version = safe_to_load_version (fd)))
 	    {
-	      safe_p = 0;
-	      if (!load_dangerous_libraries)
-		error ("File `%s' was not compiled in Emacs", SDATA (found));
-	      else if (!NILP (nomessage) && !force_load_messages)
-		message_with_string ("File `%s' not compiled in Emacs", found, 1);
+	      error ("File `%s' was not compiled in Emacs", SDATA (found));
 	    }
 
 	  compiled = 1;
@@ -1345,11 +1335,11 @@ Return t if the file exists and loads successfully.  */)
              ignores suffix order due to load_prefer_newer.  */
           if (!load_prefer_newer && is_elc)
             {
-              result = stat (SSDATA (efound), &s1);
+	      result = emacs_fstatat (AT_FDCWD, SSDATA (efound), &s1, 0);
               if (result == 0)
                 {
                   SSET (efound, SBYTES (efound) - 1, 0);
-                  result = stat (SSDATA (efound), &s2);
+		  result = emacs_fstatat (AT_FDCWD, SSDATA (efound), &s2, 0);
                   SSET (efound, SBYTES (efound) - 1, 'c');
                 }
 
@@ -1364,7 +1354,7 @@ Return t if the file exists and loads successfully.  */)
                     {
                       Lisp_Object msg_file;
                       msg_file = Fsubstring (found, make_fixnum (0), make_fixnum (-1));
-                      message_with_string ("Source file `%s' newer than byte-compiled file",
+                      message_with_string ("Source file `%s' newer than byte-compiled file; using older file",
                                            msg_file, 1);
                     }
                 }
@@ -1439,10 +1429,7 @@ Return t if the file exists and loads successfully.  */)
 
   if (NILP (nomessage) || force_load_messages)
     {
-      if (!safe_p)
-	message_with_string ("Loading %s (compiled; note unsafe, not compiled in Emacs)...",
-		 file, 1);
-      else if (is_module)
+      if (is_module)
         message_with_string ("Loading %s (module)...", file, 1);
       else if (!compiled)
 	message_with_string ("Loading %s (source)...", file, 1);
@@ -1502,10 +1489,7 @@ Return t if the file exists and loads successfully.  */)
 
   if (!noninteractive && (NILP (nomessage) || force_load_messages))
     {
-      if (!safe_p)
-	message_with_string ("Loading %s (compiled; note unsafe, not compiled in Emacs)...done",
-		 file, 1);
-      else if (is_module)
+      if (is_module)
         message_with_string ("Loading %s (module)...done", file, 1);
       else if (!compiled)
 	message_with_string ("Loading %s (source)...done", file, 1);
@@ -2147,6 +2131,12 @@ DO-ALLOW-PRINT, if non-nil, specifies that output functions in the
  evaluated code should work normally even if PRINTFLAG is nil, in
  which case the output is displayed in the echo area.
 
+This function ignores the current value of the `lexical-binding'
+variable.  Instead it will heed any
+  -*- lexical-binding: t -*-
+settings in the buffer, and if there is no such setting, the buffer
+will be evaluated without lexical binding.
+
 This function preserves the position of point.  */)
   (Lisp_Object buffer, Lisp_Object printflag, Lisp_Object filename, Lisp_Object unibyte, Lisp_Object do_allow_print)
 {
@@ -2269,7 +2259,6 @@ read_internal_start (Lisp_Object stream, Lisp_Object start, Lisp_Object end)
   Lisp_Object retval;
 
   readchar_count = 0;
-  new_backquote_flag = force_new_style_backquotes;
   /* We can get called from readevalloop which may have set these
      already.  */
   if (! HASH_TABLE_P (read_objects_map)
@@ -2977,9 +2966,46 @@ read1 (Lisp_Object readcharfun, int *pch, bool first_in_list)
 	  struct Lisp_Vector *vec;
 	  tmp = read_vector (readcharfun, 1);
 	  vec = XVECTOR (tmp);
-	  if (vec->header.size == 0)
-	    invalid_syntax ("Empty byte-code object");
-	  make_byte_code (vec);
+	  if (! (COMPILED_STACK_DEPTH < ASIZE (tmp)
+		 && (FIXNUMP (AREF (tmp, COMPILED_ARGLIST))
+		     || CONSP (AREF (tmp, COMPILED_ARGLIST))
+		     || NILP (AREF (tmp, COMPILED_ARGLIST)))
+		 && ((STRINGP (AREF (tmp, COMPILED_BYTECODE))
+		      && VECTORP (AREF (tmp, COMPILED_CONSTANTS)))
+		     || CONSP (AREF (tmp, COMPILED_BYTECODE)))
+		 && FIXNATP (AREF (tmp, COMPILED_STACK_DEPTH))))
+	    invalid_syntax ("Invalid byte-code object");
+
+	  if (STRINGP (AREF (tmp, COMPILED_BYTECODE))
+	      && STRING_MULTIBYTE (AREF (tmp, COMPILED_BYTECODE)))
+	    {
+	      /* BYTESTR must have been produced by Emacs 20.2 or earlier
+		 because it produced a raw 8-bit string for byte-code and
+		 now such a byte-code string is loaded as multibyte with
+		 raw 8-bit characters converted to multibyte form.
+		 Convert them back to the original unibyte form.  */
+	      ASET (tmp, COMPILED_BYTECODE,
+		    Fstring_as_unibyte (AREF (tmp, COMPILED_BYTECODE)));
+	    }
+
+	  if (COMPILED_DOC_STRING < ASIZE (tmp)
+	      && EQ (AREF (tmp, COMPILED_DOC_STRING), make_fixnum (0)))
+	    {
+	      /* read_list found a docstring like '(#$ . 5521)' and treated it
+		 as 0.  This placeholder 0 would lead to accidental sharing in
+		 purecopy's hash-consing, so replace it with a (hopefully)
+		 unique integer placeholder, which is negative so that it is
+		 not confused with a DOC file offset (the USE_LSB_TAG shift
+		 relies on the fact that VALMASK is one bit narrower than
+		 INTMASK).  Eventually Snarf-documentation should replace the
+		 placeholder with the actual docstring.  */
+	      verify (INTMASK & ~VALMASK);
+	      EMACS_UINT hash = ((XHASH (tmp) >> USE_LSB_TAG)
+				 | (INTMASK - INTMASK / 2));
+	      ASET (tmp, COMPILED_DOC_STRING, make_ufixnum (hash));
+	    }
+
+	  XSETPVECTYPE (vec, PVEC_COMPILED);
 	  return tmp;
 	}
       if (c == '(')
@@ -3257,70 +3283,24 @@ read1 (Lisp_Object readcharfun, int *pch, bool first_in_list)
       return list2 (Qquote, read0 (readcharfun));
 
     case '`':
-      {
-	int next_char = READCHAR;
-	UNREAD (next_char);
-	/* Transition from old-style to new-style:
-	   If we see "(`" it used to mean old-style, which usually works
-	   fine because ` should almost never appear in such a position
-	   for new-style.  But occasionally we need "(`" to mean new
-	   style, so we try to distinguish the two by the fact that we
-	   can either write "( `foo" or "(` foo", where the first
-	   intends to use new-style whereas the second intends to use
-	   old-style.  For Emacs-25, we should completely remove this
-	   first_in_list exception (old-style can still be obtained via
-	   "(\`" anyway).  */
-	if (!new_backquote_flag && first_in_list && next_char == ' ')
-	  load_error_old_style_backquotes ();
-	else
-	  {
-	    Lisp_Object value;
-	    bool saved_new_backquote_flag = new_backquote_flag;
+      return list2 (Qbackquote, read0 (readcharfun));
 
-	    new_backquote_flag = 1;
-	    value = read0 (readcharfun);
-	    new_backquote_flag = saved_new_backquote_flag;
-
-	    return list2 (Qbackquote, value);
-	  }
-      }
     case ',':
       {
-	int next_char = READCHAR;
-	UNREAD (next_char);
-	/* Transition from old-style to new-style:
-           It used to be impossible to have a new-style , other than within
-	   a new-style `.  This is sufficient when ` and , are used in the
-	   normal way, but ` and , can also appear in args to macros that
-	   will not interpret them in the usual way, in which case , may be
-	   used without any ` anywhere near.
-	   So we now use the same heuristic as for backquote: old-style
-	   unquotes are only recognized when first on a list, and when
-	   followed by a space.
-	   Because it's more difficult to peek 2 chars ahead, a new-style
-	   ,@ can still not be used outside of a `, unless it's in the middle
-	   of a list.  */
-	if (new_backquote_flag
-	    || !first_in_list
-	    || (next_char != ' ' && next_char != '@'))
-	  {
-	    Lisp_Object comma_type = Qnil;
-	    Lisp_Object value;
-	    int ch = READCHAR;
+	Lisp_Object comma_type = Qnil;
+	Lisp_Object value;
+	int ch = READCHAR;
 
-	    if (ch == '@')
-	      comma_type = Qcomma_at;
-	    else
-	      {
-		if (ch >= 0) UNREAD (ch);
-		comma_type = Qcomma;
-	      }
-
-	    value = read0 (readcharfun);
-	    return list2 (comma_type, value);
-	  }
+	if (ch == '@')
+	  comma_type = Qcomma_at;
 	else
-	  load_error_old_style_backquotes ();
+	  {
+	    if (ch >= 0) UNREAD (ch);
+	    comma_type = Qcomma;
+	  }
+
+	value = read0 (readcharfun);
+	return list2 (comma_type, value);
       }
     case '?':
       {
@@ -3565,13 +3545,6 @@ read1 (Lisp_Object readcharfun, int *pch, bool first_in_list)
 	    if (! NILP (result) && len == nbytes)
 	      return unbind_to (count, result);
 	  }
-        if (!quoted && multibyte)
-          {
-            int ch = STRING_CHAR ((unsigned char *) read_buffer);
-            if (confusable_symbol_character_p (ch))
-              xsignal2 (Qinvalid_read_syntax, build_string ("strange quote"),
-                        CALLN (Fstring, make_fixnum (ch)));
-          }
 	{
 	  Lisp_Object result;
 	  ptrdiff_t nchars
@@ -3870,9 +3843,11 @@ read_vector (Lisp_Object readcharfun, bool bytecodeflag)
 {
   Lisp_Object tem = read_list (1, readcharfun);
   ptrdiff_t size = list_length (tem);
-  if (bytecodeflag && size <= COMPILED_STACK_DEPTH)
-    error ("Invalid byte code");
   Lisp_Object vector = make_nil_vector (size);
+
+  /* Avoid accessing past the end of a vector if the vector is too
+     small to be valid for bytecode.  */
+  bytecodeflag &= COMPILED_STACK_DEPTH < size;
 
   Lisp_Object *ptr = XVECTOR (vector)->contents;
   for (ptrdiff_t i = 0; i < size; i++)
@@ -4857,9 +4832,16 @@ This list should not include the empty string.
 `load' and related functions try to append these suffixes, in order,
 to the specified file name if a suffix is allowed or required.  */);
 #ifdef HAVE_MODULES
+#ifdef MODULES_SECONDARY_SUFFIX
+  Vload_suffixes = list4 (build_pure_c_string (".elc"),
+			  build_pure_c_string (".el"),
+			  build_pure_c_string (MODULES_SUFFIX),
+                          build_pure_c_string (MODULES_SECONDARY_SUFFIX));
+#else
   Vload_suffixes = list3 (build_pure_c_string (".elc"),
 			  build_pure_c_string (".el"),
 			  build_pure_c_string (MODULES_SUFFIX));
+#endif
 #else
   Vload_suffixes = list2 (build_pure_c_string (".elc"),
 			  build_pure_c_string (".el"));
@@ -4901,8 +4883,8 @@ When `load' is run and the file-name argument matches an element's
 REGEXP-OR-FEATURE, or when `provide' is run and provides the symbol
 REGEXP-OR-FEATURE, the FUNCS in the element are called.
 
-An error in FORMS does not undo the load, but does prevent execution of
-the rest of the FORMS.  */);
+An error in FUNCS does not undo the load, but does prevent calling
+the rest of the FUNCS.  */);
   Vafter_load_alist = Qnil;
 
   DEFVAR_LISP ("load-history", Vload_history,
@@ -4920,7 +4902,7 @@ features required.  Each entry has the form `(provide . FEATURE)',
 `(defface . SYMBOL)', `(define-type . SYMBOL)',
 `(cl-defmethod METHOD SPECIALIZERS)', or `(t . SYMBOL)'.
 Entries like `(t . SYMBOL)' may precede a `(defun . FUNCTION)' entry,
-and means that SYMBOL was an autoload before this file redefined it
+and mean that SYMBOL was an autoload before this file redefined it
 as a function.  In addition, entries may also be single symbols,
 which means that symbol was defined by `defvar' or `defconst'.
 
@@ -5008,7 +4990,7 @@ This overrides the value of the NOMESSAGE argument to `load'.  */);
 When Emacs loads a compiled Lisp file, it reads the first 512 bytes
 from the file, and matches them against this regular expression.
 When the regular expression matches, the file is considered to be safe
-to load.  See also `load-dangerous-libraries'.  */);
+to load.  */);
   Vbytecomp_version_regexp
     = build_pure_c_string ("^;;;.\\(in Emacs version\\|bytecomp version FSF\\)");
 
@@ -5050,17 +5032,6 @@ newest.
 Note that if you customize this, obviously it will not affect files
 that are loaded before your customizations are read!  */);
   load_prefer_newer = 0;
-
-  DEFVAR_BOOL ("force-new-style-backquotes", force_new_style_backquotes,
-               doc: /* Non-nil means to always use the current syntax for backquotes.
-If nil, `load' and `read' raise errors when encountering some
-old-style variants of backquote and comma.  If non-nil, these
-constructs are always interpreted as described in the Info node
-`(elisp)Backquotes', even if that interpretation is incompatible with
-previous versions of Emacs.  Setting this variable to non-nil makes
-Emacs compatible with the behavior planned for Emacs 28.  In Emacs 28,
-this variable will become obsolete.  */);
-  force_new_style_backquotes = false;
 
   /* Vsource_directory was initialized in init_lread.  */
 

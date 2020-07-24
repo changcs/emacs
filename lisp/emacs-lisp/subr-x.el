@@ -1,6 +1,6 @@
 ;;; subr-x.el --- extra Lisp functions  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2013-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2013-2020 Free Software Foundation, Inc.
 
 ;; Maintainer: emacs-devel@gnu.org
 ;; Keywords: convenience
@@ -235,6 +235,15 @@ REGEXP defaults to  \"[ \\t\\n\\r]+\"."
 
 TRIM-LEFT and TRIM-RIGHT default to \"[ \\t\\n\\r]+\"."
   (string-trim-left (string-trim-right string trim-right) trim-left))
+
+;;;###autoload
+(defun string-truncate-left (string length)
+  "Truncate STRING to LENGTH, replacing initial surplus with \"...\"."
+  (let ((strlen (length string)))
+    (if (<= strlen length)
+	string
+      (setq length (max 0 (- length 3)))
+      (concat "..." (substring string (max 0 (- strlen 1 length)))))))
 
 (defsubst string-blank-p (string)
   "Check whether STRING is either empty or only whitespace.

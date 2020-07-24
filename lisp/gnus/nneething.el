@@ -1,6 +1,6 @@
 ;;; nneething.el --- arbitrary file access for Gnus
 
-;; Copyright (C) 1995-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1995-2020 Free Software Foundation, Inc.
 
 ;; Author: Lars Magne Ingebrigtsen <larsi@gnus.org>
 ;;	Masanobu UMEDA <umerin@flab.flab.fujitsu.junet>
@@ -381,7 +381,7 @@ included.")
 
 (defun nneething-get-head (file)
   "Either find the head in FILE or make a head for FILE."
-  (with-current-buffer (get-buffer-create nneething-work-buffer)
+  (with-current-buffer (gnus-get-buffer-create nneething-work-buffer)
     (setq case-fold-search nil)
     (buffer-disable-undo)
     (erase-buffer)

@@ -1,6 +1,6 @@
 ;;; idle.el --- Schedule parsing tasks in idle time
 
-;; Copyright (C) 2003-2006, 2008-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2003-2006, 2008-2020 Free Software Foundation, Inc.
 
 ;; Author: Eric M. Ludlam <zappo@gnu.org>
 ;; Keywords: syntax
@@ -703,8 +703,7 @@ by semanticdb as a time-saving measure."
   '(
     font-lock-comment-face
     font-lock-string-face
-    font-lock-doc-string-face           ; XEmacs.
-    font-lock-doc-face                  ; Emacs 21 and later.
+    font-lock-doc-face
     )
   "List of font-lock faces that indicate a useless summary context.
 Those are generally faces used to highlight comments.

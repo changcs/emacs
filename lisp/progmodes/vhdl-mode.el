@@ -1,6 +1,6 @@
 ;;; vhdl-mode.el --- major mode for editing VHDL code
 
-;; Copyright (C) 1992-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1992-2020 Free Software Foundation, Inc.
 
 ;; Authors:     Reto Zimmermann <reto@gnu.org>
 ;;              Rodney J. Whitby <software.vhdl-mode@rwhitby.net>
@@ -4867,8 +4867,8 @@ Known problems:
 
 - XEmacs: Incorrect start-up when automatically opening speedbar.
 - XEmacs: Indentation in XEmacs 21.4 (and higher).
-- Indentation incorrect for new 'postponed' VHDL keyword.
-- Indentation incorrect for 'protected body' construct.
+- Indentation incorrect for new `postponed' VHDL keyword.
+- Indentation incorrect for `protected body' construct.
 
 
                                                 The VHDL Mode Authors
@@ -8737,13 +8737,13 @@ project is defined."
        ((/= (preceding-char) ?-)	; standard dash (minus)
 	(self-insert-command count))
        (t (self-insert-command count)
-	  (message "Enter '-' for horiz. line, 'CR' for commenting-out code, else enter comment")
+	  (message "Enter `-' for horiz. line, RET for commenting-out code, else enter comment")
 	  (let ((next-input (read-char)))
 	    (if (= next-input ?-)	; triple dash
 		(progn
 		  (vhdl-comment-display-line)
 		  (message
-		   "Enter '-' for display comment, else continue coding")
+		   "Enter `-' for display comment, else continue coding")
 		  (let ((next-input (read-char)))
 		    (if (= next-input ?-) ; four dashes
 			(vhdl-comment-display t)
@@ -13334,7 +13334,7 @@ File statistics: \"%s\"\n\
 (defvar vhdl-font-lock-keywords nil
   "Regular expressions to highlight in VHDL Mode.")
 
-(defvar vhdl-font-lock-keywords-0
+(defvar vhdl-font-lock-keywords-0 nil
   ;; set in `vhdl-font-lock-init' because dependent on user options
   "For consideration as a value of `vhdl-font-lock-keywords'.
 This does highlighting of template prompts and directives (pragmas).")
@@ -14730,7 +14730,7 @@ if required."
     (speedbar-add-mode-functions-list
      '("vhdl directory"
        (speedbar-item-info . vhdl-speedbar-item-info)
-       (speedbar-line-directory . speedbar-files-line-path)))
+       (speedbar-line-directory . speedbar-files-line-directory)))
     (speedbar-add-mode-functions-list
      '("vhdl project"
        (speedbar-item-info . vhdl-speedbar-item-info)
@@ -16148,7 +16148,7 @@ expansion function)."
 
 ;; initialize speedbar
 (if (not (boundp 'speedbar-frame))
-    (add-hook 'speedbar-load-hook 'vhdl-speedbar-initialize)
+    (with-no-warnings (add-hook 'speedbar-load-hook 'vhdl-speedbar-initialize))
   (vhdl-speedbar-initialize)
   (when speedbar-frame (vhdl-speedbar-refresh)))
 

@@ -1,6 +1,6 @@
 /* Graphical user interface functions for the Microsoft Windows API.
 
-Copyright (C) 1989, 1992-2019 Free Software Foundation, Inc.
+Copyright (C) 1989, 1992-2020 Free Software Foundation, Inc.
 
 This file is part of GNU Emacs.
 
@@ -80,7 +80,6 @@ along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 extern int w32_console_toggle_lock_key (int, Lisp_Object);
 extern void w32_menu_display_help (HWND, HMENU, UINT, UINT);
 extern void w32_free_menu_strings (HWND);
-extern const char *map_w32_filename (const char *, const char **);
 
 #ifndef IDC_HAND
 #define IDC_HAND MAKEINTRESOURCE(32649)
@@ -166,6 +165,10 @@ typedef HIMC (WINAPI * ImmGetContext_Proc) (IN HWND window);
 typedef BOOL (WINAPI * ImmReleaseContext_Proc) (IN HWND wnd, IN HIMC context);
 typedef BOOL (WINAPI * ImmSetCompositionWindow_Proc) (IN HIMC context,
 						      IN COMPOSITIONFORM *form);
+/* For toggling IME status.  */
+typedef BOOL (WINAPI * ImmGetOpenStatus_Proc) (IN HIMC);
+typedef BOOL (WINAPI * ImmSetOpenStatus_Proc) (IN HIMC, IN BOOL);
+
 typedef HMONITOR (WINAPI * MonitorFromPoint_Proc) (IN POINT pt, IN DWORD flags);
 typedef BOOL (WINAPI * GetMonitorInfo_Proc)
   (IN HMONITOR monitor, OUT struct MONITOR_INFO* info);
@@ -178,9 +181,15 @@ typedef BOOL (WINAPI * EnumDisplayMonitors_Proc)
 typedef BOOL (WINAPI * GetTitleBarInfo_Proc)
   (IN HWND hwnd, OUT TITLEBAR_INFO* info);
 
+typedef BOOL (WINAPI *IsDebuggerPresent_Proc) (void);
+typedef HRESULT (WINAPI *SetThreadDescription_Proc)
+  (HANDLE hThread, PCWSTR lpThreadDescription);
+
 TrackMouseEvent_Proc track_mouse_event_fn = NULL;
 ImmGetCompositionString_Proc get_composition_string_fn = NULL;
 ImmGetContext_Proc get_ime_context_fn = NULL;
+ImmGetOpenStatus_Proc get_ime_open_status_fn = NULL;
+ImmSetOpenStatus_Proc set_ime_open_status_fn = NULL;
 ImmReleaseContext_Proc release_ime_context_fn = NULL;
 ImmSetCompositionWindow_Proc set_ime_composition_window_fn = NULL;
 MonitorFromPoint_Proc monitor_from_point_fn = NULL;
@@ -188,6 +197,8 @@ GetMonitorInfo_Proc get_monitor_info_fn = NULL;
 MonitorFromWindow_Proc monitor_from_window_fn = NULL;
 EnumDisplayMonitors_Proc enum_display_monitors_fn = NULL;
 GetTitleBarInfo_Proc get_title_bar_info_fn = NULL;
+IsDebuggerPresent_Proc is_debugger_present = NULL;
+SetThreadDescription_Proc set_thread_description = NULL;
 
 extern AppendMenuW_Proc unicode_append_menu;
 
@@ -283,8 +294,6 @@ static struct
   char rwin_hooked[256]; /* hook right Win+[this key]? */
 } kbdhook;
 typedef HWND (WINAPI *GetConsoleWindow_Proc) (void);
-
-typedef BOOL (WINAPI *IsDebuggerPresent_Proc) (void);
 
 /* stdin, from w32console.c */
 extern HANDLE keyboard_handle;
@@ -855,161 +864,14 @@ x_to_w32_color (const char * colorname)
 
   block_input ();
 
-  if (colorname[0] == '#')
+  unsigned short r, g, b;
+  if (parse_color_spec (colorname, &r, &g, &b))
     {
-      /* Could be an old-style RGB Device specification.  */
-      int size = strlen (colorname + 1);
-      char *color = alloca (size + 1);
-
-      strcpy (color, colorname + 1);
-      if (size == 3 || size == 6 || size == 9 || size == 12)
-	{
-	  UINT colorval;
-	  int i, pos;
-	  pos = 0;
-	  size /= 3;
-	  colorval = 0;
-
-	  for (i = 0; i < 3; i++)
-	    {
-	      char *end;
-	      char t;
-	      unsigned long value;
-
-	      /* The check for 'x' in the following conditional takes into
-		 account the fact that strtol allows a "0x" in front of
-		 our numbers, and we don't.  */
-	      if (!isxdigit (color[0]) || color[1] == 'x')
-		break;
-	      t = color[size];
-	      color[size] = '\0';
-	      value = strtoul (color, &end, 16);
-	      color[size] = t;
-	      if (errno == ERANGE || end - color != size)
-		break;
-	      switch (size)
-		{
-		case 1:
-		  value = value * 0x10;
-		  break;
-		case 2:
-		  break;
-		case 3:
-		  value /= 0x10;
-		  break;
-		case 4:
-		  value /= 0x100;
-		  break;
-		}
-	      colorval |= (value << pos);
-	      pos += 0x8;
-	      if (i == 2)
-		{
-		  unblock_input ();
-		  XSETINT (ret, colorval);
-		  return ret;
-		}
-	      color = end;
-	    }
-	}
+      unblock_input ();
+      /* Throw away the low 8 bits and return 0xBBGGRR.  */
+      return make_fixnum ((b & 0xff00) << 8 | (g & 0xff00) | r >> 8);
     }
-  else if (strnicmp (colorname, "rgb:", 4) == 0)
-    {
-      const char *color;
-      UINT colorval;
-      int i, pos;
-      pos = 0;
 
-      colorval = 0;
-      color = colorname + 4;
-      for (i = 0; i < 3; i++)
-	{
-	  char *end;
-	  unsigned long value;
-
-	  /* The check for 'x' in the following conditional takes into
-	     account the fact that strtol allows a "0x" in front of
-	     our numbers, and we don't.  */
-	  if (!isxdigit (color[0]) || color[1] == 'x')
-	    break;
-	  value = strtoul (color, &end, 16);
-	  if (errno == ERANGE)
-	    break;
-	  switch (end - color)
-	    {
-	    case 1:
-	      value = value * 0x10 + value;
-	      break;
-	    case 2:
-	      break;
-	    case 3:
-	      value /= 0x10;
-	      break;
-	    case 4:
-	      value /= 0x100;
-	      break;
-	    default:
-	      value = ULONG_MAX;
-	    }
-	  if (value == ULONG_MAX)
-	    break;
-	  colorval |= (value << pos);
-	  pos += 0x8;
-	  if (i == 2)
-	    {
-	      if (*end != '\0')
-		break;
-	      unblock_input ();
-	      XSETINT (ret, colorval);
-	      return ret;
-	    }
-	  if (*end != '/')
-	    break;
-	  color = end + 1;
-	}
-    }
-  else if (strnicmp (colorname, "rgbi:", 5) == 0)
-    {
-      /* This is an RGB Intensity specification.  */
-      const char *color;
-      UINT colorval;
-      int i, pos;
-      pos = 0;
-
-      colorval = 0;
-      color = colorname + 5;
-      for (i = 0; i < 3; i++)
-	{
-	  char *end;
-	  double value;
-	  UINT val;
-
-	  value = strtod (color, &end);
-	  if (errno == ERANGE)
-	    break;
-	  if (value < 0.0 || value > 1.0)
-	    break;
-	  val = (UINT)(0x100 * value);
-	  /* We used 0x100 instead of 0xFF to give a continuous
-	     range between 0.0 and 1.0 inclusive.  The next statement
-	     fixes the 1.0 case.  */
-	  if (val == 0x100)
-	    val = 0xFF;
-	  colorval |= (val << pos);
-	  pos += 0x8;
-	  if (i == 2)
-	    {
-	      if (*end != '\0')
-		break;
-	      unblock_input ();
-	      XSETINT (ret, colorval);
-	      return ret;
-	    }
-	  if (*end != '/')
-	    break;
-	  color = end + 1;
-	}
-    }
   /* I am not going to attempt to handle any of the CIE color schemes
      or TekHVC, since I don't know the algorithms for conversion to
      RGB.  */
@@ -1696,10 +1558,8 @@ w32_clear_under_internal_border (struct frame *f)
 static void
 w32_set_internal_border_width (struct frame *f, Lisp_Object arg, Lisp_Object oldval)
 {
-  int border;
-
-  CHECK_TYPE_RANGED_INTEGER (int, arg);
-  border = max (XFIXNUM (arg), 0);
+  int argval = check_integer_range (arg, INT_MIN, INT_MAX);
+  int border = max (argval, 0);
 
   if (border != FRAME_INTERNAL_BORDER_WIDTH (f))
     {
@@ -2142,6 +2002,9 @@ w32_set_undecorated (struct frame *f, Lisp_Object new_value, Lisp_Object old_val
 		    | SWP_FRAMECHANGED);
       FRAME_UNDECORATED (f) = false;
     }
+
+  f->output_data.w32->dwStyle = GetWindowLong (hwnd, GWL_STYLE);
+
   unblock_input ();
 }
 
@@ -2737,8 +2600,6 @@ setup_w32_kbdhook (void)
      hook if the process is being debugged. */
   if (w32_kbdhook_active)
     {
-      IsDebuggerPresent_Proc is_debugger_present = (IsDebuggerPresent_Proc)
-	get_proc_addr (GetModuleHandle ("kernel32.dll"), "IsDebuggerPresent");
       if (is_debugger_present && is_debugger_present ())
 	return;
     }
@@ -3302,6 +3163,7 @@ w32_name_of_message (UINT msg)
       M (WM_EMACS_SETCURSOR),
       M (WM_EMACS_SHOWCURSOR),
       M (WM_EMACS_PAINT),
+      M (WM_EMACS_IME_STATUS),
       M (WM_CHAR),
 #undef M
       { 0, 0 }
@@ -3439,6 +3301,21 @@ w32_msg_pump (deferred_msg * msg_buf)
 		  emacs_abort ();
 	      }
 	      break;
+            case WM_EMACS_IME_STATUS:
+	      {
+		focus_window = GetFocus ();
+		if (!set_ime_open_status_fn || !focus_window)
+		  break;
+
+		HIMC context = get_ime_context_fn (focus_window);
+		if (!context)
+		  break;
+
+		set_ime_open_status_fn (context, msg.wParam != 0);
+		release_ime_context_fn (focus_window, context);
+		break;
+	      }
+
 #ifdef MSG_DEBUG
 	      /* Broadcast messages make it here, so you need to be looking
 		 for something in particular for this to be useful.  */
@@ -5744,7 +5621,7 @@ do_unwind_create_frame (Lisp_Object frame)
   unwind_create_frame (frame);
 }
 
-static void
+void
 w32_default_font_parameter (struct frame *f, Lisp_Object parms)
 {
   struct w32_display_info *dpyinfo = FRAME_DISPLAY_INFO (f);
@@ -8255,7 +8132,6 @@ a ShowWindow flag:
   /* Encode filename, current directory and parameters.  */
   current_dir = GUI_ENCODE_FILE (current_dir);
   document = GUI_ENCODE_FILE (document);
-  doc_w = GUI_SDATA (document);
   if (STRINGP (parameters))
     {
       parameters = GUI_ENCODE_SYSTEM (parameters);
@@ -8266,6 +8142,7 @@ a ShowWindow flag:
       operation = GUI_ENCODE_SYSTEM (operation);
       ops_w = GUI_SDATA (operation);
     }
+  doc_w = GUI_SDATA (document);
   result = (intptr_t) ShellExecuteW (NULL, ops_w, doc_w, params_w,
 				     GUI_SDATA (current_dir),
 				     (FIXNUMP (show_flag)
@@ -8350,7 +8227,7 @@ a ShowWindow flag:
   handler = Ffind_file_name_handler (absdoc, Qfile_exists_p);
   if (NILP (handler))
     {
-      Lisp_Object absdoc_encoded = ENCODE_FILE (absdoc);
+      Lisp_Object absdoc_encoded = Fcopy_sequence (ENCODE_FILE (absdoc));
 
       if (faccessat (AT_FDCWD, SSDATA (absdoc_encoded), F_OK, AT_EACCESS) == 0)
 	{
@@ -9198,8 +9075,8 @@ The coordinates X and Y are interpreted in pixels relative to a position
   UINT trail_num = 0;
   BOOL ret = false;
 
-  CHECK_TYPE_RANGED_INTEGER (int, x);
-  CHECK_TYPE_RANGED_INTEGER (int, y);
+  int xval = check_integer_range (x, INT_MIN, INT_MAX);
+  int yval = check_integer_range (y, INT_MIN, INT_MAX);
 
   block_input ();
   /* When "mouse trails" are in effect, moving the mouse cursor
@@ -9208,7 +9085,7 @@ The coordinates X and Y are interpreted in pixels relative to a position
   if (os_subtype == OS_NT
       && w32_major_version + w32_minor_version >= 6)
     ret = SystemParametersInfo (SPI_GETMOUSETRAILS, 0, &trail_num, 0);
-  SetCursorPos (XFIXNUM (x), XFIXNUM (y));
+  SetCursorPos (xval, yval);
   if (ret)
     SystemParametersInfo (SPI_SETMOUSETRAILS, trail_num, NULL, 0);
   unblock_input ();
@@ -10215,6 +10092,51 @@ DEFUN ("w32-notification-close",
 
 #endif	/* WINDOWSNT && !HAVE_DBUS */
 
+DEFUN ("w32-get-ime-open-status",
+       Fw32_get_ime_open_status, Sw32_get_ime_open_status,
+       0, 0, 0,
+       doc: /* Return non-nil if IME is active, otherwise return nil.
+
+IME, the MS-Windows Input Method Editor, can be active or inactive.
+This function returns non-nil if the IME is active, otherwise nil.  */)
+  (void)
+{
+  struct frame *sf =
+    FRAMEP (selected_frame) && FRAME_LIVE_P (XFRAME (selected_frame))
+    ? XFRAME  (selected_frame)
+    : NULL;
+
+  if (sf)
+    {
+      HWND current_window = FRAME_W32_WINDOW (sf);
+      HIMC context = get_ime_context_fn (current_window);
+      if (context)
+	{
+	  BOOL retval = get_ime_open_status_fn (context);
+	  release_ime_context_fn (current_window, context);
+
+	  return retval ? Qt : Qnil;
+	}
+    }
+
+  return Qnil;
+}
+
+DEFUN ("w32-set-ime-open-status",
+       Fw32_set_ime_open_status, Sw32_set_ime_open_status,
+       1, 1, 0,
+       doc: /* Open or close the IME according to STATUS.
+
+This function activates the IME, the MS-Windows Input Method Editor,
+if STATUS is non-nil, otherwise it deactivates the IME.  */)
+  (Lisp_Object status)
+{
+  unsigned ime_status = NILP (status) ? 0 : 1;
+
+  PostThreadMessage (dwWindowsThreadId, WM_EMACS_IME_STATUS, ime_status, 0);
+  return Qnil;
+}
+
 
 #ifdef WINDOWSNT
 /***********************************************************************
@@ -10741,6 +10663,8 @@ tip frame.  */);
   defsubr (&Sw32_notification_notify);
   defsubr (&Sw32_notification_close);
 #endif
+  defsubr (&Sw32_get_ime_open_status);
+  defsubr (&Sw32_set_ime_open_status);
 
 #ifdef WINDOWSNT
   defsubr (&Sw32_read_registry);
@@ -11029,7 +10953,18 @@ globals_of_w32fns (void)
       get_proc_addr (imm32_lib, "ImmReleaseContext");
     set_ime_composition_window_fn = (ImmSetCompositionWindow_Proc)
       get_proc_addr (imm32_lib, "ImmSetCompositionWindow");
+
+    get_ime_open_status_fn = (ImmGetOpenStatus_Proc)
+      get_proc_addr (imm32_lib, "ImmGetOpenStatus");
+    set_ime_open_status_fn = (ImmSetOpenStatus_Proc)
+      get_proc_addr (imm32_lib, "ImmSetOpenStatus");
   }
+
+  HMODULE hm_kernel32 = GetModuleHandle ("kernel32.dll");
+  is_debugger_present = (IsDebuggerPresent_Proc)
+    get_proc_addr (hm_kernel32, "IsDebuggerPresent");
+  set_thread_description = (SetThreadDescription_Proc)
+    get_proc_addr (hm_kernel32, "SetThreadDescription");
 
   except_code = 0;
   except_addr = 0;

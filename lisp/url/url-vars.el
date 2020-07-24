@@ -1,6 +1,6 @@
 ;;; url-vars.el --- Variables for Uniform Resource Locator tool
 
-;; Copyright (C) 1996-1999, 2001, 2004-2019 Free Software Foundation,
+;; Copyright (C) 1996-1999, 2001, 2004-2020 Free Software Foundation,
 ;; Inc.
 
 ;; Keywords: comm, data, processes, hypermedia
@@ -24,6 +24,7 @@
 
 (defconst url-version "Emacs"
   "Version number of URL package.")
+(make-obsolete-variable 'url-version nil "28.1")
 
 (defgroup url nil
   "Uniform Resource Locator tool."
@@ -430,6 +431,8 @@ Should be one of:
   "Hook run after initializing the URL library."
   :group 'url
   :type 'hook)
+(make-obsolete-variable 'url-load-hook
+                        "use `with-eval-after-load' instead." "28.1")
 
 (defconst url-working-buffer " *url-work")
 

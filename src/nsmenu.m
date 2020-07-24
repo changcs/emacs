@@ -1,5 +1,5 @@
 /* NeXT/Open/GNUstep and macOS Cocoa menu and toolbar module.
-   Copyright (C) 2007-2019 Free Software Foundation, Inc.
+   Copyright (C) 2007-2020 Free Software Foundation, Inc.
 
 This file is part of GNU Emacs.
 
@@ -1141,8 +1141,6 @@ update_frame_tool_bar (struct frame *f)
     }
 #endif
 
-  if (oldh != FRAME_TOOLBAR_HEIGHT (f))
-    [view updateFrameSize:YES];
   if (view->wait_for_tool_bar && FRAME_TOOLBAR_HEIGHT (f) > 0)
     {
       view->wait_for_tool_bar = NO;

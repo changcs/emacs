@@ -1,6 +1,6 @@
 ;;; hideshow.el --- minor mode cmds to selectively display code/comment blocks  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1994-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1994-2020 Free Software Foundation, Inc.
 
 ;; Author: Thien-Thi Nguyen <ttn@gnu.org>
 ;;      Dan Nicolaescu <dann@ics.uci.edu>
@@ -152,18 +152,11 @@
 
 ;; * Bugs
 ;;
-;; (1) Hideshow does not work w/ emacs 18 because emacs 18 lacks the
-;;     function `forward-comment' (among other things).  If someone
-;;     writes this, please send me a copy.
-;;
-;; (2) Sometimes `hs-headline' can become out of sync.  To reset, type
+;; (1) Sometimes `hs-headline' can become out of sync.  To reset, type
 ;;     `M-x hs-minor-mode' twice (that is, deactivate then re-activate
 ;;     hideshow).
 ;;
-;; (3) Hideshow 5.x is developed and tested on GNU Emacs 20.7.
-;;     XEmacs compatibility may have bitrotted since 4.29.
-;;
-;; (4) Some buffers can't be `byte-compile-file'd properly.  This is because
+;; (2) Some buffers can't be `byte-compile-file'd properly.  This is because
 ;;     `byte-compile-file' inserts the file to be compiled in a temporary
 ;;     buffer and switches `normal-mode' on.  In the case where you have
 ;;     `hs-hide-initial-comment-block' in `hs-minor-mode-hook', the hiding of
@@ -178,7 +171,7 @@
 ;;       (let ((hs-minor-mode-hook nil))
 ;;         ad-do-it))
 ;;
-;; (5) Hideshow interacts badly with Ediff and `vc-diff'.  At the moment, the
+;; (3) Hideshow interacts badly with Ediff and `vc-diff'.  At the moment, the
 ;;     suggested workaround is to turn off hideshow entirely, for example:
 ;;
 ;;     (add-hook 'ediff-prepare-buffer-hook #'turn-off-hideshow)
@@ -551,11 +544,13 @@ Original match data is restored upon return."
 (defun hs-hide-comment-region (beg end &optional repos-end)
   "Hide a region from BEG to END, marking it as a comment.
 Optional arg REPOS-END means reposition at end."
-  (let ((beg-eol (progn (goto-char beg) (line-end-position)))
+  (let ((goal-col (current-column))
+        (beg-bol (progn (goto-char beg) (line-beginning-position)))
+        (beg-eol (line-end-position))
         (end-eol (progn (goto-char end) (line-end-position))))
     (hs-discard-overlays beg-eol end-eol)
-    (hs-make-overlay beg-eol end-eol 'comment beg end))
-  (goto-char (if repos-end end beg)))
+    (hs-make-overlay beg-eol end-eol 'comment beg end)
+    (goto-char (if repos-end end (min end (+ beg-bol goal-col))))))
 
 (defun hs-hide-block-at-point (&optional end comment-reg)
   "Hide block if on block beginning.
@@ -615,7 +610,7 @@ as cdr."
         (forward-comment (- (buffer-size)))
         (skip-chars-forward " \t\n\f")
         (let ((p (point))
-              (hidable t))
+              (hideable t))
           (beginning-of-line)
           (unless (looking-at (concat "[ \t]*" hs-c-start-regexp))
             ;; we are in this situation: (example)
@@ -641,13 +636,13 @@ as cdr."
             (when (or (not (looking-at hs-c-start-regexp))
                       (> (point) q))
               ;; we cannot hide this comment block
-              (setq hidable nil)))
+              (setq hideable nil)))
           ;; goto the end of the comment
           (forward-comment (buffer-size))
           (skip-chars-backward " \t\n\f")
           (end-of-line)
           (when (>= (point) q)
-            (list (and hidable p) (point))))))))
+            (list (and hideable p) (point))))))))
 
 (defun hs-grok-mode-type ()
   "Set up hideshow variables for new buffers.
@@ -746,7 +741,7 @@ and `case-fold-search' are both t."
   (save-excursion
     (let ((c-reg (hs-inside-comment-p)))
       (if (and c-reg (nth 0 c-reg))
-          ;; point is inside a comment, and that comment is hidable
+          ;; point is inside a comment, and that comment is hideable
           (goto-char (nth 0 c-reg))
         (end-of-line)
         (when (and (not c-reg)

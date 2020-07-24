@@ -1,6 +1,6 @@
 ;;; follow.el --- synchronize windows showing the same buffer
 
-;; Copyright (C) 1995-1997, 1999, 2001-2019 Free Software Foundation,
+;; Copyright (C) 1995-1997, 1999, 2001-2020 Free Software Foundation,
 ;; Inc.
 
 ;; Author: Anders Lindgren
@@ -25,8 +25,8 @@
 
 ;;; Commentary:
 
-;; `Follow mode' is a minor mode for Emacs and XEmacs that
-;; combines windows into one tall virtual window.
+;; `Follow mode' is a minor mode that combines windows into one tall
+;; virtual window.
 ;;
 ;; The feeling of a "virtual window" has been accomplished by the use
 ;; of two major techniques:

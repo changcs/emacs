@@ -1,6 +1,6 @@
 @c -*-texinfo-*-
 @c This is part of the GNU Emacs Lisp Reference Manual.
-@c Copyright (C) 1990-1995, 1998-1999, 2001-2019 Free Software
+@c Copyright (C) 1990--1995, 1998--1999, 2001--2020 Free Software
 @c Foundation, Inc.
 @c See the file elisp.texi for copying conditions.
 @node Searching and Matching
@@ -338,16 +338,14 @@ first tries to match all three @samp{a}s; but the rest of the pattern is
 The next alternative is for @samp{a*} to match only two @samp{a}s.  With
 this choice, the rest of the regexp matches successfully.
 
-@strong{Warning:} Nested repetition operators can run for an
-indefinitely long time, if they lead to ambiguous matching.  For
+@strong{Warning:} Nested repetition operators can run for a very
+long time, if they lead to ambiguous matching.  For
 example, trying to match the regular expression @samp{\(x+y*\)*a}
 against the string @samp{xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxz} could
 take hours before it ultimately fails.  Emacs must try each way of
 grouping the @samp{x}s before concluding that none of them can work.
-Even worse, @samp{\(x*\)*} can match the null string in infinitely
-many ways, so it causes an infinite loop.  To avoid these problems,
-check nested repetitions carefully, to make sure that they do not
-cause combinatorial explosions in backtracking.
+In general, avoid expressions that can match the same string in
+multiple ways.
 
 @item @samp{+}
 @cindex @samp{+} in regexp
@@ -582,8 +580,13 @@ an unquoted @samp{[} is special again and a @samp{]} not.
 @cindex alpha character class, regexp
 @cindex xdigit character class, regexp
 
-  Here is a table of the classes you can use in a character alternative,
-and what they mean:
+  Below is a table of the classes you can use in a character
+alternative, and what they mean.  Note that the @samp{[} and @samp{]}
+characters that enclose the class name are part of the name, so a
+regular expression using these classes needs one more pair of
+brackets.  For example, a regular expression matching a sequence of
+one or more letters and digits would be @samp{[[:alnum:]]+}, not
+@samp{[:alnum:]+}.
 
 @table @samp
 @item [:ascii:]
@@ -1016,8 +1019,8 @@ or, using shorter synonyms and written more compactly,
 @example
 @group
 (rx "/*"
-    (* (| (not (any "*"))
-          (: "*" (not (any "/")))))
+    (* (| (not "*")
+          (: "*" (not "/"))))
     (+ "*") "/")
 @end group
 @end example
@@ -1032,7 +1035,7 @@ In conventional string syntax, it would be written
 The @code{rx} notation is mainly useful in Lisp code; it cannot be
 used in most interactive situations where a regexp is requested, such
 as when running @code{query-replace-regexp} or in variable
-customisation.
+customization.
 
 @menu
 * Rx Constructs::       Constructs valid in rx forms.
@@ -1080,9 +1083,18 @@ Corresponding string regexp: @samp{@var{A}@var{B}@dots{}}
 @cindex @code{or} in rx
 @itemx @code{(| @var{rx}@dots{})}
 @cindex @code{|} in rx
-Match exactly one of the @var{rx}s, trying from left to right.
+Match exactly one of the @var{rx}s.
+If all arguments are strings, characters, or @code{or} forms
+so constrained, the longest possible match will always be used.
+Otherwise, either the longest match or the
+first (in left-to-right order) will be used.
 Without arguments, the expression will not match anything at all.@*
 Corresponding string regexp: @samp{@var{A}\|@var{B}\|@dots{}}.
+
+@item @code{unmatchable}
+@cindex @code{unmatchable} in rx
+Refuse any match.  Equivalent to @code{(or)}.
+@xref{regexp-unmatchable}.
 @end table
 
 @subsubheading Repetition
@@ -1209,10 +1221,20 @@ Corresponding string regexp: @samp{[@dots{}]}
 @item @code{(not @var{charspec})}
 @cindex @code{not} in rx
 Match a character not included in @var{charspec}.  @var{charspec} can
-be an @code{any}, @code{syntax} or @code{category} form, or a
-character class.@*
+be a character, a single-character string, an @code{any}, @code{not},
+@code{or}, @code{intersection}, @code{syntax} or @code{category} form,
+or a character class.
+If @var{charspec} is an @code{or} form, its arguments have the same
+restrictions as those of @code{intersection}; see below.@*
 Corresponding string regexp: @samp{[^@dots{}]}, @samp{\S@var{code}},
 @samp{\C@var{code}}
+
+@item @code{(intersection @var{charset}@dots{})}
+@cindex @code{intersection} in rx
+Match a character included in all of the @var{charset}s.
+Each @var{charset} can be a character, a single-character string, an
+@code{any} form without character classes, or an @code{intersection},
+@code{or} or @code{not} form whose arguments are also @var{charset}s.
 
 @item @code{not-newline}, @code{nonl}
 @cindex @code{not-newline} in rx
@@ -1220,7 +1242,8 @@ Corresponding string regexp: @samp{[^@dots{}]}, @samp{\S@var{code}},
 Match any character except a newline.@*
 Corresponding string regexp: @samp{.} (dot)
 
-@item @code{anything}
+@item @code{anychar}, @code{anything}
+@cindex @code{anychar} in rx
 @cindex @code{anything} in rx
 Match any character.@*
 Corresponding string regexp: @samp{.\|\n} (for example)
@@ -1419,13 +1442,15 @@ Corresponding string regexp: @samp{\'}
 Match at point.@*
 Corresponding string regexp: @samp{\=}
 
-@item @code{word-start}
+@item @code{word-start}, @code{bow}
 @cindex @code{word-start} in rx
+@cindex @code{bow} in rx
 Match at the beginning of a word.@*
 Corresponding string regexp: @samp{\<}
 
-@item @code{word-end}
+@item @code{word-end}, @code{eow}
 @cindex @code{word-end} in rx
+@cindex @code{eow} in rx
 Match at the end of a word.@*
 Corresponding string regexp: @samp{\>}
 
@@ -1533,7 +1558,7 @@ notation, @pxref{Extending Rx}.
 @subsubsection Defining new @code{rx} forms
 
 The @code{rx} notation can be extended by defining new symbols and
-parametrised forms in terms of other @code{rx} expressions.  This is
+parameterized forms in terms of other @code{rx} expressions.  This is
 handy for sharing parts between several regexps, and for making
 complex ones easier to build and understand by putting them together
 from smaller pieces.
@@ -1573,7 +1598,8 @@ when they are used, not when they are defined.
 User-defined forms are allowed wherever arbitrary @code{rx}
 expressions are expected; for example, in the body of a
 @code{zero-or-one} form, but not inside @code{any} or @code{category}
-forms.
+forms.  They are also allowed inside @code{not} and
+@code{intersection} forms.
 @end itemize
 
 @defmac rx-define name [arglist] rx-form
@@ -1590,7 +1616,7 @@ defined as a plain symbol to be replaced with @var{rx-form}.  Example:
 @end example
 
 If @var{arglist} is present, it must be a list of zero or more
-argument names, and @var{name} is then defined as a parametrised form.
+argument names, and @var{name} is then defined as a parameterized form.
 When used in an @code{rx} expression as @code{(@var{name} @var{arg}@dots{})},
 each @var{arg} will replace the corresponding argument name inside
 @var{rx-form}.
@@ -1723,7 +1749,7 @@ any special characters.
 @end defun
 
 @cindex optimize regexp
-@defun regexp-opt strings &optional paren keep-order
+@defun regexp-opt strings &optional paren
 This function returns an efficient regular expression that will match
 any of the strings in the list @var{strings}.  This is useful when you
 need to make matching or searching as fast as possible---for example,
@@ -1761,11 +1787,8 @@ if it is necessary to ensure that a postfix operator appended to
 it will apply to the whole expression.
 @end table
 
-The optional argument @var{keep-order}, if @code{nil} or omitted,
-allows the returned regexp to match the strings in any order.  If
-non-@code{nil}, the match is guaranteed to be performed in the order
-given, as if the strings were made into a regexp by joining them with
-the @samp{\|} operator.
+The returned regexp is ordered in such a way that it will always match
+the longest string possible.
 
 Up to reordering, the resulting regexp of @code{regexp-opt} is
 equivalent to but usually more efficient than that of a simplified
@@ -1805,6 +1828,7 @@ list of characters @var{chars}.
 
 @c Internal functions: regexp-opt-group
 
+@anchor{regexp-unmatchable}
 @defvar regexp-unmatchable
 This variable contains a regexp that is guaranteed not to match any
 string at all.  It is particularly useful as default value for

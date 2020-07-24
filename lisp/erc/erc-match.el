@@ -1,11 +1,11 @@
 ;;; erc-match.el --- Highlight messages matching certain regexps
 
-;; Copyright (C) 2002-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2002-2020 Free Software Foundation, Inc.
 
 ;; Author: Andreas Fuchs <asf@void.at>
-;; Maintainer: emacs-devel@gnu.org
+;; Maintainer: Amin Bandali <bandali@gnu.org>
 ;; Keywords: comm, faces
-;; URL: http://www.emacswiki.org/cgi-bin/wiki.pl?ErcMatch
+;; URL: https://www.emacswiki.org/emacs/ErcMatch
 
 ;; This file is part of GNU Emacs.
 
@@ -246,14 +246,11 @@ and other miscellaneous functions."
 ;; just put it in erc.el
 (defvar erc-match-syntax-table
   (let ((table (make-syntax-table)))
-    (modify-syntax-entry ?\( "w" table)
-    (modify-syntax-entry ?\) "w" table)
     (modify-syntax-entry ?\[ "w" table)
     (modify-syntax-entry ?\] "w" table)
     (modify-syntax-entry ?\{ "w" table)
     (modify-syntax-entry ?\} "w" table)
     (modify-syntax-entry ?` "w" table)
-    (modify-syntax-entry ?' "w" table)
     (modify-syntax-entry ?^ "w" table)
     (modify-syntax-entry ?- "w" table)
     (modify-syntax-entry ?_ "w" table)
@@ -558,16 +555,15 @@ See `erc-log-match-format'."
 	       (and (eq erc-log-matches-flag 'away)
 		    (erc-away-time)))
 	   match-buffer-name)
-      (let ((line (format-spec erc-log-match-format
-		   (format-spec-make
-		    ?n nick
-		    ?t (format-time-string
-			(or (and (boundp 'erc-timestamp-format)
-				 erc-timestamp-format)
-			    "[%Y-%m-%d %H:%M] "))
-		    ?c (or (erc-default-target) "")
-		    ?m message
-		    ?u nickuserhost))))
+      (let ((line (format-spec
+                   erc-log-match-format
+                   `((?n . ,nick)
+                     (?t . ,(format-time-string
+                             (or (bound-and-true-p erc-timestamp-format)
+                                 "[%Y-%m-%d %H:%M] ")))
+                     (?c . ,(or (erc-default-target) ""))
+                     (?m . ,message)
+                     (?u . ,nickuserhost)))))
 	(with-current-buffer (erc-log-matches-make-buffer match-buffer-name)
 	  (let ((inhibit-read-only t))
 	    (goto-char (point-max))

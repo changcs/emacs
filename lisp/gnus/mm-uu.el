@@ -1,6 +1,6 @@
 ;;; mm-uu.el --- Return uu stuff as mm handles  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1998-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1998-2020 Free Software Foundation, Inc.
 
 ;; Author: Shenghuo Zhu <zsh@cs.rochester.edu>
 ;; Keywords: postscript uudecode binhex shar forward gnatsweb pgp
@@ -77,10 +77,9 @@ This can be either \"inline\" or \"attachment\".")
   :type 'regexp
   :group 'gnus-article-mime)
 
-(defcustom mm-uu-diff-groups-regexp
-  "\\(gmane\\|gnu\\)\\..*\\(diff\\|commit\\|cvs\\|bug\\|devel\\)"
+(defcustom mm-uu-diff-groups-regexp "."
   "Regexp matching diff groups."
-  :version "22.1"
+  :version "27.1"
   :type 'regexp
   :group 'gnus-article-mime)
 
@@ -193,7 +192,7 @@ This can be either \"inline\" or \"attachment\".")
      ,(lambda () (mm-uu-verbatim-marks-extract 0 0))
      nil)
     (LaTeX
-     "^\\([\\\\%][^\n]+\n\\)*\\\\documentclass.*[[{%]"
+     "^\\([\\%][^\n]+\n\\)*\\\\documentclass.*[[{%]"
      "^\\\\end{document}"
      ,#'mm-uu-latex-extract
      nil
@@ -252,19 +251,23 @@ The value should be nil on displays where the face
 			 (((type tty)
 			   (class color)
 			   (background dark))
-			  (:background "dark blue"))
+			  (:background "dark blue"
+			   :extend t))
 			 (((class color)
 			   (background dark))
 			  (:foreground "light yellow"
-			   :background "dark green"))
+			   :background "dark green"
+			   :extend t))
 			 (((type tty)
 			   (class color)
 			   (background light))
-			  (:foreground "dark blue"))
+			  (:foreground "dark blue"
+			   :extend t))
 			 (((class color)
 			   (background light))
 			  (:foreground "dark green"
-			   :background "light yellow"))
+			   :background "light yellow"
+			   :extend t))
 			 (t
 			  ()))
   "Face for extracted buffers."

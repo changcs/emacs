@@ -1,6 +1,6 @@
 ;;; dired-x.el --- extra Dired functionality  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1993-1994, 1997, 2001-2019 Free Software Foundation,
+;; Copyright (C) 1993-1994, 1997, 2001-2020 Free Software Foundation,
 ;; Inc.
 
 ;; Author: Sebastian Kremer <sk@thp.uni-koeln.de>
@@ -27,7 +27,7 @@
 ;;; Commentary:
 
 ;; This is based on Sebastian Kremer's excellent dired-x.el (Dired Extra),
-;; version 1.191, adapted for GNU Emacs.  See the `dired-x' info pages.
+;; version 1.191, adapted for GNU Emacs.  See the `dired-x' Info manual.
 
 ;; At load time dired-x.el will install itself and bind some dired keys.
 ;; Some dired.el and dired-aux.el functions have extra features if
@@ -35,7 +35,7 @@
 
 ;; User customization: M-x customize-group RET dired-x RET.
 
-;; *Please* see the `dired-x' info pages for more details.
+;; *Please* see the `dired-x' Info manual for more details.
 
 
 ;;; Code:
@@ -230,24 +230,27 @@ to nil: a pipe using `zcat' or `gunzip -c' will be used."
   :group 'dired-x)
 
 ;;; KEY BINDINGS.
+(when (keymapp (lookup-key dired-mode-map "*"))
+  (define-key dired-mode-map "*(" 'dired-mark-sexp)
+  (define-key dired-mode-map "*O" 'dired-mark-omitted)
+  (define-key dired-mode-map "*." 'dired-mark-extension))
+
+(when (keymapp (lookup-key dired-mode-map "%"))
+  (define-key dired-mode-map "%Y" 'dired-do-relsymlink-regexp))
 
 (define-key dired-mode-map "\C-x\M-o" 'dired-omit-mode)
-(define-key dired-mode-map "*O" 'dired-mark-omitted)
 (define-key dired-mode-map "\M-(" 'dired-mark-sexp)
-(define-key dired-mode-map "*(" 'dired-mark-sexp)
-(define-key dired-mode-map "*." 'dired-mark-extension)
 (define-key dired-mode-map "\M-!" 'dired-smart-shell-command)
 (define-key dired-mode-map "\M-G" 'dired-goto-subdir)
 (define-key dired-mode-map "F" 'dired-do-find-marked-files)
 (define-key dired-mode-map "Y"  'dired-do-relsymlink)
-(define-key dired-mode-map "%Y" 'dired-do-relsymlink-regexp)
 (define-key dired-mode-map "V" 'dired-do-run-mail)
 
 ;;; MENU BINDINGS
 
 (require 'easymenu)
 
-(let ((menu (lookup-key dired-mode-map [menu-bar])))
+(when-let ((menu (lookup-key dired-mode-map [menu-bar])))
   (easy-menu-add-item menu '("Operate")
                       ["Find Files" dired-do-find-marked-files
                        :help "Find current or marked files"]
@@ -620,7 +623,9 @@ interactively, prompt for REGEXP.
 With prefix argument, unflag all those files.
 Optional fourth argument LOCALP is as in `dired-get-filename'.
 Optional fifth argument CASE-FOLD-P specifies the value of
-`case-fold-search' used for matching REGEXP."
+`case-fold-search' used for matching REGEXP.
+If the region is active in Transient Mark mode, operate only on
+files in the active region if `dired-mark-region' is non-nil."
   (interactive
    (list (read-regexp
 	  "Mark unmarked files matching regexp (default all): "
@@ -1383,7 +1388,9 @@ present for some values of `ls-lisp-emulation'.
 
 This function operates only on the buffer content and does not
 refer at all to the underlying file system.  Contrast this with
-`find-dired', which might be preferable for the task at hand."
+`find-dired', which might be preferable for the task at hand.
+If the region is active in Transient Mark mode, mark files
+only in the active region if `dired-mark-region' is non-nil."
   ;; Using sym="" instead of nil avoids the trap of
   ;; (string-match "foo" sym) into which a user would soon fall.
   ;; Give `equal' instead of `=' in the example, as this works on

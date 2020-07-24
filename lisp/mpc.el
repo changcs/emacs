@@ -1,6 +1,6 @@
 ;;; mpc.el --- A client for the Music Player Daemon   -*- lexical-binding: t -*-
 
-;; Copyright (C) 2006-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2006-2020 Free Software Foundation, Inc.
 
 ;; Author: Stefan Monnier <monnier@iro.umontreal.ca>
 ;; Keywords: multimedia
@@ -1606,7 +1606,7 @@ when constructing the set of constraints."
                 (make-overlay (point) (point)))
     (overlay-put mpc-separator-ol 'after-string
                  (propertize "\n"
-                             'face '(:height 0.05 :inverse-video t))))
+                             'face '(:height 0.05 :inverse-video t :extend t))))
   (goto-char (point-min))
   (forward-line 1)
   (while

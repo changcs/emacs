@@ -1,6 +1,6 @@
 ;;; tramp-archive.el --- Tramp archive manager  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2017-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2017-2020 Free Software Foundation, Inc.
 
 ;; Author: Michael Albinus <michael.albinus@gmx.de>
 ;; Keywords: comm, processes
@@ -109,7 +109,7 @@
 
 (eval-when-compile (require 'cl-lib))
 ;; Sometimes, compilation fails with "Variable binding depth exceeds
-;; max-specpdl-size".
+;; max-specpdl-size".  Shall be fixed in Emacs 27.
 (eval-and-compile
   (let ((max-specpdl-size (* 2 max-specpdl-size))) (require 'tramp-gvfs)))
 
@@ -279,7 +279,9 @@ It must be supported by libarchive(3).")
     (start-file-process . tramp-archive-handle-not-implemented)
     ;; `substitute-in-file-name' performed by default handler.
     (temporary-file-directory . tramp-archive-handle-temporary-file-directory)
-    ;; `tramp-set-file-uid-gid' performed by default handler.
+    (tramp-get-remote-gid . ignore)
+    (tramp-get-remote-uid . ignore)
+    (tramp-set-file-uid-gid . ignore)
     (unhandled-file-name-directory . ignore)
     (vc-registered . ignore)
     (verify-visited-file-modtime . tramp-handle-verify-visited-file-modtime)
@@ -295,8 +297,8 @@ Operations not mentioned here will be handled by the default Emacs primitives.")
 
 (defun tramp-archive-run-real-handler (operation args)
   "Invoke normal file name handler for OPERATION.
-First arg specifies the OPERATION, second arg is a list of arguments to
-pass to the OPERATION."
+First arg specifies the OPERATION, second arg ARGS is a list of
+arguments to pass to the OPERATION."
   (let* ((inhibit-file-name-handlers
 	  `(tramp-archive-file-name-handler
 	    .
@@ -308,8 +310,8 @@ pass to the OPERATION."
 ;;;###tramp-autoload
 (defun tramp-archive-file-name-handler (operation &rest args)
   "Invoke the file archive related OPERATION.
-First arg specifies the OPERATION, second arg is a list of arguments to
-pass to the OPERATION."
+First arg specifies the OPERATION, second arg ARGS is a list of
+arguments to pass to the OPERATION."
     (if (not tramp-archive-enabled)
         ;; Unregister `tramp-archive-file-name-handler'.
         (progn
@@ -318,7 +320,10 @@ pass to the OPERATION."
 
       (let* ((filename (apply #'tramp-archive-file-name-for-operation
 			      operation args))
-	     (archive (tramp-archive-file-name-archive filename)))
+	     (archive (tramp-archive-file-name-archive filename))
+	     ;; Sometimes, it fails with "Variable binding depth exceeds
+	     ;; max-specpdl-size".  Shall be fixed in Emacs 27.
+	     (max-specpdl-size (* 2 max-specpdl-size)))
 
         ;; `filename' could be a quoted file name.  Or the file
         ;; archive could be a directory, see Bug#30293.
@@ -350,7 +355,7 @@ pass to the OPERATION."
     (add-to-list 'file-name-handler-alist
 	         (cons (tramp-archive-autoload-file-name-regexp)
 		       #'tramp-archive-autoload-file-name-handler))
-    (put 'tramp-archive-autoload-file-name-handler 'safe-magic t))))
+    (put #'tramp-archive-autoload-file-name-handler 'safe-magic t))))
 
 ;;;###autoload
 (progn
@@ -366,7 +371,7 @@ pass to the OPERATION."
 (tramp-register-archive-file-name-handler)
 
 ;; Mark `operations' the handler is responsible for.
-(put 'tramp-archive-file-name-handler 'operations
+(put #'tramp-archive-file-name-handler 'operations
      (mapcar #'car tramp-archive-file-name-handler-alist))
 
 ;; `tramp-archive-file-name-handler' must be placed before `url-file-handler'.
@@ -409,11 +414,11 @@ used `tramp-file-name' structure for tramp-gvfs, and the file
 name of a local copy, if any.")
 
 (defsubst tramp-archive-gvfs-host (archive)
-  "Return host name of ARCHIVE as used in GVFS for mounting"
+  "Return host name of ARCHIVE as used in GVFS for mounting."
   (url-hexify-string (tramp-gvfs-url-file-name archive)))
 
 (defun tramp-archive-dissect-file-name (name)
-  "Return a `tramp-file-name' structure.
+  "Return a `tramp-file-name' structure for NAME.
 The structure consists of the `tramp-archive-method' method, the
 hexified archive name as host, and the localname.  The archive
 name is kept in slot `hop'"
@@ -507,7 +512,7 @@ archive name is extracted from the hop part of the VEC structure."
        (tramp-file-name-hop vec)))
 
 (defmacro with-parsed-tramp-archive-file-name (filename var &rest body)
-  "Parse an archive filename and make components available in the body.
+  "Parse an archive filename and make components available in the BODY.
 This works exactly as `with-parsed-tramp-file-name' for the Tramp
 file name structure returned by `tramp-archive-dissect-file-name'.
 A variable `foo-archive' (or `archive') will be bound to the
@@ -517,13 +522,16 @@ offered."
   (declare (debug (form symbolp body))
            (indent 2))
   (let ((bindings
-         (mapcar (lambda (elem)
-                   `(,(if var (intern (format "%s-%s" var elem)) elem)
-                     (,(intern (format "tramp-file-name-%s" elem))
-                      ,(or var 'v))))
-		 `,(cons
-		    'archive
-		    (delete 'hop (tramp-compat-tramp-file-name-slots))))))
+         (mapcar
+	  (lambda (elem)
+            `(,(if var (intern (format "%s-%s" var elem)) elem)
+              (,(intern (format "tramp-file-name-%s" elem))
+               ,(or var 'v))))
+	  (cons
+	   'archive
+	   (delete
+	    'hop
+	    (cdr (mapcar #'car (cl-struct-slot-info 'tramp-file-name))))))))
     `(let* ((,(or var 'v) (tramp-archive-dissect-file-name ,filename))
             ,@bindings)
        ;; We don't know which of those vars will be used, so we bind them all,
@@ -533,7 +541,7 @@ offered."
        ,@body)))
 
 (defun tramp-archive-gvfs-file-name (name)
-  "Return FILENAME in GVFS syntax."
+  "Return NAME in GVFS syntax."
   (tramp-make-tramp-file-name
    (tramp-archive-dissect-file-name name) nil 'nohop))
 
@@ -541,7 +549,7 @@ offered."
 ;; File name primitives.
 
 (defun tramp-archive-handle-access-file (filename string)
-  "Like `access-file' for Tramp files."
+  "Like `access-file' for file archives."
   (access-file (tramp-archive-gvfs-file-name filename) string))
 
 (defun tramp-archive-handle-copy-file

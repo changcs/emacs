@@ -1,6 +1,6 @@
 ;;; cc-awk.el --- AWK specific code within cc-mode.
 
-;; Copyright (C) 1988, 1994, 1996, 2000-2019 Free Software Foundation,
+;; Copyright (C) 1988, 1994, 1996, 2000-2020 Free Software Foundation,
 ;; Inc.
 
 ;; Author: Alan Mackenzie <acm@muc.de> (originally based on awk-mode.el)
@@ -1003,7 +1003,7 @@ std\\(err\\|in\\|out\\)\\|user\\)\\)\\>\
 ;; Matches an unterminated string/regexp, NOT including the eol at the end.
 
 (defconst c-awk-harmless-pattern-characters*
-  (concat "\\([^{;#/\"\\\\\n\r]\\|" c-awk-esc-pair-re "\\)*"))
+  (concat "\\([^{;#/\"\\\n\r]\\|" c-awk-esc-pair-re "\\)*"))
 ;; Matches any "harmless" character in a pattern or an escaped character pair.
 
 (defun c-awk-at-statement-end-p ()

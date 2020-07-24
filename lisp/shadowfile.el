@@ -1,6 +1,6 @@
 ;;; shadowfile.el --- automatic file copying
 
-;; Copyright (C) 1993-1994, 2001-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1993-1994, 2001-2020 Free Software Foundation, Inc.
 
 ;; Author: Boris Goldowsky <boris@gnu.org>
 ;; Keywords: comm files
@@ -417,7 +417,8 @@ filename expansion or contraction, you must do that yourself first."
              (tramp-file-name-localname file-sup))
 	  (string-equal
            (tramp-file-name-localname pattern-sup)
-           (tramp-file-name-localname file-sup))))))
+           (tramp-file-name-localname file-sup)))
+        t)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; User-level Commands

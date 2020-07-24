@@ -1,6 +1,6 @@
 ;;; mh-alias.el --- MH-E mail alias completion and expansion
 
-;; Copyright (C) 1994-1997, 2001-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1994-1997, 2001-2020 Free Software Foundation, Inc.
 
 ;; Author: Peter S. Galbraith <psg@debian.org>
 ;; Maintainer: Bill Wohler <wohler@newt.com>
@@ -485,7 +485,8 @@ set `mh-alias-insert-file' or the \"Aliasfile:\" profile component"))
           (set-buffer mh-show-buffer))
       (let ((from-header (mh-extract-from-header-value)))
         (and from-header
-             (mh-alias-address-to-alias from-header))))))
+             (mh-alias-address-to-alias from-header)
+             t)))))
 
 (defun mh-alias-add-alias-to-file (alias address &optional file)
   "Add ALIAS for ADDRESS in alias FILE without alias check or prompts.

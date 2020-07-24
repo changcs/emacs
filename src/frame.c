@@ -1,6 +1,6 @@
 /* Generic frame functions.
 
-Copyright (C) 1993-1995, 1997, 1999-2019 Free Software Foundation, Inc.
+Copyright (C) 1993-1995, 1997, 1999-2020 Free Software Foundation, Inc.
 
 This file is part of GNU Emacs.
 
@@ -704,18 +704,17 @@ adjust_frame_size (struct frame *f, int new_width, int new_height, int inhibit,
 		inhibit_vertical ? Qt : Qnil));
 
       if (FRAME_TERMINAL (f)->set_window_size_hook)
-        FRAME_TERMINAL (f)->set_window_size_hook (f,
-                                                  0,
-                                                  new_text_width,
-                                                  new_text_height,
-                                                  1);
+        FRAME_TERMINAL (f)->set_window_size_hook
+	  (f, 0, new_text_width, new_text_height, 1);
       f->resized_p = true;
 
       return;
     }
 #endif
 
-  if (new_text_width == old_text_width
+  if ((XWINDOW (FRAME_ROOT_WINDOW (f))->pixel_top
+       == FRAME_TOP_MARGIN_HEIGHT (f))
+      && new_text_width == old_text_width
       && new_text_height == old_text_height
       && new_windows_width == old_windows_width
       && new_windows_height == old_windows_height
@@ -905,7 +904,7 @@ make_frame (bool mini_p)
   f->last_tool_bar_item = -1;
 #endif
 #ifdef NS_IMPL_COCOA
-  f->ns_appearance = ns_appearance_aqua;
+  f->ns_appearance = ns_appearance_system_default;
   f->ns_transparent_titlebar = false;
 #endif
 #endif
@@ -1116,7 +1115,6 @@ make_initial_frame (void)
   f->output_method = terminal->type;
   f->terminal = terminal;
   f->terminal->reference_count++;
-  f->output_data.nothing = 0;
 
   FRAME_FOREGROUND_PIXEL (f) = FACE_TTY_DEFAULT_FG_COLOR;
   FRAME_BACKGROUND_PIXEL (f) = FACE_TTY_DEFAULT_BG_COLOR;
@@ -2137,7 +2135,6 @@ delete_frame (Lisp_Object frame, Lisp_Object force)
     if (FRAME_TERMINAL (f)->delete_frame_hook)
       (*FRAME_TERMINAL (f)->delete_frame_hook) (f);
     terminal = FRAME_TERMINAL (f);
-    f->output_data.nothing = 0;
     f->terminal = 0;             /* Now the frame is dead.  */
     unblock_input ();
 
@@ -2561,26 +2558,26 @@ before calling this function on it, like this.
   (Lisp_Object frame, Lisp_Object x, Lisp_Object y)
 {
   CHECK_LIVE_FRAME (frame);
-  CHECK_TYPE_RANGED_INTEGER (int, x);
-  CHECK_TYPE_RANGED_INTEGER (int, y);
+  int xval = check_integer_range (x, INT_MIN, INT_MAX);
+  int yval = check_integer_range (y, INT_MIN, INT_MAX);
 
   /* I think this should be done with a hook.  */
 #ifdef HAVE_WINDOW_SYSTEM
   if (FRAME_WINDOW_P (XFRAME (frame)))
     /* Warping the mouse will cause enternotify and focus events.  */
-    frame_set_mouse_position (XFRAME (frame), XFIXNUM (x), XFIXNUM (y));
+    frame_set_mouse_position (XFRAME (frame), xval, yval);
 #else
 #if defined (MSDOS)
   if (FRAME_MSDOS_P (XFRAME (frame)))
     {
       Fselect_frame (frame, Qnil);
-      mouse_moveto (XFIXNUM (x), XFIXNUM (y));
+      mouse_moveto (xval, yval);
     }
 #else
 #ifdef HAVE_GPM
     {
       Fselect_frame (frame, Qnil);
-      term_mouse_moveto (XFIXNUM (x), XFIXNUM (y));
+      term_mouse_moveto (xval, yval);
     }
 #endif
 #endif
@@ -2602,26 +2599,26 @@ before calling this function on it, like this.
   (Lisp_Object frame, Lisp_Object x, Lisp_Object y)
 {
   CHECK_LIVE_FRAME (frame);
-  CHECK_TYPE_RANGED_INTEGER (int, x);
-  CHECK_TYPE_RANGED_INTEGER (int, y);
+  int xval = check_integer_range (x, INT_MIN, INT_MAX);
+  int yval = check_integer_range (y, INT_MIN, INT_MAX);
 
   /* I think this should be done with a hook.  */
 #ifdef HAVE_WINDOW_SYSTEM
   if (FRAME_WINDOW_P (XFRAME (frame)))
     /* Warping the mouse will cause enternotify and focus events.  */
-    frame_set_mouse_pixel_position (XFRAME (frame), XFIXNUM (x), XFIXNUM (y));
+    frame_set_mouse_pixel_position (XFRAME (frame), xval, yval);
 #else
 #if defined (MSDOS)
   if (FRAME_MSDOS_P (XFRAME (frame)))
     {
       Fselect_frame (frame, Qnil);
-      mouse_moveto (XFIXNUM (x), XFIXNUM (y));
+      mouse_moveto (xval, yval);
     }
 #else
 #ifdef HAVE_GPM
     {
       Fselect_frame (frame, Qnil);
-      term_mouse_moveto (XFIXNUM (x), XFIXNUM (y));
+      term_mouse_moveto (xval, yval);
     }
 #endif
 #endif
@@ -3548,6 +3545,21 @@ DEFUN ("frame-bottom-divider-width", Fbottom_divider_width, Sbottom_divider_widt
   return make_fixnum (FRAME_BOTTOM_DIVIDER_WIDTH (decode_any_frame (frame)));
 }
 
+static int
+check_frame_pixels (Lisp_Object size, Lisp_Object pixelwise, int item_size)
+{
+  CHECK_INTEGER (size);
+  if (!NILP (pixelwise))
+    item_size = 1;
+  intmax_t sz;
+  int pixel_size; /* size * item_size */
+  if (! integer_to_intmax (size, &sz)
+      || INT_MULTIPLY_WRAPV (sz, item_size, &pixel_size))
+    args_out_of_range_3 (size, make_int (INT_MIN / item_size),
+			 make_int (INT_MAX / item_size));
+  return pixel_size;
+}
+
 DEFUN ("set-frame-height", Fset_frame_height, Sset_frame_height, 2, 4,
        "(list (selected-frame) (prefix-numeric-value current-prefix-arg))",
        doc: /* Set text height of frame FRAME to HEIGHT lines.
@@ -3561,19 +3573,13 @@ window managers may refuse to honor a HEIGHT that is not an integer
 multiple of the default frame font height.
 
 When called interactively, HEIGHT is the numeric prefix and the
-currenly selected frame will be set to this height.  */)
+currently selected frame will be set to this height.  */)
   (Lisp_Object frame, Lisp_Object height, Lisp_Object pretend, Lisp_Object pixelwise)
 {
   struct frame *f = decode_live_frame (frame);
-  int pixel_height;
-
-  CHECK_TYPE_RANGED_INTEGER (int, height);
-
-  pixel_height = (!NILP (pixelwise)
-		  ? XFIXNUM (height)
-		  : XFIXNUM (height) * FRAME_LINE_HEIGHT (f));
+  int pixel_height = check_frame_pixels (height, pixelwise,
+					 FRAME_LINE_HEIGHT (f));
   adjust_frame_size (f, -1, pixel_height, 1, !NILP (pretend), Qheight);
-
   return Qnil;
 }
 
@@ -3590,19 +3596,13 @@ window managers may refuse to honor a WIDTH that is not an integer
 multiple of the default frame font width.
 
 When called interactively, WIDTH is the numeric prefix and the
-currenly selected frame will be set to this width.    */)
+currently selected frame will be set to this width.    */)
   (Lisp_Object frame, Lisp_Object width, Lisp_Object pretend, Lisp_Object pixelwise)
 {
   struct frame *f = decode_live_frame (frame);
-  int pixel_width;
-
-  CHECK_TYPE_RANGED_INTEGER (int, width);
-
-  pixel_width = (!NILP (pixelwise)
-		 ? XFIXNUM (width)
-		 : XFIXNUM (width) * FRAME_COLUMN_WIDTH (f));
+  int pixel_width = check_frame_pixels (width, pixelwise,
+					FRAME_COLUMN_WIDTH (f));
   adjust_frame_size (f, pixel_width, -1, 1, !NILP (pretend), Qwidth);
-
   return Qnil;
 }
 
@@ -3616,19 +3616,11 @@ font height.  */)
   (Lisp_Object frame, Lisp_Object width, Lisp_Object height, Lisp_Object pixelwise)
 {
   struct frame *f = decode_live_frame (frame);
-  int pixel_width, pixel_height;
-
-  CHECK_TYPE_RANGED_INTEGER (int, width);
-  CHECK_TYPE_RANGED_INTEGER (int, height);
-
-  pixel_width = (!NILP (pixelwise)
-		 ? XFIXNUM (width)
-		 : XFIXNUM (width) * FRAME_COLUMN_WIDTH (f));
-  pixel_height = (!NILP (pixelwise)
-		  ? XFIXNUM (height)
-		  : XFIXNUM (height) * FRAME_LINE_HEIGHT (f));
+  int pixel_width = check_frame_pixels (width, pixelwise,
+					FRAME_COLUMN_WIDTH (f));
+  int pixel_height = check_frame_pixels (height, pixelwise,
+					 FRAME_LINE_HEIGHT (f));
   adjust_frame_size (f, pixel_width, pixel_height, 1, 0, Qsize);
-
   return Qnil;
 }
 
@@ -3658,18 +3650,14 @@ bottom edge of FRAME's display.  */)
   (Lisp_Object frame, Lisp_Object x, Lisp_Object y)
 {
   struct frame *f = decode_live_frame (frame);
-
-  CHECK_TYPE_RANGED_INTEGER (int, x);
-  CHECK_TYPE_RANGED_INTEGER (int, y);
+  int xval = check_integer_range (x, INT_MIN, INT_MAX);
+  int yval = check_integer_range (y, INT_MIN, INT_MAX);
 
   if (FRAME_WINDOW_P (f))
     {
 #ifdef HAVE_WINDOW_SYSTEM
       if (FRAME_TERMINAL (f)->set_frame_offset_hook)
-        FRAME_TERMINAL (f)->set_frame_offset_hook (f,
-                                                   XFIXNUM (x),
-                                                   XFIXNUM (y),
-                                                   1);
+	FRAME_TERMINAL (f)->set_frame_offset_hook (f, xval, yval, 1);
 #endif
     }
 
@@ -4568,7 +4556,11 @@ gui_set_font_backend (struct frame *f, Lisp_Object new_value, Lisp_Object old_va
     return;
 
   if (FRAME_FONT (f))
-    free_all_realized_faces (Qnil);
+    {
+      Lisp_Object frame;
+      XSETFRAME (frame, f);
+      free_all_realized_faces (frame);
+    }
 
   new_value = font_update_drivers (f, NILP (new_value) ? Qt : new_value);
   if (NILP (new_value))
@@ -4582,10 +4574,8 @@ gui_set_font_backend (struct frame *f, Lisp_Object new_value, Lisp_Object old_va
 
   if (FRAME_FONT (f))
     {
-      Lisp_Object frame;
-
-      XSETFRAME (frame, f);
-      gui_set_font (f, Fframe_parameter (frame, Qfont), Qnil);
+      /* Reconsider default font after backend(s) change (Bug#23386).  */
+      FRAME_RIF(f)->default_font_parameter (f, Qnil);
       face_change = true;
       windows_or_buffers_changed = 18;
     }
@@ -4642,23 +4632,22 @@ gui_set_right_fringe (struct frame *f, Lisp_Object new_value, Lisp_Object old_va
 void
 gui_set_border_width (struct frame *f, Lisp_Object arg, Lisp_Object oldval)
 {
-  CHECK_TYPE_RANGED_INTEGER (int, arg);
+  int border_width = check_integer_range (arg, INT_MIN, INT_MAX);
 
-  if (XFIXNUM (arg) == f->border_width)
+  if (border_width == f->border_width)
     return;
 
   if (FRAME_NATIVE_WINDOW (f) != 0)
     error ("Cannot change the border width of a frame");
 
-  f->border_width = XFIXNUM (arg);
+  f->border_width = border_width;
 }
 
 void
 gui_set_right_divider_width (struct frame *f, Lisp_Object arg, Lisp_Object oldval)
 {
   int old = FRAME_RIGHT_DIVIDER_WIDTH (f);
-  CHECK_TYPE_RANGED_INTEGER (int, arg);
-  int new = max (0, XFIXNUM (arg));
+  int new = check_int_nonnegative (arg);
   if (new != old)
     {
       f->right_divider_width = new;
@@ -4672,8 +4661,7 @@ void
 gui_set_bottom_divider_width (struct frame *f, Lisp_Object arg, Lisp_Object oldval)
 {
   int old = FRAME_BOTTOM_DIVIDER_WIDTH (f);
-  CHECK_TYPE_RANGED_INTEGER (int, arg);
-  int new = max (0, XFIXNUM (arg));
+  int new = check_int_nonnegative (arg);
   if (new != old)
     {
       f->bottom_divider_width = new;
@@ -5652,8 +5640,7 @@ gui_figure_window_size (struct frame *f, Lisp_Object parms, bool tabbar_p,
 	f->top_pos = 0;
       else
 	{
-	  CHECK_TYPE_RANGED_INTEGER (int, top);
-	  f->top_pos = XFIXNUM (top);
+	  f->top_pos = check_integer_range (top, INT_MIN, INT_MAX);
 	  if (f->top_pos < 0)
 	    window_prompting |= YNegative;
 	}
@@ -5683,8 +5670,7 @@ gui_figure_window_size (struct frame *f, Lisp_Object parms, bool tabbar_p,
 	f->left_pos = 0;
       else
 	{
-	  CHECK_TYPE_RANGED_INTEGER (int, left);
-	  f->left_pos = XFIXNUM (left);
+	  f->left_pos = check_integer_range (left, INT_MIN, INT_MAX);
 	  if (f->left_pos < 0)
 	    window_prompting |= XNegative;
 	}
@@ -5944,6 +5930,7 @@ syms_of_frame (void)
   DEFSYM (Qxg_frame_set_char_size_1, "xg-frame-set-char-size-1");
   DEFSYM (Qxg_frame_set_char_size_2, "xg-frame-set-char-size-2");
   DEFSYM (Qxg_frame_set_char_size_3, "xg-frame-set-char-size-3");
+  DEFSYM (Qxg_frame_set_char_size_4, "xg-frame-set-char-size-4");
   DEFSYM (Qx_set_window_size_1, "x-set-window-size-1");
   DEFSYM (Qx_set_window_size_2, "x-set-window-size-2");
   DEFSYM (Qx_set_window_size_3, "x-set-window-size-3");
@@ -6121,7 +6108,7 @@ which need to do mouse handling at the Lisp level.  */);
 
   DEFVAR_LISP ("mouse-highlight", Vmouse_highlight,
 	       doc: /* If non-nil, clickable text is highlighted when mouse is over it.
-If the value is an integer, highlighting is only shown after moving the
+If the value is an integer, highlighting is shown only after moving the
 mouse, while keyboard input turns off the highlight even when the mouse
 is over the clickable text.  However, the mouse shape still indicates
 when the mouse is over clickable text.  */);
@@ -6268,18 +6255,18 @@ a non-nil value in your init file.  */);
 
   DEFVAR_LISP ("frame-inhibit-implied-resize", frame_inhibit_implied_resize,
 	       doc: /* Whether frames should be resized implicitly.
-If this option is nil, setting font, menu bar, tool bar, internal
+If this option is nil, setting font, menu bar, tool bar, tab bar, internal
 borders, fringes or scroll bars of a specific frame may resize the frame
 in order to preserve the number of columns or lines it displays.  If
 this option is t, no such resizing is done.  Note that the size of
 fullscreen and maximized frames, the height of fullheight frames and the
 width of fullwidth frames never change implicitly.
 
-The value of this option can be also be a list of frame parameters.  In
-this case, resizing is inhibited when changing a parameter that appears
-in that list.  The parameters currently handled by this option include
-`font', `font-backend', `internal-border-width', `menu-bar-lines' and
-`tool-bar-lines'.
+The value of this option can be also a list of frame parameters.  In
+this case, resizing is inhibited when changing a parameter that
+appears in that list.  The parameters currently handled by this option
+include `font', `font-backend', `internal-border-width',
+`menu-bar-lines', `tool-bar-lines' and `tab-bar-lines'.
 
 Changing any of the parameters `scroll-bar-width', `scroll-bar-height',
 `vertical-scroll-bars', `horizontal-scroll-bars', `left-fringe' and
@@ -6290,21 +6277,22 @@ width by the width of one scroll bar provided this option is nil and
 keep it unchanged if this option is either t or a list containing
 `vertical-scroll-bars'.
 
-The default value is \\='(tool-bar-lines) on Lucid, Motif and Windows
-\(which means that adding/removing a tool bar does not change the frame
-height), nil on all other window systems including GTK+ (which means
-that changing any of the parameters listed above may change the size of
-the frame), and t otherwise (which means the frame size never changes
-implicitly when there's no window system support).
+In GTK+ and NS that use the external tool bar, the default value is
+\\='(tab-bar-lines) which means that adding/removing a tab bar does
+not change the frame height.  On all other types of GUI frames, the
+default value is \\='(tab-bar-lines tool-bar-lines) which means that
+adding/removing a tool bar or tab bar does not change the frame
+height.  Otherwise it's t which means the frame size never changes
+implicitly when there's no window system support.
 
 Note that when a frame is not large enough to accommodate a change of
 any of the parameters listed above, Emacs may try to enlarge the frame
 even if this option is non-nil.  */);
 #if defined (HAVE_WINDOW_SYSTEM)
-#if defined (USE_LUCID) || defined (USE_MOTIF) || defined (HAVE_NTGUI)
-  frame_inhibit_implied_resize = list2 (Qtab_bar_lines, Qtool_bar_lines);
+#if defined (USE_GTK) || defined (HAVE_NS)
+  frame_inhibit_implied_resize = list1 (Qtab_bar_lines);
 #else
-  frame_inhibit_implied_resize = Qnil;
+  frame_inhibit_implied_resize = list2 (Qtab_bar_lines, Qtool_bar_lines);
 #endif
 #else
   frame_inhibit_implied_resize = Qt;

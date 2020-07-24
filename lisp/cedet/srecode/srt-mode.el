@@ -1,6 +1,6 @@
 ;;; srecode/srt-mode.el --- Major mode for writing screcode macros
 
-;; Copyright (C) 2005, 2007-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2005, 2007-2020 Free Software Foundation, Inc.
 
 ;; This file is part of GNU Emacs.
 
@@ -195,7 +195,7 @@ we can tell font lock about them.")
   (set (make-local-variable 'comment-end) "")
   (set (make-local-variable 'parse-sexp-ignore-comments) t)
   (set (make-local-variable 'comment-start-skip)
-       "\\(\\(^\\|[^\\\\\n]\\)\\(\\\\\\\\\\)*\\);+ *")
+       "\\(\\(^\\|[^\\\n]\\)\\(\\\\\\\\\\)*\\);+ *")
   (set (make-local-variable 'font-lock-defaults)
        '(srecode-font-lock-keywords
          nil  ;; perform string/comment fontification
@@ -627,7 +627,7 @@ section or ? for an ask variable."
 	context-return)))
 
 (define-mode-local-override semantic-analyze-possible-completions
-  srecode-template-mode (context)
+  srecode-template-mode (context &rest flags)
   "Return a list of possible completions based on NONTEXT."
   (with-current-buffer (oref context buffer)
     (let* ((prefix (car (last (oref context prefix))))

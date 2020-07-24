@@ -1,6 +1,6 @@
 /* Minibuffer input and completion.
 
-Copyright (C) 1985-1986, 1993-2019 Free Software Foundation, Inc.
+Copyright (C) 1985-1986, 1993-2020 Free Software Foundation, Inc.
 
 This file is part of GNU Emacs.
 
@@ -414,12 +414,13 @@ read_minibuf (Lisp_Object map, Lisp_Object initial, Lisp_Object prompt,
   if (!enable_recursive_minibuffers
       && minibuf_level > 0)
     {
+      Lisp_Object str
+	= build_string ("Command attempted to use minibuffer while in minibuffer");
       if (EQ (selected_window, minibuf_window))
-	error ("Command attempted to use minibuffer while in minibuffer");
+	Fsignal (Quser_error, (list1 (str)));
       else
 	/* If we're in another window, cancel the minibuffer that's active.  */
-	Fthrow (Qexit,
-		build_string ("Command attempted to use minibuffer while in minibuffer"));
+	Fthrow (Qexit, str);
     }
 
   if ((noninteractive
@@ -696,17 +697,21 @@ read_minibuf (Lisp_Object map, Lisp_Object initial, Lisp_Object prompt,
   else
     histstring = Qnil;
 
-  /* Add the value to the appropriate history list, if any.  */
+  /* The appropriate frame will get selected
+     in set-window-configuration.  */
+  unbind_to (count, Qnil);
+
+  /* Add the value to the appropriate history list, if any.  This is
+     done after the previous buffer has been made current again, in
+     case the history variable is buffer-local.  */
   if (! (NILP (Vhistory_add_new_input) || NILP (histstring)))
-    call2 (intern ("add-to-history"), Vminibuffer_history_variable, histstring);
+    call2 (intern ("add-to-history"), histvar, histstring);
 
   /* If Lisp form desired instead of string, parse it.  */
   if (expflag)
     val = string_to_object (val, defalt);
 
-  /* The appropriate frame will get selected
-     in set-window-configuration.  */
-  return unbind_to (count, val);
+  return val;
 }
 
 /* Return a buffer to be used as the minibuffer at depth `depth'.
@@ -878,6 +883,9 @@ Fifth arg HIST, if non-nil, specifies a history list and optionally
   the history as the value of INITIAL-CONTENTS.  Positions are counted
   starting from 1 at the beginning of the list.  If HIST is the symbol
   `t', history is not recorded.
+
+  If `history-add-new-input' is non-nil (the default), the result will
+  be added to the history list using `add-to-history'.
 
 Sixth arg DEFAULT-VALUE, if non-nil, should be a string, which is used
   as the default to `read' if READ is non-nil and the user enters
@@ -1323,13 +1331,13 @@ is used to further constrain the set of candidates.  */)
 	  else
 	    {
 	      compare = min (bestmatchsize, SCHARS (eltstring));
-	      tem = Fcompare_strings (bestmatch, zero,
-				      make_fixnum (compare),
-				      eltstring, zero,
-				      make_fixnum (compare),
+	      Lisp_Object lcompare = make_fixnum (compare);
+	      tem = Fcompare_strings (bestmatch, zero, lcompare,
+				      eltstring, zero, lcompare,
 				      completion_ignore_case ? Qt : Qnil);
 	      matchsize = EQ (tem, Qt) ? compare : eabs (XFIXNUM (tem)) - 1;
 
+	      Lisp_Object old_bestmatch = bestmatch;
 	      if (completion_ignore_case)
 		{
 		  /* If this is an exact match except for case,
@@ -1363,7 +1371,12 @@ is used to further constrain the set of candidates.  */)
 		    bestmatch = eltstring;
 		}
 	      if (bestmatchsize != SCHARS (eltstring)
-		  || bestmatchsize != matchsize)
+		  || bestmatchsize != matchsize
+		  || (completion_ignore_case
+		      && !EQ (Fcompare_strings (old_bestmatch, zero, lcompare,
+						eltstring, zero, lcompare,
+						Qnil),
+			      Qt)))
 		/* Don't count the same string multiple times.  */
 		matchcount += matchcount <= 1;
 	      bestmatchsize = matchsize;

@@ -1,12 +1,12 @@
 ;;; erc-dcc.el --- CTCP DCC module for ERC
 
-;; Copyright (C) 1993-1995, 1998, 2002-2004, 2006-2019 Free Software
+;; Copyright (C) 1993-1995, 1998, 2002-2004, 2006-2020 Free Software
 ;; Foundation, Inc.
 
 ;; Author: Ben A. Mesander <ben@gnu.ai.mit.edu>
 ;;         Noah Friedman <friedman@prep.ai.mit.edu>
 ;;         Per Persson <pp@sno.pp.se>
-;; Maintainer: emacs-devel@gnu.org
+;; Maintainer: Amin Bandali <bandali@gnu.org>
 ;; Keywords: comm, processes
 ;; Created: 1994-01-23
 
@@ -309,7 +309,7 @@ Should be set to a string or nil.  If nil, use the value of
   :type '(choice (const ask) (const auto) (const ignore)))
 
 (defun erc-dcc-get-host (proc)
-  "Returns the local IP address used for an open PROCess."
+  "Return the local IP address used for an open process PROC."
   (format-network-address (process-contact proc :local) t))
 
 (defun erc-dcc-host ()
@@ -413,7 +413,7 @@ where FOO is one of CLOSE, GET, SEND, LIST, CHAT, etc."
 
 ;;;###autoload
 (defun pcomplete/erc-mode/DCC ()
-  "Provides completion for the /DCC command."
+  "Provide completion for the /DCC command."
   (pcomplete-here (append '("chat" "close" "get" "list")
                           (when (fboundp 'make-network-process) '("send"))))
   (pcomplete-here
@@ -627,11 +627,11 @@ that subcommand."
        ?q query ?n nick ?u login ?h host))))
 
 (defconst erc-dcc-ctcp-query-send-regexp
-  (concat "^DCC SEND \\("
+  (concat "^DCC SEND \\(?:"
           ;; Following part matches either filename without spaces
           ;; or filename enclosed in double quotes with any number
           ;; of escaped double quotes inside.
-          "\"\\(\\(.*?\\(\\\\\"\\)?\\)+?\\)\"\\|\\([^ ]+\\)"
+          "\"\\(\\(?:\\\\\"\\|[^\"\\]\\)+\\)\"\\|\\([^ ]+\\)"
           "\\) \\([0-9]+\\) \\([0-9]+\\) *\\([0-9]*\\)"))
 
 (define-inline erc-dcc-unquote-filename (filename)
@@ -653,11 +653,11 @@ It extracts the information about the dcc request and adds it to
        ?r "SEND" ?n nick ?u login ?h host))
      ((string-match erc-dcc-ctcp-query-send-regexp query)
       (let ((filename
-             (or (match-string 5 query)
-                 (erc-dcc-unquote-filename (match-string 2 query))))
-            (ip       (erc-decimal-to-ip (match-string 6 query)))
-            (port     (match-string 7 query))
-            (size     (match-string 8 query)))
+             (or (match-string 2 query)
+                 (erc-dcc-unquote-filename (match-string 1 query))))
+            (ip       (erc-decimal-to-ip (match-string 3 query)))
+            (port     (match-string 4 query))
+            (size     (match-string 5 query)))
         ;; FIXME: a warning really should also be sent
         ;; if the ip address != the host the dcc sender is on.
         (erc-display-message
@@ -685,9 +685,10 @@ It extracts the information about the dcc request and adds it to
        ?n nick ?u login ?h host ?q query)))))
 
 (defun erc-dcc-auto-mask-p (spec)
-  "Takes a full SPEC of a user in the form \"nick!login@host\" and
-matches against all the regexp's in `erc-dcc-auto-masks'.  If any
-match, returns that regexp and nil otherwise."
+  "Match SPEC against `erc-dcc-auto-masks'.
+SPEC is a full spec of a user in the form \"nick!login@host\", which
+is matched against all the regexps in `erc-dcc-auto-masks'.  Return
+the matching regexp, or nil if none found."
   (let ((lst erc-dcc-auto-masks))
     (while (and lst
                 (not (string-match (car lst) spec)))
@@ -907,9 +908,9 @@ other client."
 (make-variable-buffer-local 'erc-dcc-file-name)
 
 (defun erc-dcc-get-file (entry file parent-proc)
-  "This function does the work of setting up a transfer from the remote client
-to the local one over a tcp connection.  This involves setting up a process
-filter and a process sentinel, and making the connection."
+  "Set up a transfer from the remote client to the local over a TCP connection.
+This involves setting up a process filter and a process sentinel,
+and making the connection."
   (let* ((buffer (generate-new-buffer (file-name-nondirectory file)))
          proc)
     (with-current-buffer buffer

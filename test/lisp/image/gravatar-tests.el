@@ -1,6 +1,6 @@
 ;;; gravatar-tests.el --- tests for gravatar.el -*- lexical-binding: t -*-
 
-;; Copyright (C) 2019 Free Software Foundation, Inc.
+;; Copyright (C) 2019-2020 Free Software Foundation, Inc.
 
 ;; This file is part of GNU Emacs.
 
@@ -67,6 +67,6 @@
         (gravatar-force-default nil)
         (gravatar-size nil))
     (should (equal (gravatar-build-url "foo") "\
-https://www.gravatar.com/avatar/acbd18db4cc2f85cedef654fccc4a4d8?r=g"))))
+https://seccdn.libravatar.org/avatar/acbd18db4cc2f85cedef654fccc4a4d8?r=g"))))
 
 ;;; gravatar-tests.el ends here

@@ -1,6 +1,6 @@
 ;;; cl-extra.el --- Common Lisp features, part 2  -*- lexical-binding: t -*-
 
-;; Copyright (C) 1993, 2000-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1993, 2000-2020 Free Software Foundation, Inc.
 
 ;; Author: Dave Gillespie <daveg@synaptics.com>
 ;; Keywords: extensions
@@ -38,6 +38,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'seq)
 
 ;;; Type coercion.
 
@@ -71,8 +72,7 @@ strings case-insensitively."
   (cond ((eq x y) t)
 	((stringp x)
 	 (and (stringp y) (= (length x) (length y))
-	      (or (string-equal x y)
-		  (string-equal (downcase x) (downcase y))))) ;Lazy but simple!
+              (eq (compare-strings x nil nil y nil nil t) t)))
 	((numberp x)
 	 (and (numberp y) (= x y)))
 	((consp x)
@@ -468,7 +468,7 @@ Optional second arg STATE is a random-state object."
 	  (while (< (setq i (1+ i)) 200) (cl-random 2 state))))
     (let* ((i (cl-callf (lambda (x) (% (1+ x) 55)) (cl--random-state-i state)))
 	   (j (cl-callf (lambda (x) (% (1+ x) 55)) (cl--random-state-j state)))
-	   (n (logand 8388607 (aset vec i (- (aref vec i) (aref vec j))))))
+	   (n (aset vec i (logand 8388607 (- (aref vec i) (aref vec j))))))
       (if (integerp lim)
 	  (if (<= lim 512) (% n lim)
 	    (if (> lim 8388607) (setq n (+ (ash n 9) (cl-random 512 state))))
@@ -549,36 +549,12 @@ too large if positive or too small if negative)."
               (macroexp-let2 nil new new
 		`(progn (cl-replace ,seq ,new :start1 ,start :end1 ,end)
 			,new)))))
-  (cond ((or (stringp seq) (vectorp seq)) (substring seq start end))
-        ((listp seq)
-         (let (len
-               (errtext (format "Bad bounding indices: %s, %s" start end)))
-           (and end (< end 0) (setq end (+ end (setq len (length seq)))))
-           (if (< start 0) (setq start (+ start (or len (setq len (length seq))))))
-           (unless (>= start 0)
-             (error "%s" errtext))
-           (when (> start 0)
-             (setq seq (nthcdr (1- start) seq))
-             (or seq (error "%s" errtext))
-             (setq seq (cdr seq)))
-           (if end
-               (let ((res nil))
-                 (while (and (>= (setq end (1- end)) start) seq)
-                   (push (pop seq) res))
-                 (or (= (1+ end) start) (error "%s" errtext))
-                 (nreverse res))
-             (copy-sequence seq))))
-        (t (error "Unsupported sequence: %s" seq))))
+  (seq-subseq seq start end))
 
 ;;;###autoload
-(defun cl-concatenate (type &rest sequences)
+(defalias 'cl-concatenate #'seq-concatenate
   "Concatenate, into a sequence of type TYPE, the argument SEQUENCEs.
-\n(fn TYPE SEQUENCE...)"
-  (pcase type
-    ('vector (apply #'vconcat sequences))
-    ('string (apply #'concat sequences))
-    ('list (apply #'append (append sequences '(nil))))
-    (_ (error "Not a sequence type name: %S" type))))
+\n(fn TYPE SEQUENCE...)")
 
 ;;; List functions.
 
@@ -711,17 +687,15 @@ PROPLIST is a list of the sort returned by `symbol-plist'.
     (forward-sexp)))
 
 ;;;###autoload
-(defun cl-prettyexpand (form &optional full)
-  "Expand macros in FORM and insert the pretty-printed result.
-Optional argument FULL non-nil means to expand all macros,
-including `cl-block' and `cl-eval-when'."
+(defun cl-prettyexpand (form &optional _full)
+  "Expand macros in FORM and insert the pretty-printed result."
+  (declare (advertised-calling-convention (form) "27.1"))
   (message "Expanding...")
-  (let ((cl--compiling-file full)
-	(byte-compile-macro-environment nil))
-    (setq form (macroexpand-all form
-                                (and (not full) '((cl-block) (cl-eval-when)))))
+  (let ((byte-compile-macro-environment nil))
+    (setq form (macroexpand-all form))
     (message "Formatting...")
-    (prog1 (cl-prettyprint form)
+    (prog1
+        (cl-prettyprint form)
       (message ""))))
 
 ;;; Integration into the online help system.

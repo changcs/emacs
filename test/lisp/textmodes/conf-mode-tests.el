@@ -1,6 +1,6 @@
 ;;; conf-mode-tests.el --- Test suite for conf mode  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2016-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2016-2020 Free Software Foundation, Inc.
 
 ;; Author: J. Alexander Branham <alex.branham@gmail.com>
 ;; Keywords: internal
@@ -162,7 +162,7 @@ image/tiff			tiff tif
 (ert-deftest conf-test-toml-mode ()
   ;; From `conf-toml-mode' docstring.
   (with-temp-buffer
-    (insert "\[entry]
+    (insert "[entry]
 value = \"some string\"")
     (goto-char (point-min))
     (conf-toml-mode)

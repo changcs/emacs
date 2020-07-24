@@ -1,6 +1,6 @@
 ;;; fns-tests.el --- tests for src/fns.c
 
-;; Copyright (C) 2014-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2014-2020 Free Software Foundation, Inc.
 
 ;; This file is part of GNU Emacs.
 
@@ -49,21 +49,21 @@
   (should-error (nreverse))
   (should-error (nreverse 1))
   (should-error (nreverse (make-char-table 'foo)))
-  (should (equal (nreverse "xyzzy") "yzzyx"))
-  (let ((A []))
+  (should (equal (nreverse (copy-sequence "xyzzy")) "yzzyx"))
+  (let ((A (vector)))
     (nreverse A)
     (should (equal A [])))
-  (let ((A [0]))
+  (let ((A (vector 0)))
     (nreverse A)
     (should (equal A [0])))
-  (let ((A [1 2 3 4]))
+  (let ((A (vector 1 2 3 4)))
     (nreverse A)
     (should (equal A [4 3 2 1])))
-  (let ((A [1 2 3 4]))
+  (let ((A (vector 1 2 3 4)))
     (nreverse A)
     (nreverse A)
     (should (equal A [1 2 3 4])))
-  (let* ((A [1 2 3 4])
+  (let* ((A (vector 1 2 3 4))
 	 (B (nreverse (nreverse A))))
     (should (equal A B))))
 
@@ -146,13 +146,13 @@
 ;; Invalid UTF-8 sequences shall be indicated.  How to create such strings?
 
 (ert-deftest fns-tests-sort ()
-  (should (equal (sort '(9 5 2 -1 5 3 8 7 4) (lambda (x y) (< x y)))
+  (should (equal (sort (list 9 5 2 -1 5 3 8 7 4) (lambda (x y) (< x y)))
 		 '(-1 2 3 4 5 5 7 8 9)))
-  (should (equal (sort '(9 5 2 -1 5 3 8 7 4) (lambda (x y) (> x y)))
+  (should (equal (sort (list 9 5 2 -1 5 3 8 7 4) (lambda (x y) (> x y)))
 		 '(9 8 7 5 5 4 3 2 -1)))
-  (should (equal (sort '[9 5 2 -1 5 3 8 7 4] (lambda (x y) (< x y)))
+  (should (equal (sort (vector 9 5 2 -1 5 3 8 7 4) (lambda (x y) (< x y)))
 		 [-1 2 3 4 5 5 7 8 9]))
-  (should (equal (sort '[9 5 2 -1 5 3 8 7 4] (lambda (x y) (> x y)))
+  (should (equal (sort (vector 9 5 2 -1 5 3 8 7 4) (lambda (x y) (> x y)))
 		 [9 8 7 5 5 4 3 2 -1]))
   (should (equal
 	   (sort
@@ -172,7 +172,7 @@
   ;; Punctuation and whitespace characters are relevant for POSIX.
   (should
    (equal
-    (sort '("11" "12" "1 1" "1 2" "1.1" "1.2")
+    (sort (list "11" "12" "1 1" "1 2" "1.1" "1.2")
 	  (lambda (a b) (string-collate-lessp a b "POSIX")))
     '("1 1" "1 2" "1.1" "1.2" "11" "12")))
   ;; Punctuation and whitespace characters are not taken into account
@@ -180,7 +180,7 @@
   (when (eq system-type 'windows-nt)
     (should
      (equal
-      (sort '("11" "12" "1 1" "1 2" "1.1" "1.2")
+      (sort (list "11" "12" "1 1" "1 2" "1.1" "1.2")
             (lambda (a b)
               (let ((w32-collate-ignore-punctuation t))
                 (string-collate-lessp
@@ -190,7 +190,7 @@
   ;; Diacritics are different letters for POSIX, they sort lexicographical.
   (should
    (equal
-    (sort '("Ævar" "Agustín" "Adrian" "Eli")
+    (sort (list "Ævar" "Agustín" "Adrian" "Eli")
 	  (lambda (a b) (string-collate-lessp a b "POSIX")))
     '("Adrian" "Agustín" "Eli" "Ævar")))
   ;; Diacritics are sorted between similar letters for other locales,
@@ -198,7 +198,7 @@
   (when (eq system-type 'windows-nt)
     (should
      (equal
-      (sort '("Ævar" "Agustín" "Adrian" "Eli")
+      (sort (list "Ævar" "Agustín" "Adrian" "Eli")
             (lambda (a b)
               (let ((w32-collate-ignore-punctuation t))
                 (string-collate-lessp
@@ -212,7 +212,7 @@
   (should (not (string-version-lessp "foo20000.png" "foo12.png")))
   (should (string-version-lessp "foo.png" "foo2.png"))
   (should (not (string-version-lessp "foo2.png" "foo.png")))
-  (should (equal (sort '("foo12.png" "foo2.png" "foo1.png")
+  (should (equal (sort (list "foo12.png" "foo2.png" "foo1.png")
                        'string-version-lessp)
                  '("foo1.png" "foo2.png" "foo12.png")))
   (should (string-version-lessp "foo2" "foo1234"))
@@ -237,7 +237,7 @@
   (apply 'concat (make-list o s)))
 
 (defmacro fns-tests--with-region (funcname string &rest args)
-  "Apply FUNCNAME in a temp bufer on the region produced by STRING."
+  "Apply FUNCNAME in a temp buffer on the region produced by STRING."
   (declare (indent 1))
   `(with-temp-buffer
      (insert ,string)
@@ -269,7 +269,7 @@
   (should (equal (base64-encode-string "\x14\xfb\x9c\x03\xd9\x7f") "FPucA9l/")))
 
 (ert-deftest fns-test-base64url-encode-region ()
-  ;; url variant wih padding
+  ;; url variant with padding
   (should (equal (fns-tests--with-region base64url-encode-region "") ""))
   (should (equal (fns-tests--with-region base64url-encode-region "f") "Zg=="))
   (should (equal (fns-tests--with-region base64url-encode-region "fo") "Zm8="))
@@ -311,7 +311,7 @@
                  (fns-tests--string-repeat "FPucA9l_" 10))))
 
 (ert-deftest fns-test-base64url-encode-string ()
-  ;; url variant wih padding
+  ;; url variant with padding
   (should (equal (base64url-encode-string "") ""))
   (should (equal (base64url-encode-string "f") "Zg=="))
   (should (equal (base64url-encode-string "fo") "Zm8="))
@@ -356,7 +356,7 @@
   (should (equal (base64-decode-string "FPucA9l+") "\x14\xfb\x9c\x03\xd9\x7e"))
   (should (equal (base64-decode-string "FPucA9l/") "\x14\xfb\x9c\x03\xd9\x7f"))
 
-  ;; no paddign
+  ;; no padding
   (should (equal (base64-decode-string "" t) ""))
   (should (equal (base64-decode-string "Zg" t) "f"))
   (should (equal (base64-decode-string "Zm8" t) "fo"))
@@ -365,7 +365,7 @@
   (should (equal (base64-decode-string "Zm9vYmE" t) "fooba"))
   (should (equal (base64-decode-string "Zm9vYmFy" t) "foobar"))
 
-  ;; url variant wih padding
+  ;; url variant with padding
   (should (equal (base64-decode-string "") ""))
   (should (equal (base64-decode-string "Zg==" t) "f") )
   (should (equal (base64-decode-string "Zm8=" t) "fo"))
@@ -432,9 +432,9 @@
   (should-error (mapcan))
   (should-error (mapcan #'identity))
   (should-error (mapcan #'identity (make-char-table 'foo)))
-  (should (equal (mapcan #'list '(1 2 3)) '(1 2 3)))
+  (should (equal (mapcan #'list (list 1 2 3)) '(1 2 3)))
   ;; `mapcan' is destructive
-  (let ((data '((foo) (bar))))
+  (let ((data (list (list 'foo) (list 'bar))))
     (should (equal (mapcan #'identity data) '(foo bar)))
     (should (equal data                     '((foo bar) (bar))))))
 
@@ -858,4 +858,40 @@
        (puthash k k h)))
     (should (= 100 (hash-table-count h)))))
 
-(provide 'fns-tests)
+(ert-deftest test-sxhash-equal ()
+  (should (= (sxhash-equal (* most-positive-fixnum most-negative-fixnum))
+	     (sxhash-equal (* most-positive-fixnum most-negative-fixnum))))
+  (should (= (sxhash-equal (make-string 1000 ?a))
+	     (sxhash-equal (make-string 1000 ?a))))
+  (should (= (sxhash-equal (point-marker))
+	     (sxhash-equal (point-marker))))
+  (should (= (sxhash-equal (make-vector 1000 (make-string 10 ?a)))
+	     (sxhash-equal (make-vector 1000 (make-string 10 ?a)))))
+  (should (= (sxhash-equal (make-bool-vector 1000 t))
+	     (sxhash-equal (make-bool-vector 1000 t))))
+  (should (= (sxhash-equal (make-char-table nil (make-string 10 ?a)))
+	     (sxhash-equal (make-char-table nil (make-string 10 ?a)))))
+  (should (= (sxhash-equal (record 'a (make-string 10 ?a)))
+	     (sxhash-equal (record 'a (make-string 10 ?a))))))
+
+(ert-deftest test-secure-hash ()
+  (should (equal (secure-hash 'md5    "foobar")
+                 "3858f62230ac3c915f300c664312c63f"))
+  (should (equal (secure-hash 'sha1   "foobar")
+                 "8843d7f92416211de9ebb963ff4ce28125932878"))
+  (should (equal (secure-hash 'sha224 "foobar")
+                 "de76c3e567fca9d246f5f8d3b2e704a38c3c5e258988ab525f941db8"))
+  (should (equal (secure-hash 'sha256 "foobar")
+                 (concat "c3ab8ff13720e8ad9047dd39466b3c89"
+                         "74e592c2fa383d4a3960714caef0c4f2")))
+  (should (equal (secure-hash 'sha384 "foobar")
+                 (concat "3c9c30d9f665e74d515c842960d4a451c83a0125fd3de739"
+                         "2d7b37231af10c72ea58aedfcdf89a5765bf902af93ecf06")))
+  (should (equal (secure-hash 'sha512 "foobar")
+                 (concat "0a50261ebd1a390fed2bf326f2673c145582a6342d5"
+                         "23204973d0219337f81616a8069b012587cf5635f69"
+                         "25f1b56c360230c19b273500ee013e030601bf2425")))
+  ;; Test that a call to getrandom returns the right format.
+  ;; This does not test randomness; it's merely a format check.
+  (should (string-match "\\`[0-9a-f]\\{128\\}\\'"
+                        (secure-hash 'sha512 'iv-auto 100))))

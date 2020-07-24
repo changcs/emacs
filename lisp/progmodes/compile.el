@@ -1,6 +1,6 @@
 ;;; compile.el --- run compiler as inferior of Emacs, parse error messages  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1985-1987, 1993-1999, 2001-2019 Free Software
+;; Copyright (C) 1985-1987, 1993-1999, 2001-2020 Free Software
 ;; Foundation, Inc.
 
 ;; Authors: Roland McGrath <roland@gnu.org>,
@@ -57,6 +57,15 @@ The hook is run with one argument, the new process."
 If nil, use Emacs default."
   :type '(choice (const :tag "Default" nil)
 		 integer))
+
+(defcustom compilation-transform-file-match-alist
+  '(("/bin/[a-z]*sh\\'" nil))
+  "Alist of regexp/replacements to alter file names in compilation errors.
+If the replacement is nil, the file will not be considered an
+error after all.  If not nil, it should be a regexp replacement
+string."
+  :type '(repeat (list regexp string))
+  :version "27.1")
 
 (defvar compilation-filter-hook nil
   "Hook run after `compilation-filter' has inserted a string into the buffer.
@@ -172,9 +181,12 @@ of[ \t]+\"?\\([a-zA-Z]?:?[^\":\n]+\\)\"?:" 3 2 nil (1))
     (aix
      " in line \\([0-9]+\\) of file \\([^ \n]+[^. \n]\\)\\.? " 2 1)
 
+    ;; Checkstyle task may report its own severity level: "[checkstyle] [ERROR] ..."
+    ;; (see AuditEventDefaultFormatter.java in checkstyle sources).
     (ant
-     "^[ \t]*\\[[^] \n]+\\][ \t]*\\(\\(?:[A-Za-z]:\\\\\\)?[^: \n]+\\):\\([0-9]+\\):\\(?:\\([0-9]+\\):\\([0-9]+\\):\\([0-9]+\\):\\)?\
-\\( warning\\)?" 1 (2 . 4) (3 . 5) (6))
+     "^[ \t]*\\(?:\\[[^] \n]+\\][ \t]*\\)\\{1,2\\}\\(\\(?:[A-Za-z]:\\)?[^: \n]+\\):\
+\\([0-9]+\\):\\(?:\\([0-9]+\\):\\([0-9]+\\):\\([0-9]+\\):\\)?\\( warning\\)?"
+     1 (2 . 4) (3 . 5) (6))
 
     (bash
      "^\\([^: \n\t]+\\): line \\([0-9]+\\):" 1 2)
@@ -209,7 +221,7 @@ of[ \t]+\"?\\([a-zA-Z]?:?[^\":\n]+\\)\"?:" 3 2 nil (1))
      ;; considered before EDG.
      ;; The message may be a "warning", "error", or "fatal error" with
      ;; an error code, or "see declaration of" without an error code.
-     "^ *\\([0-9]+>\\)?\\(\\(?:[a-zA-Z]:\\)?[^:(\t\n]+\\)(\\([0-9]+\\)) ?\
+     "^ *\\([0-9]+>\\)?\\(\\(?:[a-zA-Z]:\\)?[^ :(\t\n][^:(\t\n]*\\)(\\([0-9]+\\)) ?\
 : \\(?:see declaration\\|\\(?:warnin\\(g\\)\\|[a-z ]+\\) C[0-9]+:\\)"
      2 3 nil (4))
 
@@ -227,6 +239,16 @@ of[ \t]+\"?\\([a-zA-Z]?:?[^\":\n]+\\)\"?:" 3 2 nil (1))
      "\\(^Warning .*\\)? line[ \n]\\([0-9]+\\)[ \n]\\(?:col \\([0-9]+\\)[ \n]\\)?file \\([^ :;\n]+\\)"
      4 2 3 (1))
 
+    ;; Gradle with kotlin-gradle-plugin (see
+    ;; GradleStyleMessagerRenderer.kt in kotlin sources, see
+    ;; https://youtrack.jetbrains.com/issue/KT-34683).
+    (gradle-kotlin
+     ,(concat
+       "^\\(?:\\(w\\)\\|.\\): *"            ;type
+       "\\(\\(?:[A-Za-z]:\\)?[^:\n]+\\): *" ;file
+       "(\\([0-9]+\\), *\\([0-9]+\\))")     ;line, column
+     2 3 4 (1))
+
     (iar
      "^\"\\(.*\\)\",\\([0-9]+\\)\\s-+\\(?:Error\\|Warnin\\(g\\)\\)\\[[0-9]+\\]:"
      1 2 nil (3))
@@ -243,15 +265,41 @@ of[ \t]+\"?\\([a-zA-Z]?:?[^\":\n]+\\)\"?:" 3 2 nil (1))
     (java
      "^\\(?:[ \t]+at \\|==[0-9]+== +\\(?:at\\|b\\(y\\)\\)\\).+(\\([^()\n]+\\):\\([0-9]+\\))$" 2 3 nil (1))
 
+    (javac
+     ,(concat
+       ;; line1
+       "^\\(\\(?:[A-Za-z]:\\)?[^:\n]+\\):" ;file
+       "\\([0-9]+\\): "                    ;line
+       "\\(warning: \\)?.*\n"              ;type (optional) and message
+       ;; line2: source line containing error
+       ".*\n"
+       ;; line3: single "^" under error position in line2
+       " *\\^$")
+     1 2
+     ,(lambda () (1- (current-column)))
+     (3))
+
     (jikes-file
      "^\\(?:Found\\|Issued\\) .* compiling \"\\(.+\\)\":$" 1 nil nil 0)
 
-
-    ;; This used to be pathologically slow on long lines (Bug#3441),
-    ;; due to matching filenames via \\(.*?\\).  This might be faster.
     (maven
      ;; Maven is a popular free software build tool for Java.
-     "\\(\\[WARNING\\] *\\)?\\([^ \n]\\(?:[^\n :]\\| [^-/\n]\\|:[^ \n]\\)*?\\):\\[\\([0-9]+\\),\\([0-9]+\\)\\] " 2 3 4 (1))
+     ,(rx bol
+          ;; It is unclear whether the initial [type] tag is always present.
+          (? "["
+             (or "ERROR" (group-n 1 "WARNING") (group-n 2 "INFO"))
+             "] ")
+          (group-n 3                    ; File
+                   (not (any "\n ["))
+                   (* (or (not (any "\n :"))
+                          (: " " (not (any "\n/-")))
+                          (: ":" (not (any "\n ["))))))
+          ":["
+          (group-n 4 (+ digit))         ; Line
+          ","
+          (group-n 5 (+ digit))         ; Column
+          "] ")
+     3 4 5 (1 . 2))
 
     (jikes-line
      "^ *\\([0-9]+\\)\\.[ \t]+.*\n +\\(<-*>\n\\*\\*\\* \\(?:Error\\|Warnin\\(g\\)\\)\\)"
@@ -272,7 +320,13 @@ of[ \t]+\"?\\([a-zA-Z]?:?[^\":\n]+\\)\"?:" 3 2 nil (1))
      1 2 3 (4 . 5))
 
     (ruby-Test::Unit
-     "^[\t ]*\\[\\([^(].*\\):\\([1-9][0-9]*\\)\\(\\]\\)?:in " 1 2)
+     "^    [[ ]?\\([^ (].*\\):\\([1-9][0-9]*\\)\\(\\]\\)?:in " 1 2)
+
+    (gmake
+     ;; Set GNU make error messages as INFO level.
+     ;; It starts with the name of the make program which is variable,
+     ;; so don't try to match it.
+     ": \\*\\*\\* \\[\\(\\(.+?\\):\\([0-9]+\\): .+\\)\\]" 2 3 nil 0 1)
 
     (gnu
      ;; The first line matches the program name for
@@ -327,7 +381,7 @@ of[ \t]+\"?\\([a-zA-Z]?:?[^\":\n]+\\)\"?:" 3 2 nil (1))
           (: (* " ")
              (group-n 7 (| (regexp "[Ii]nfo\\(?:\\>\\|rmationa?l?\\)")
                            "I:"
-                           (: "[ skipping " (+ ".") " ]")
+                           (: "[ skipping " (+ nonl) " ]")
                            "instantiated from"
                            "required from"
                            (regexp "[Nn]ote"))))
@@ -363,17 +417,10 @@ of[ \t]+\"?\\([a-zA-Z]?:?[^\":\n]+\\)\"?:" 3 2 nil (1))
     (mips-2
      " in \\([^()\n ]+\\)(\\([0-9]+\\))$" 1 2)
 
-    (msft
-     ;; The message may be a "warning", "error", or "fatal error" with
-     ;; an error code, or "see declaration of" without an error code.
-     "^ *\\([0-9]+>\\)?\\(\\(?:[a-zA-Z]:\\)?[^:(\t\n]+\\)(\\([0-9]+\\)) \
-: \\(?:see declaration\\|\\(?:warnin\\(g\\)\\|[a-z ]+\\) C[0-9]+:\\)"
-     2 3 nil (4))
-
     (omake
      ;; "omake -P" reports "file foo changed"
      ;; (useful if you do "cvs up" and want to see what has changed)
-     "omake: file \\(.*\\) changed" 1 nil nil nil nil
+     "^\\*\\*\\* omake: file \\(.*\\) changed" 1 nil nil nil nil
      ;; FIXME-omake: This tries to prevent reusing pre-existing markers
      ;; for subsequent messages, since those messages's line numbers
      ;; are about another version of the file.
@@ -422,7 +469,7 @@ File = \\(.+\\), Line = \\([0-9]+\\)\\(?:, Column = \\([0-9]+\\)\\)?"
      "^\\([^, \n\t]+\\), line \\([0-9]+\\), char \\([0-9]+\\)[:., (-]" 1 2 3)
 
     (watcom
-     "^[ \t]*\\(\\(?:[a-zA-Z]:\\)?[^:(\t\n]+\\)(\\([0-9]+\\)): ?\
+     "^[ \t]*\\(\\(?:[a-zA-Z]:\\)?[^ :(\t\n][^:(\t\n]*\\)(\\([0-9]+\\)): ?\
 \\(?:\\(Error! E[0-9]+\\)\\|\\(Warning! W[0-9]+\\)\\):"
      1 2 nil (4))
 
@@ -602,11 +649,26 @@ SUBMATCH is the number of a submatch and FACE is an expression
 which evaluates to a face name (a symbol or string).
 Alternatively, FACE can evaluate to a property list of the
 form (face FACE PROP1 VAL1 PROP2 VAL2 ...), in which case all the
-listed text properties PROP# are given values VAL# as well."
+listed text properties PROP# are given values VAL# as well.
+
+After identifying errors and warnings determined by this
+variable, the `compilation-transform-file-match-alist' variable
+is then consulted.  It allows further transformations of the
+matched file names, and weeding out false positives."
   :type '(repeat (choice (symbol :tag "Predefined symbol")
 			 (sexp :tag "Error specification")))
   :link `(file-link :tag "example file"
 		    ,(expand-file-name "compilation.txt" data-directory)))
+
+(defvar compilation-error-case-fold-search nil
+  "If non-nil, use case-insensitive matching of compilation errors
+by the regexps of `compilation-error-regexp-alist' and
+`compilation-error-regexp-alist-alist'.
+If nil, matching is case-sensitive.
+
+This variable should only be set for backward compatibility as a temporary
+measure.  The proper solution is to use a regexp that matches the
+messages without case-folding.")
 
 ;;;###autoload(put 'compilation-directory 'safe-local-variable 'stringp)
 (defvar compilation-directory nil
@@ -1105,7 +1167,7 @@ POS and RES.")
                (setq file (if (functionp file) (funcall file)
                             (match-string-no-properties file))))
 	  (let ((dir
-	    (unless (file-name-absolute-p file)
+	         (unless (file-name-absolute-p file)
                    (let ((pos (compilation--previous-directory
                                (match-beginning 0))))
                      (when pos
@@ -1155,19 +1217,37 @@ POS and RES.")
                      (setq end-col (match-string-no-properties end-col))
                      (- (string-to-number end-col) -1)))
               (and end-line -1)))
-    (if (consp type)			; not a static type, check what it is.
+    (if (consp type)            ; not a static type, check what it is.
 	(setq type (or (and (car type) (match-end (car type)) 1)
 		       (and (cdr type) (match-end (cdr type)) 0)
 		       2)))
+    ;; Remove matches like /bin/sh and do other file name transforms.
+    (save-match-data
+      (let ((file-name
+             (and (consp file)
+                  (not (bufferp (car file)))
+                  (if (cdr file)
+                      (expand-file-name (car file) (cdr file))
+                    (car file)))))
+        (cl-loop for (regexp replacement)
+                 in compilation-transform-file-match-alist
+                 when (string-match regexp file-name)
+                 return (if replacement
+                            (setq file (list (replace-match replacement nil nil
+                                                            file-name)))
+                          (setq file nil)))))
+    (if (not file)
+        ;; If we ignored all the files with errors on this line, then
+        ;; return nil.
+        nil
+      (when (and compilation-auto-jump-to-next
+                 (>= type compilation-skip-threshold))
+        (kill-local-variable 'compilation-auto-jump-to-next)
+        (run-with-timer 0 nil 'compilation-auto-jump
+                        (current-buffer) (match-beginning 0)))
 
-    (when (and compilation-auto-jump-to-next
-               (>= type compilation-skip-threshold))
-      (kill-local-variable 'compilation-auto-jump-to-next)
-      (run-with-timer 0 nil 'compilation-auto-jump
-                      (current-buffer) (match-beginning 0)))
-
-    (compilation-internal-error-properties
-     file line end-line col end-col type fmt)))
+      (compilation-internal-error-properties
+       file line end-line col end-col type fmt))))
 
 (defun compilation-beginning-of-line (&optional n)
   "Like `beginning-of-line', but accounts for lines hidden by `selective-display'."
@@ -1201,7 +1281,7 @@ FMTS is a list of format specs for transforming the file name.
   (unless file (setq file '("*unknown*")))
   (let* ((file-struct (compilation-get-file-structure file fmts))
 	 ;; Get first already existing marker (if any has one, all have one).
-	 ;; Do this first, as the compilation-assq`s may create new nodes.
+	 ;; Do this first, as the compilation-assq's may create new nodes.
 	 (marker-line	; a line structure
           (cadr (compilation--file-struct->loc-tree file-struct)))
 	 (marker
@@ -1379,7 +1459,8 @@ to `compilation-error-regexp-alist' if RULES is nil."
     (if (symbolp item)
         (setq item (cdr (assq item
                               compilation-error-regexp-alist-alist))))
-    (let ((file (nth 1 item))
+    (let ((case-fold-search compilation-error-case-fold-search)
+          (file (nth 1 item))
           (line (nth 2 item))
           (col (nth 3 item))
           (type (nth 4 item))
@@ -1397,11 +1478,17 @@ to `compilation-error-regexp-alist' if RULES is nil."
        ((not (memq 'omake compilation-error-regexp-alist)) nil)
        ((string-match "\\`\\([^^]\\|\\^\\( \\*\\|\\[\\)\\)" pat)
         nil) ;; Not anchored or anchored but already allows empty spaces.
-       (t (setq pat (concat "^ *" (substring pat 1)))))
+       (t (setq pat (concat "^\\(?:      \\)?" (substring pat 1)))))
 
-      (if (consp file)	(setq fmt (cdr file)	  file (car file)))
-      (if (consp line)	(setq end-line (cdr line) line (car line)))
-      (if (consp col)	(setq end-col (cdr col)	  col (car col)))
+      (if (and (consp file) (not (functionp file)))
+	  (setq fmt (cdr file)
+                file (car file)))
+      (if (and (consp line) (not (functionp line)))
+          (setq end-line (cdr line)
+                line (car line)))
+      (if (and (consp col) (not (functionp col)))
+          (setq end-col (cdr col)
+                col (car col)))
 
       (unless (or (null (nth 5 item)) (integerp (nth 5 item)))
         (error "HYPERLINK should be an integer: %s" (nth 5 item)))
@@ -2471,6 +2558,8 @@ This is the value of `next-error-function' in Compilation buffers."
 	 (loc (compilation--message->loc msg))
 	 (end-loc (compilation--message->end-loc msg))
 	 (marker (point-marker)))
+    (unless loc
+      (user-error "No next error"))
     (setq compilation-current-error (point-marker)
 	  overlay-arrow-position
 	    (if (bolp)
@@ -2576,7 +2665,7 @@ region and the first line of the next region."
   "Display this many lines of leading context before the current message.
 If nil or t, and the left fringe is displayed, don't scroll the
 compilation output window; an arrow in the left fringe points to
-the current message.  With no left fringe, If nil, the message
+the current message.  With no left fringe, if nil, the message
 scrolls to the top of the window; there is no arrow.  If t, don't
 scroll the compilation output window at all; an arrow before
 column zero points to the current message."
@@ -2593,15 +2682,14 @@ column zero points to the current message."
 			       (compilation-beginning-of-line
 			        (- 1 compilation-context-lines))
 			       (point))))
-        ((eq compilation-context-lines t))
-    ;; If there is no left fringe.
-        ((equal (car (window-fringes w)) 0)
+        ((and (null compilation-context-lines)
+              ;; If there is no left fringe.
+              (equal (car (window-fringes w)) 0))
          (set-window-start w (save-excursion
                                (goto-char mk)
 			       (beginning-of-line 1)
-			       (point)))
-         (set-window-point w mk))
-        (t (set-window-point w mk))))
+			       (point)))))
+  (set-window-point w mk))
 
 (defvar-local compilation-arrow-overlay nil
   "Overlay with the before-string property of `overlay-arrow-string'.
@@ -2618,24 +2706,39 @@ at the overlay's start position.")
   "A string which is only a placeholder for `compilation--margin-string'.
 Actual value is never used, only the text property.")
 
-(defun compilation-set-up-arrow-spec-in-margin ()
-  "Set up compilation-arrow-overlay to display as an arrow in a margin."
+(defun compilation--set-up-margin (w)
+  "Setup the margin for \"=>\" in window W if it isn't already set up."
+  (set-window-margins w (+ (or (car (window-margins w)) 0) 2)))
+
+(defun compilation--tear-down-margin (w)
+  "Remove the margin for \"=>\" if it is setup in window W."
+  (when (window-margins w)
+    (set-window-margins w (- (car (window-margins w)) 2))))
+
+(defun compilation--set-up-arrow-spec-in-margins ()
+  "Set up compilation-arrow-overlay to display as an arrow in margins."
   (setq overlay-arrow-string "")
   (setq compilation-arrow-overlay
 	(make-overlay overlay-arrow-position overlay-arrow-position))
   (overlay-put compilation-arrow-overlay
                'before-string compilation--dummy-string)
-  (set-window-margins (selected-window) (+ (or (car (window-margins)) 0) 2))
+  (mapc #'compilation--set-up-margin (get-buffer-window-list nil nil t))
+  (add-hook 'window-buffer-change-functions #'compilation--set-up-margin nil t)
   ;; Take precautions against `compilation-mode' getting reinitialized.
   (add-hook 'change-major-mode-hook
-            'compilation-tear-down-arrow-spec-in-margin nil t))
+            #'compilation--tear-down-arrow-spec-in-margins nil t))
 
-(defun compilation-tear-down-arrow-spec-in-margin ()
-  "Restore compilation-arrow-overlay to not using the margin, which is removed."
-  (overlay-put compilation-arrow-overlay 'before-string nil)
-  (delete-overlay compilation-arrow-overlay)
-  (setq compilation-arrow-overlay nil)
-  (set-window-margins (selected-window) (- (car (window-margins)) 2)))
+(defun compilation--tear-down-arrow-spec-in-margins ()
+  "Restore compilation-arrow-overlay to not using the margins, which are removed."
+  (when (overlayp compilation-arrow-overlay)
+    (overlay-put compilation-arrow-overlay 'before-string nil)
+    (delete-overlay compilation-arrow-overlay)
+    (setq compilation-arrow-overlay nil)
+    (mapc #'compilation--tear-down-margin (get-buffer-window-list nil nil t))
+    (remove-hook 'change-major-mode-hook
+                 #'compilation--tear-down-arrow-spec-in-margins t)
+    (remove-hook 'window-buffer-change-functions
+                 #'compilation--set-up-margin t)))
 
 (defun compilation-set-overlay-arrow (w)
   "Set up, or switch off, the overlay-arrow for window W."
@@ -2653,10 +2756,10 @@ Actual value is never used, only the text property.")
 	      (if overlay-arrow-position
 	          (move-overlay compilation-arrow-overlay
 			        overlay-arrow-position overlay-arrow-position)
-                (compilation-tear-down-arrow-spec-in-margin))))
+                (compilation--tear-down-arrow-spec-in-margins))))
 
            (overlay-arrow-position
-            (compilation-set-up-arrow-spec-in-margin)))
+            (compilation--set-up-arrow-spec-in-margins)))
           ;; Ensure that the "=>" remains in the window by causing
           ;; the window to be scrolled, if needed.
           (goto-char (overlay-start compilation-arrow-overlay)))
@@ -2664,7 +2767,7 @@ Actual value is never used, only the text property.")
       ;; `compilation-context-lines' isn't t, or we've got a left
       ;; fringe, so remove any overlay arrow.
       (when (overlayp compilation-arrow-overlay)
-        (compilation-tear-down-arrow-spec-in-margin)))))
+        (compilation--tear-down-arrow-spec-in-margins)))))
 
 (defvar next-error-highlight-timer)
 
@@ -2783,7 +2886,8 @@ attempts to find a file whose name is produced by (format FMT FILENAME)."
                       (expand-file-name directory)
                     default-directory))
         buffer thisdir fmts name)
-    (if (file-name-absolute-p filename)
+    (if (and filename
+             (file-name-absolute-p filename))
         ;; The file name is absolute.  Use its explicit directory as
         ;; the first in the search path, and strip it from FILENAME.
         (setq filename (abbreviate-file-name (expand-file-name filename))
@@ -2811,8 +2915,11 @@ attempts to find a file whose name is produced by (format FMT FILENAME)."
 	    (and w (progn (compilation-set-window w marker)
                           (compilation-set-overlay-arrow w))))
           (let* ((name (read-file-name
-                        (format "Find this %s in (default %s): "
-                                compilation-error filename)
+                        (format "Find this %s in%s: "
+                                compilation-error
+                                (if filename
+                                    (format " (default %s)" filename)
+                                  ""))
                         spec-dir filename t nil
                         ;; The predicate below is fine when called from
                         ;; minibuffer-complete-and-exit, but it's too
@@ -2865,21 +2972,15 @@ TRUE-DIRNAME is the `file-truename' of DIRNAME, if given."
       ;; Let's normalize it and look again.
       (let ((filename (car file))
 	    ;; Get the specified directory from FILE.
-	    (spec-directory (if (cdr file)
-				(file-truename (cdr file)))))
+	    (spec-directory
+             (if (cdr file)
+		 (file-truename (concat comint-file-name-prefix (cdr file))))))
 
 	;; Check for a comint-file-name-prefix and prepend it if appropriate.
 	;; (This is very useful for compilation-minor-mode in an rlogin-mode
 	;; buffer.)
-	(when (and (boundp 'comint-file-name-prefix)
-		   (not (equal comint-file-name-prefix "")))
-	  (if (file-name-absolute-p filename)
-	      (setq filename
-		    (concat comint-file-name-prefix filename))
-	    (if spec-directory
-		(setq spec-directory
-		      (file-truename
-		       (concat comint-file-name-prefix spec-directory))))))
+	(if (file-name-absolute-p filename)
+	    (setq filename (concat comint-file-name-prefix filename)))
 
 	;; If compilation-parse-errors-filename-function is
 	;; defined, use it to process the filename.  The result might be a

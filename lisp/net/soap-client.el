@@ -1,6 +1,6 @@
 ;;; soap-client.el --- Access SOAP web services       -*- lexical-binding: t -*-
 
-;; Copyright (C) 2009-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2009-2020 Free Software Foundation, Inc.
 
 ;; Author: Alexandru Harsanyi <AlexHarsanyi@gmail.com>
 ;; Author: Thomas Fitzsimmons <fitzsim@fitzsim.org>
@@ -844,7 +844,7 @@ This is a specialization of `soap-encode-attributes' for
   "Return t if VALUE should be encoded for ELEMENT, nil otherwise."
   (cond
    ;; if value is not nil, attempt to encode it
-   (value)
+   (value t)
 
    ;; value is nil, but the element's type is a boolean, so nil in this case
    ;; means "false".  We need to encode it.

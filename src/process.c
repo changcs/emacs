@@ -1,6 +1,6 @@
 /* Asynchronous subprocess control for GNU Emacs.
 
-Copyright (C) 1985-1988, 1993-1996, 1998-1999, 2001-2019 Free Software
+Copyright (C) 1985-1988, 1993-1996, 1998-1999, 2001-2020 Free Software
 Foundation, Inc.
 
 This file is part of GNU Emacs.
@@ -1392,14 +1392,12 @@ nil otherwise.  */)
   CHECK_PROCESS (process);
 
   /* All known platforms store window sizes as 'unsigned short'.  */
-  CHECK_RANGED_INTEGER (height, 0, USHRT_MAX);
-  CHECK_RANGED_INTEGER (width, 0, USHRT_MAX);
+  unsigned short h = check_uinteger_max (height, USHRT_MAX);
+  unsigned short w = check_uinteger_max (width, USHRT_MAX);
 
   if (NETCONN_P (process)
       || XPROCESS (process)->infd < 0
-      || (set_window_size (XPROCESS (process)->infd,
-			   XFIXNUM (height), XFIXNUM (width))
-	  < 0))
+      || set_window_size (XPROCESS (process)->infd, h, w) < 0)
     return Qnil;
   else
     return Qt;
@@ -3188,14 +3186,12 @@ usage:  (make-serial-process &rest ARGS)  */)
 		       BUF_ZV_BYTE (XBUFFER (buffer)));
     }
 
-  tem = Fplist_member (contact, QCcoding);
-  if (!NILP (tem) && (!CONSP (tem) || !CONSP (XCDR (tem))))
-    tem = Qnil;
+  tem = Fplist_get (contact, QCcoding);
 
   val = Qnil;
   if (!NILP (tem))
     {
-      val = XCAR (XCDR (tem));
+      val = tem;
       if (CONSP (val))
 	val = XCAR (val);
     }
@@ -3209,7 +3205,7 @@ usage:  (make-serial-process &rest ARGS)  */)
   val = Qnil;
   if (!NILP (tem))
     {
-      val = XCAR (XCDR (tem));
+      val = tem;
       if (CONSP (val))
 	val = XCDR (val);
     }
@@ -3244,16 +3240,14 @@ set_network_socket_coding_system (Lisp_Object proc, Lisp_Object host,
   Lisp_Object coding_systems = Qt;
   Lisp_Object val;
 
-  tem = Fplist_member (contact, QCcoding);
-  if (!NILP (tem) && (!CONSP (tem) || !CONSP (XCDR (tem))))
-    tem = Qnil;  /* No error message (too late!).  */
+  tem = Fplist_get (contact, QCcoding);
 
   /* Setup coding systems for communicating with the network stream.  */
   /* Qt denotes we have not yet called Ffind_operation_coding_system.  */
 
   if (!NILP (tem))
     {
-      val = XCAR (XCDR (tem));
+      val = tem;
       if (CONSP (val))
 	val = XCAR (val);
     }
@@ -3287,7 +3281,7 @@ set_network_socket_coding_system (Lisp_Object proc, Lisp_Object host,
 
   if (!NILP (tem))
     {
-      val = XCAR (XCDR (tem));
+      val = tem;
       if (CONSP (val))
 	val = XCDR (val);
     }
@@ -3761,7 +3755,7 @@ host, and only clients connecting to that address will be accepted.
 If all interfaces should be bound, an address of \"0.0.0.0\" (for
 IPv4) or \"::\" (for IPv6) can be used.  (On some operating systems,
 using \"::\" listens on both IPv4 and IPv6.)  `local' will use IPv4 by
-default, use a FAMILY of 'ipv6 to override this.
+default, use a FAMILY of `ipv6' to override this.
 
 :service SERVICE -- SERVICE is name of the service desired, or an
 integer specifying a port number to connect to.  If SERVICE is t,
@@ -3794,6 +3788,8 @@ process, the FAMILY, HOST, and SERVICE args are ignored.
 The format of ADDRESS depends on the address family:
 - An IPv4 address is represented as a vector of integers [A B C D P]
 corresponding to numeric IP address A.B.C.D and port number P.
+- An IPv6 address has the same format as an IPv4 address but with 9
+elements rather than 5.
 - A local address is represented as a string with the address in the
 local address space.
 - An "unsupported family" address is represented by a cons (F . AV)
@@ -4013,9 +4009,11 @@ usage: (make-network-process &rest ARGS)  */)
       if (family != AF_LOCAL)
 #endif
         {
+#ifdef AF_INET6
         if (family == AF_INET6)
           host = build_string ("::1");
         else
+#endif
           host = build_string ("127.0.0.1");
         }
     }
@@ -4025,9 +4023,11 @@ usage: (make-network-process &rest ARGS)  */)
         {
 	/* Depending on setup, "localhost" may map to different IPv4 and/or
 	   IPv6 addresses, so it's better to be explicit (Bug#6781).  */
+#ifdef AF_INET6
         if (family == AF_INET6)
           host = build_string ("::1");
         else
+#endif
           host = build_string ("127.0.0.1");
         }
       CHECK_STRING (host);
@@ -4249,73 +4249,86 @@ usage: (make-network-process &rest ARGS)  */)
 }
 
 
-#ifdef HAVE_NET_IF_H
 
-#ifdef SIOCGIFCONF
+#ifdef HAVE_GETIFADDRS
 static Lisp_Object
-network_interface_list (void)
+network_interface_list (bool full, unsigned short match)
 {
-  struct ifconf ifconf;
-  struct ifreq *ifreq;
-  void *buf = NULL;
-  ptrdiff_t buf_size = 512;
-  int s;
-  Lisp_Object res;
-  ptrdiff_t count;
+  Lisp_Object res = Qnil;
+  struct ifaddrs *ifap;
 
-  s = socket (AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
-  if (s < 0)
+  if (getifaddrs (&ifap) == -1)
     return Qnil;
-  count = SPECPDL_INDEX ();
-  record_unwind_protect_int (close_file_unwind, s);
 
-  do
+  for (struct ifaddrs *it = ifap; it != NULL; it = it->ifa_next)
     {
-      buf = xpalloc (buf, &buf_size, 1, INT_MAX, 1);
-      ifconf.ifc_buf = buf;
-      ifconf.ifc_len = buf_size;
-      if (ioctl (s, SIOCGIFCONF, &ifconf))
-	{
-	  emacs_close (s);
-	  xfree (buf);
-	  return Qnil;
-	}
-    }
-  while (ifconf.ifc_len == buf_size);
+      int len;
+      int addr_len;
+      uint32_t *maskp;
+      uint32_t *addrp;
+      Lisp_Object elt = Qnil;
 
-  res = unbind_to (count, Qnil);
-  ifreq = ifconf.ifc_req;
-  while ((char *) ifreq < (char *) ifconf.ifc_req + ifconf.ifc_len)
-    {
-      struct ifreq *ifq = ifreq;
-#ifdef HAVE_STRUCT_IFREQ_IFR_ADDR_SA_LEN
-#define SIZEOF_IFREQ(sif)						\
-      ((sif)->ifr_addr.sa_len < sizeof (struct sockaddr)		\
-       ? sizeof (*(sif)) : sizeof ((sif)->ifr_name) + (sif)->ifr_addr.sa_len)
-
-      int len = SIZEOF_IFREQ (ifq);
-#else
-      int len = sizeof (*ifreq);
+      /* BSD can allegedly return interfaces with a NULL address.  */
+      if (it->ifa_addr == NULL)
+        continue;
+      if (match && it->ifa_addr->sa_family != match)
+        continue;
+      if (it->ifa_addr->sa_family == AF_INET)
+        {
+          DECLARE_POINTER_ALIAS (sin1, struct sockaddr_in, it->ifa_netmask);
+          maskp = (uint32_t *)&sin1->sin_addr;
+          DECLARE_POINTER_ALIAS (sin2, struct sockaddr_in, it->ifa_addr);
+          addrp = (uint32_t *)&sin2->sin_addr;
+          len = sizeof (struct sockaddr_in);
+          addr_len = 1;
+        }
+#ifdef AF_INET6
+      else if (it->ifa_addr->sa_family == AF_INET6)
+        {
+          DECLARE_POINTER_ALIAS (sin6_1, struct sockaddr_in6, it->ifa_netmask);
+          maskp = (uint32_t *) &sin6_1->sin6_addr;
+          DECLARE_POINTER_ALIAS (sin6_2, struct sockaddr_in6, it->ifa_addr);
+          addrp = (uint32_t *) &sin6_2->sin6_addr;
+          len = sizeof (struct sockaddr_in6);
+          addr_len = 4;
+        }
 #endif
-      char namebuf[sizeof (ifq->ifr_name) + 1];
-      ifreq = (struct ifreq *) ((char *) ifreq + len);
+      else
+        continue;
 
-      if (ifq->ifr_addr.sa_family != AF_INET)
-	continue;
+      Lisp_Object addr = conv_sockaddr_to_lisp (it->ifa_addr, len);
 
-      memcpy (namebuf, ifq->ifr_name, sizeof (ifq->ifr_name));
-      namebuf[sizeof (ifq->ifr_name)] = 0;
-      res = Fcons (Fcons (build_string (namebuf),
-			  conv_sockaddr_to_lisp (&ifq->ifr_addr,
-						 sizeof (struct sockaddr))),
-		   res);
+      if (full)
+        {
+          elt = Fcons (conv_sockaddr_to_lisp (it->ifa_netmask, len), elt);
+          /* There is an it->ifa_broadaddr field, but its contents are
+             unreliable, so always calculate the broadcast address from
+             the address and the netmask.  */
+          int i;
+          uint32_t mask;
+          for (i = 0; i < addr_len; i++)
+            {
+              mask = maskp[i];
+              maskp[i] = (addrp[i] & mask) | ~mask;
+            }
+          elt = Fcons (conv_sockaddr_to_lisp (it->ifa_netmask, len), elt);
+          elt = Fcons (addr, elt);
+        }
+      else
+        {
+          elt = addr;
+        }
+      res = Fcons (Fcons (build_string (it->ifa_name), elt), res);
     }
+#ifdef HAVE_FREEIFADDRS
+  freeifaddrs (ifap);
+#endif
 
-  xfree (buf);
   return res;
 }
-#endif /* SIOCGIFCONF */
+#endif  /* HAVE_GETIFADDRS */
 
+#ifdef HAVE_NET_IF_H
 #if defined (SIOCGIFADDR) || defined (SIOCGIFHWADDR) || defined (SIOCGIFFLAGS)
 
 struct ifflag_def {
@@ -4544,17 +4557,46 @@ network_interface_info (Lisp_Object ifname)
 #endif	/* defined (HAVE_NET_IF_H) */
 
 DEFUN ("network-interface-list", Fnetwork_interface_list,
-       Snetwork_interface_list, 0, 0, 0,
+       Snetwork_interface_list, 0, 2, 0,
        doc: /* Return an alist of all network interfaces and their network address.
-Each element is a cons, the car of which is a string containing the
-interface name, and the cdr is the network address in internal
-format; see the description of ADDRESS in `make-network-process'.
+Each element is cons of the form (IFNAME . IP) where IFNAME is a
+string containing the interface name, and IP is the network address in
+internal format; see the description of ADDRESS in
+`make-network-process'.  The interface name is not guaranteed to be
+unique.
+
+Optional parameter FULL non-nil means return all IP address info for
+each interface.  Each element is then a list of the form
+    (IFNAME IP BCAST MASK)
+where IFNAME is the interface name, IP the IP address,
+BCAST the broadcast address, and MASK the network mask.
+
+Optional parameter FAMILY controls the type of addresses to return.
+The default of nil means both IPv4 and IPv6, symbol `ipv4' means IPv4
+only, symbol `ipv6' means IPv6 only.
+
+See also `network-interface-info', which is limited to IPv4 only.
 
 If the information is not available, return nil.  */)
-  (void)
+  (Lisp_Object full, Lisp_Object family)
 {
-#if (defined HAVE_NET_IF_H && defined SIOCGIFCONF) || defined WINDOWSNT
-  return network_interface_list ();
+#if defined HAVE_GETIFADDRS || defined WINDOWSNT
+  unsigned short match;
+  bool full_info = false;
+
+  if (! NILP (full))
+    full_info = true;
+  if (NILP (family))
+    match = 0;
+  else if (EQ (family, Qipv4))
+    match = AF_INET;
+#ifdef AF_INET6
+  else if (EQ (family, Qipv6))
+    match = AF_INET6;
+#endif
+  else
+    error ("Unsupported address family");
+  return network_interface_list (full_info, match);
 #else
   return Qnil;
 #endif
@@ -4620,7 +4662,8 @@ DEFUN ("network-lookup-address-info", Fnetwork_lookup_address_info,
 Optional parameter FAMILY controls whether to look up IPv4 or IPv6
 addresses.  The default of nil means both, symbol `ipv4' means IPv4
 only, symbol `ipv6' means IPv6 only.  Returns a list of addresses, or
-nil if none were found.  Each address is a vector of integers.  */)
+nil if none were found.  Each address is a vector of integers, as per
+the description of ADDRESS in `make-network-process'.  */)
      (Lisp_Object name, Lisp_Object family)
 {
   Lisp_Object addresses = Qnil;
@@ -4634,12 +4677,9 @@ nil if none were found.  Each address is a vector of integers.  */)
     hints.ai_family = AF_UNSPEC;
   else if (EQ (family, Qipv4))
     hints.ai_family = AF_INET;
-  else if (EQ (family, Qipv6))
 #ifdef AF_INET6
+  else if (EQ (family, Qipv6))
     hints.ai_family = AF_INET6;
-#else
-  /* If we don't support IPv6, querying will never work anyway */
-    return addresses;
 #endif
   else
     error ("Unsupported lookup type");
@@ -4651,9 +4691,15 @@ nil if none were found.  Each address is a vector of integers.  */)
   else
     {
       for (lres = res; lres; lres = lres->ai_next)
-	addresses = Fcons (conv_sockaddr_to_lisp (lres->ai_addr,
-						  lres->ai_addrlen),
-			   addresses);
+        {
+#ifndef AF_INET6
+          if (lres->ai_family != AF_INET)
+            continue;
+#endif
+          addresses = Fcons (conv_sockaddr_to_lisp (lres->ai_addr,
+                                                    lres->ai_addrlen),
+                             addresses);
+        }
       addresses = Fnreverse (addresses);
 
       freeaddrinfo (res);
@@ -5956,7 +6002,7 @@ read_and_dispose_of_process_output (struct Lisp_Process *p, char *chars,
    Yield number of decoded characters read,
    or -1 (setting errno) if there is a read error.
 
-   This function reads at most 4096 characters.
+   This function reads at most read_process_output_max bytes.
    If you want to read all available subprocess output,
    you must call it repeatedly until it returns zero.
 
@@ -5970,10 +6016,13 @@ read_process_output (Lisp_Object proc, int channel)
   struct Lisp_Process *p = XPROCESS (proc);
   struct coding_system *coding = proc_decode_coding_system[channel];
   int carryover = p->decoding_carryover;
-  enum { readmax = 4096 };
+  ptrdiff_t readmax = clip_to_bounds (1, read_process_output_max, PTRDIFF_MAX);
   ptrdiff_t count = SPECPDL_INDEX ();
   Lisp_Object odeactivate;
-  char chars[sizeof coding->carryover + readmax];
+  char *chars;
+
+  USE_SAFE_ALLOCA;
+  chars = SAFE_ALLOCA (sizeof coding->carryover + readmax);
 
   if (carryover)
     /* See the comment above.  */
@@ -6040,7 +6089,10 @@ read_process_output (Lisp_Object proc, int channel)
   if (nbytes <= 0)
     {
       if (nbytes < 0 || coding->mode & CODING_MODE_LAST_BLOCK)
-	return nbytes;
+	{
+	  SAFE_FREE_UNBIND_TO (count, Qnil);
+	  return nbytes;
+	}
       coding->mode |= CODING_MODE_LAST_BLOCK;
     }
 
@@ -6064,7 +6116,7 @@ read_process_output (Lisp_Object proc, int channel)
   /* Handling the process output should not deactivate the mark.  */
   Vdeactivate_mark = odeactivate;
 
-  unbind_to (count, Qnil);
+  SAFE_FREE_UNBIND_TO (count, Qnil);
   return nbytes;
 }
 
@@ -7021,10 +7073,7 @@ SIGCODE may be an integer, or a symbol whose name is a signal name.  */)
     }
 
   if (FIXNUMP (sigcode))
-    {
-      CHECK_TYPE_RANGED_INTEGER (int, sigcode);
-      signo = XFIXNUM (sigcode);
-    }
+    signo = check_integer_range (sigcode, INT_MIN, INT_MAX);
   else
     {
       char *name;
@@ -8142,6 +8191,17 @@ restore_nofile_limit (void)
 #endif
 }
 
+int
+open_channel_for_module (Lisp_Object process)
+{
+  CHECK_PROCESS (process);
+  CHECK_TYPE (PIPECONN_P (process), Qpipe_process_p, process);
+  int fd = dup (XPROCESS (process)->open_fd[SUBPROCESS_STDOUT]);
+  if (fd == -1)
+    report_file_error ("Cannot duplicate file descriptor", Qnil);
+  return fd;
+}
+
 
 /* This is not called "init_process" because that is the name of a
    Mach system call, so it would cause problems on Darwin systems.  */
@@ -8219,19 +8279,6 @@ init_process_emacs (int sockfd)
   memset (datagram_address, 0, sizeof datagram_address);
 #endif
 
-#if defined (DARWIN_OS)
-  /* PTYs are broken on Darwin < 6, but are sometimes useful for interactive
-     processes.  As such, we only change the default value.  */
- if (initialized)
-  {
-    char const *release = (STRINGP (Voperating_system_release)
-			   ? SSDATA (Voperating_system_release)
-			   : 0);
-    if (!release || !release[0] || (release[0] < '7' && release[1] == '.')) {
-      Vprocess_connection_type = Qnil;
-    }
-  }
-#endif
 #endif	/* subprocesses */
   kbd_is_on_hold = 0;
 }
@@ -8390,11 +8437,18 @@ returns non-`nil'.  */);
 	       doc: /* Name of external socket passed to Emacs, or nil if none.  */);
   Vinternal__daemon_sockname = Qnil;
 
+  DEFVAR_INT ("read-process-output-max", read_process_output_max,
+	      doc: /* Maximum number of bytes to read from subprocess in a single chunk.
+Enlarge the value only if the subprocess generates very large (megabytes)
+amounts of data in one go.  */);
+  read_process_output_max = 4096;
+
   DEFSYM (Qinternal_default_interrupt_process,
 	  "internal-default-interrupt-process");
   DEFSYM (Qinterrupt_process_functions, "interrupt-process-functions");
 
   DEFSYM (Qnull, "null");
+  DEFSYM (Qpipe_process_p, "pipe-process-p");
 
   defsubr (&Sprocessp);
   defsubr (&Sget_process);

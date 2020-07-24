@@ -1,6 +1,6 @@
 ;;; mixal-mode.el --- Major mode for the mix asm language.
 
-;; Copyright (C) 2003-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2003-2020 Free Software Foundation, Inc.
 
 ;; Author: Pieter E.J. Pareit <pieter.pareit@gmail.com>
 ;; Maintainer: emacs-devel@gnu.org
@@ -330,7 +330,7 @@ part of the subfield. The default field for STJ is (0:2)."
          2)
 
     (STZ storing "store zero" 33 field
-         "Store in cell Nr. M '+ 0'.
+         "Store in cell Nr. M `+ 0'.
 The modification of the operation code represents the subfield of the
 memory cell that is to be overwritten with zeros."
          2)

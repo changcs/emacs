@@ -1,6 +1,6 @@
 ;;; vc-git.el --- VC backend for the git version control system -*- lexical-binding: t -*-
 
-;; Copyright (C) 2006-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2006-2020 Free Software Foundation, Inc.
 
 ;; Author: Alexandre Julliard <julliard@winehq.org>
 ;; Keywords: vc tools
@@ -47,6 +47,7 @@
 ;; FUNCTION NAME                                   STATUS
 ;; BACKEND PROPERTIES
 ;; * revision-granularity                          OK
+;; - update-on-retrieve-tag                        OK
 ;; STATE-QUERYING FUNCTIONS
 ;; * registered (file)                             OK
 ;; * state (file)                                  OK
@@ -71,6 +72,7 @@
 ;;                                          by git, so it's probably
 ;;                                          not a good idea.
 ;; - merge-news (file)                      see `merge-file'
+;; - mark-resolved (file)                          OK
 ;; - steal-lock (file &optional revision)          NOT NEEDED
 ;; HISTORY FUNCTIONS
 ;; * print-log (files buffer &optional shortlog start-revision limit)   OK
@@ -99,11 +101,12 @@
 ;; - rename-file (old new)                         OK
 ;; - find-file-hook ()                             OK
 ;; - conflicted-files                              OK
+;; - repository-url (file-or-dir)                  OK
 
 ;;; Code:
 
+(require 'cl-lib)
 (eval-when-compile
-  (require 'cl-lib)
   (require 'subr-x) ; for string-trim-right
   (require 'vc)
   (require 'vc-dir))
@@ -165,7 +168,7 @@ format string (which is passed to \"git log\" via the argument
 \"--pretty=tformat:FORMAT\"), REGEXP is a regular expression
 matching the resulting Git log output, and KEYWORDS is a list of
 `font-lock-keywords' for highlighting the Log View buffer."
-  :type '(list string string (repeat sexp))
+  :type '(list string regexp (repeat sexp))
   :version "24.1")
 
 (defcustom vc-git-commits-coding-system 'utf-8
@@ -192,6 +195,21 @@ The following place holders should be present in the string:
   :type 'string
   :version "27.1")
 
+(defcustom vc-git-show-stash t
+  "How much of the git stash list to show by default.
+Default t means all, otherwise an integer specifying the maximum
+number to show.  A text button is always shown allowing you to
+toggle display of the entire list."
+  :type '(choice (const :tag "All" t)
+                 (integer :tag "Limit"
+                          :validate
+                          (lambda (widget)
+                            (unless (>= (widget-value widget) 0)
+                              (widget-put widget :error
+                                          "Invalid value: must be a non-negative integer")
+                              widget))))
+  :version "27.1")
+
 ;; History of Git commands.
 (defvar vc-git-history nil)
 
@@ -203,6 +221,7 @@ The following place holders should be present in the string:
 
 (defun vc-git-revision-granularity () 'repository)
 (defun vc-git-checkout-model (_files) 'implicit)
+(defun vc-git-update-on-retrieve-tag () nil)
 
 ;;; STATE-QUERYING FUNCTIONS
 
@@ -267,8 +286,8 @@ The following place holders should be present in the string:
   "Convert CODE-LIST to a VC status.
 
 Each element of CODE-LIST comes from the first two characters of
-a line returned by 'git status --porcelain' and should be passed
-in the order given by 'git status'."
+a line returned by `git status --porcelain' and should be passed
+in the order given by `git status'."
   ;; It is necessary to allow CODE-LIST to be a list because sometimes git
   ;; status returns multiple lines, e.g. for a file that is removed from
   ;; the index but is present in the HEAD and working tree.
@@ -504,14 +523,19 @@ or an empty string if none."
       ('ls-files-up-to-date
        (setq next-stage 'ls-files-unknown)
        (while (re-search-forward "\\([0-7]\\{6\\}\\) [0-9a-f]\\{40\\} \\([0-3]\\)\t\\([^\0]+\\)\0" nil t)
-         (let ((perm (string-to-number (match-string 1) 8))
-               (state (match-string 2))
-               (name (match-string 3)))
-           (vc-git-dir-status-update-file
-            git-state name (if (equal state "0")
-                               'up-to-date
-                             'conflict)
-            (vc-git-create-extra-fileinfo perm perm)))))
+         (let* ((perm (string-to-number (match-string 1) 8))
+                (state (match-string 2))
+                (name (match-string 3))
+                (file-info (vc-git-create-extra-fileinfo perm perm)))
+           (if (equal state "0")
+               (unless (gethash name (vc-git-dir-status-state->hash git-state))
+                 ;; `diff-index' stage has not produced a more precise info.
+                 (vc-git-dir-status-update-file
+                  git-state name 'up-to-date file-info))
+             ;; `diff-index' assigns `edited' status to conflicted
+             ;; files, so we can't do the above in both cases.
+             (vc-git-dir-status-update-file
+              git-state name 'conflict file-info)))))
       ('ls-files-conflict
        (setq next-stage 'ls-files-unknown)
        ;; It's enough to look for "3" to notice a conflict.
@@ -598,8 +622,7 @@ or an empty string if none."
                        "ls-files" "-z" "-u" "--"))
       ('ls-files-unknown
        (vc-git-command (current-buffer) 'async files
-                       "ls-files" "-z" "-o" "--directory"
-                       "--no-empty-directory" "--exclude-standard" "--"))
+                       "ls-files" "-z" "-o" "--exclude-standard" "--"))
       ('ls-files-ignored
        (vc-git-command (current-buffer) 'async files
                        "ls-files" "-z" "-o" "-i" "--directory"
@@ -621,8 +644,15 @@ or an empty string if none."
                                  :files files
                                  :update-function update-function)))
 
+(defvar vc-git-stash-shared-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map "S" 'vc-git-stash-snapshot)
+    (define-key map "C" 'vc-git-stash)
+    map))
+
 (defvar vc-git-stash-map
   (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map vc-git-stash-shared-map)
     ;; Turn off vc-dir marking
     (define-key map [mouse-2] 'ignore)
 
@@ -632,11 +662,60 @@ or an empty string if none."
     (define-key map "\C-m" 'vc-git-stash-show-at-point)
     (define-key map "A" 'vc-git-stash-apply-at-point)
     (define-key map "P" 'vc-git-stash-pop-at-point)
-    (define-key map "S" 'vc-git-stash-snapshot)
     map))
+
+(defvar vc-git-stash-button-map
+  (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map vc-git-stash-shared-map)
+    (define-key map [mouse-2] 'push-button)
+    (define-key map "\C-m" 'push-button)
+    map))
+
+(defconst vc-git-stash-shared-help
+  "\\<vc-git-stash-shared-map>\\[vc-git-stash]: Create named stash\n\\[vc-git-stash-snapshot]: Snapshot stash")
+
+(defconst vc-git-stash-list-help (concat "\\<vc-git-stash-map>mouse-3: Show stash menu\n\\[vc-git-stash-show-at-point], =: Show stash\n\\[vc-git-stash-apply-at-point]: Apply stash\n\\[vc-git-stash-pop-at-point]: Apply and remove stash (pop)\n\\[vc-git-stash-delete-at-point]: Delete stash\n"
+                                         vc-git-stash-shared-help))
+
+(defun vc-git--make-button-text (show count1 count2)
+  (propertize
+   (if show
+       (format "Show all stashes (%s)" count2)
+     (if (= count1 count2)
+         (format "Hide all stashes (%s)" count2)
+       (format "Show %s stash%s (of %s)" count1 (if (= count1 1) "" "es") count2)))
+   'keymap vc-git-stash-button-map))
+
+(defun vc-git-make-stash-button (show count1 count2)
+  (let ((orig-text (vc-git--make-button-text show count1 count2)))
+    (make-text-button
+     orig-text nil
+     'action
+     (lambda (counts)
+       (let* ((inhibit-read-only t)
+              (start (next-single-property-change
+                      (point-min) 'vc-git-hideable))
+              (end (next-single-property-change
+                    start 'vc-git-hideable))
+              (state (get-text-property start 'invisible)))
+         (add-text-properties
+          start end
+          `(invisible ,(not state)))
+         (save-excursion
+           (delete-region (button-start (point)) (button-end (point)))
+           (insert (vc-git-make-stash-button
+                    (not state) (car counts) (cdr counts))))))
+     'button-data (cons count1 count2)
+     'help-echo (concat "mouse-2, RET: Show/hide stashes\n" vc-git-stash-shared-help))))
 
 (defvar vc-git-stash-menu-map
   (let ((map (make-sparse-keymap "Git Stash")))
+    (define-key map [sn]
+      '(menu-item "Snapshot Stash" vc-git-stash-snapshot
+		  :help "Snapshot stash"))
+    (define-key map [cr]
+      '(menu-item "Create Named Stash" vc-git-stash
+		  :help "Create named stash"))
     (define-key map [de]
       '(menu-item "Delete Stash" vc-git-stash-delete-at-point
 		  :help "Delete the current stash"))
@@ -655,9 +734,10 @@ or an empty string if none."
   (let ((str (with-output-to-string
                (with-current-buffer standard-output
                  (vc-git--out-ok "symbolic-ref" "HEAD"))))
-	(stash (vc-git-stash-list))
-	(stash-help-echo "Use M-x vc-git-stash to create stashes.")
-	branch remote remote-url)
+	(stash-list (vc-git-stash-list))
+        (default-directory dir)
+
+	branch remote remote-url stash-button stash-string)
     (if (string-match "^\\(refs/heads/\\)?\\(.+\\)$" str)
 	(progn
 	  (setq branch (match-string 2 str))
@@ -668,49 +748,83 @@ or an empty string if none."
                                     (concat "branch." branch ".remote")))))
 	  (when (string-match "\\([^\n]+\\)" remote)
 	    (setq remote (match-string 1 remote)))
-	  (when remote
-	    (setq remote-url
-		  (with-output-to-string
-		    (with-current-buffer standard-output
-		      (vc-git--out-ok "config"
-                                      (concat "remote." remote ".url"))))))
-	  (when (string-match "\\([^\n]+\\)" remote-url)
-	    (setq remote-url (match-string 1 remote-url))))
+          (when (> (length remote) 0)
+	    (setq remote-url (vc-git-repository-url dir remote))))
       (setq branch "not (detached HEAD)"))
+    (when stash-list
+      (let* ((len (length stash-list))
+             (limit
+              (if (integerp vc-git-show-stash)
+                  (min vc-git-show-stash len)
+                len))
+             (shown-stashes (cl-subseq stash-list 0 limit))
+             (hidden-stashes (cl-subseq stash-list limit))
+             (all-hideable (or (eq vc-git-show-stash t)
+                               (<= len vc-git-show-stash))))
+        (setq stash-button (if all-hideable
+                               (vc-git-make-stash-button nil limit limit)
+                             (vc-git-make-stash-button t vc-git-show-stash len))
+              stash-string
+              (concat
+               (when shown-stashes
+                 (concat
+                  (propertize "\n"
+                              'vc-git-hideable all-hideable)
+                  (mapconcat
+                   (lambda (x)
+                     (propertize x
+                                 'face 'font-lock-variable-name-face
+                                 'mouse-face 'highlight
+                                 'vc-git-hideable all-hideable
+                                 'help-echo vc-git-stash-list-help
+                                 'keymap vc-git-stash-map))
+                   shown-stashes
+                   (propertize "\n"
+                               'vc-git-hideable all-hideable))))
+               (when hidden-stashes
+                 (concat
+                  (propertize "\n"
+                              'invisible t
+                              'vc-git-hideable t)
+                  (mapconcat
+                   (lambda (x)
+                     (propertize x
+                                 'face 'font-lock-variable-name-face
+                                 'mouse-face 'highlight
+                                 'invisible t
+                                 'vc-git-hideable t
+                                 'help-echo vc-git-stash-list-help
+                                 'keymap vc-git-stash-map))
+                   hidden-stashes
+                   (propertize "\n"
+                               'invisible t
+                               'vc-git-hideable t))))))))
     ;; FIXME: maybe use a different face when nothing is stashed.
     (concat
      (propertize "Branch     : " 'face 'font-lock-type-face)
      (propertize branch
 		 'face 'font-lock-variable-name-face)
-     (when remote
+     (when remote-url
        (concat
 	"\n"
 	(propertize "Remote     : " 'face 'font-lock-type-face)
 	(propertize remote-url
 		    'face 'font-lock-variable-name-face)))
-     "\n"
      ;; For now just a heading, key bindings can be added later for various bisect actions
      (when (file-exists-p (expand-file-name ".git/BISECT_START" (vc-git-root dir)))
-       (propertize  "Bisect     : in progress\n" 'face 'font-lock-warning-face))
+       (propertize  "\nBisect     : in progress" 'face 'font-lock-warning-face))
      (when (file-exists-p (expand-file-name ".git/rebase-apply" (vc-git-root dir)))
-       (propertize  "Rebase     : in progress\n" 'face 'font-lock-warning-face))
-     (if stash
+       (propertize  "\nRebase     : in progress" 'face 'font-lock-warning-face))
+     (if stash-list
+         (concat
+          (propertize "\nStash      : " 'face 'font-lock-type-face)
+          stash-button
+          stash-string)
        (concat
-	(propertize "Stash      :\n" 'face 'font-lock-type-face
-		    'help-echo stash-help-echo)
-	(mapconcat
-	 (lambda (x)
-	   (propertize x
-		       'face 'font-lock-variable-name-face
-		       'mouse-face 'highlight
-		       'help-echo "mouse-3: Show stash menu\nRET: Show stash\nA: Apply stash\nP: Apply and remove stash (pop)\nC-k: Delete stash"
-		       'keymap vc-git-stash-map))
-	 stash "\n"))
-       (concat
-	(propertize "Stash      : " 'face 'font-lock-type-face
-		    'help-echo stash-help-echo)
+	(propertize "\nStash      : " 'face 'font-lock-type-face)
 	(propertize "Nothing stashed"
-		    'help-echo stash-help-echo
+		    'help-echo vc-git-stash-shared-help
+                    'keymap vc-git-stash-shared-map
 		    'face 'font-lock-variable-name-face))))))
 
 (defun vc-git-branches ()
@@ -964,6 +1078,13 @@ This prompts for a branch to merge from."
                                 "DU" "AA" "UU"))
             (push (expand-file-name file directory) files)))))))
 
+(defun vc-git-repository-url (file-or-dir &optional remote-name)
+  (let ((default-directory (vc-git-root file-or-dir)))
+    (with-temp-buffer
+      (vc-git-command (current-buffer) 0 nil "remote" "get-url"
+                      (or remote-name "origin"))
+      (buffer-substring-no-properties (point-min) (1- (point-max))))))
+
 ;; Everywhere but here, follows vc-git-command, which uses vc-do-command
 ;; from vc-dispatcher.
 (autoload 'vc-resynch-buffer "vc-dispatcher")
@@ -1021,8 +1142,7 @@ If LIMIT is a revision string, use it as an end-revision."
     ;; If the buffer exists from a previous invocation it might be
     ;; read-only.
     (let ((inhibit-read-only t))
-      (with-current-buffer
-          buffer
+      (with-current-buffer buffer
 	(apply 'vc-git-command buffer
 	       'async files
 	       (append
@@ -1048,6 +1168,8 @@ If LIMIT is a revision string, use it as an end-revision."
                                                             "HEAD"
                                                           limit)))
                     (list start-revision)))
+                (when (eq vc-log-view-type 'with-diff)
+                  (list "-p"))
 		'("--")))))))
 
 (defun vc-git-log-outgoing (buffer remote-location)
@@ -1113,7 +1235,7 @@ log entries."
   (set (make-local-variable 'log-view-file-re) regexp-unmatchable)
   (set (make-local-variable 'log-view-per-file-logs) nil)
   (set (make-local-variable 'log-view-message-re)
-       (if (not (memq vc-log-view-type '(long log-search)))
+       (if (not (memq vc-log-view-type '(long log-search with-diff)))
 	   (cadr vc-git-root-log-format)
 	 "^commit *\\([0-9a-z]+\\)"))
   ;; Allow expanding short log entries.
@@ -1122,7 +1244,7 @@ log entries."
     (set (make-local-variable 'log-view-expanded-log-entry-function)
 	 'vc-git-expanded-log-entry))
   (set (make-local-variable 'log-view-font-lock-keywords)
-       (if (not (memq vc-log-view-type '(long log-search)))
+       (if (not (memq vc-log-view-type '(long log-search with-diff)))
 	   (list (cons (nth 1 vc-git-root-log-format)
 		       (nth 2 vc-git-root-log-format)))
 	 (append
@@ -1182,9 +1304,9 @@ This requires git 1.8.4 or later, for the \"-L\" option of \"git log\"."
   ;; to the HEAD version of the file, not to the current state of the file.
   ;; So we need to look at all the local changes and adjust lfrom/lto
   ;; accordingly.
-  ;; FIXME: Maybe this should be done in vc.el (i.e. for all backends), but
-  ;; since Git is the only backend to support this operation so far, it's hard
-  ;; to tell.
+  ;; FIXME: Maybe this should be done in vc.el (i.e. for other backends),
+  ;; but since Git is one of the two backends that support this operation
+  ;; so far, it's hard to tell; hg doesn't need this.
   (with-temp-buffer
     (vc-call-backend 'git 'diff file "HEAD" nil (current-buffer))
     (goto-char (point-min))
@@ -1412,6 +1534,9 @@ This requires git 1.8.4 or later, for the \"-L\" option of \"git log\"."
 (defun vc-git-rename-file (old new)
   (vc-git-command nil 0 (list old new) "mv" "-f" "--"))
 
+(defun vc-git-mark-resolved (files)
+  (vc-git-command nil 0 files "add"))
+
 (defvar vc-git-extra-menu-map
   (let ((map (make-sparse-keymap)))
     (define-key map [git-grep]
@@ -1509,7 +1634,7 @@ This command shares argument histories with \\[rgrep] and \\[grep]."
 (autoload 'vc-dir-marked-files "vc-dir")
 
 (defun vc-git-stash (name)
-  "Create a stash."
+  "Create a stash given the name NAME."
   (interactive "sStash name: ")
   (let ((root (vc-git-root default-directory)))
     (when root
@@ -1667,13 +1792,12 @@ The difference to vc-do-command is that this function always invokes
 	(process-environment
 	 (append
 	  `("GIT_DIR"
-	    "PAGER="
 	    ;; Avoid repository locking during background operations
 	    ;; (bug#21559).
 	    ,@(when revert-buffer-in-progress-p
 		'("GIT_OPTIONAL_LOCKS=0")))
 	  process-environment)))
-    (apply 'process-file vc-git-program nil buffer nil command args)))
+    (apply 'process-file vc-git-program nil buffer nil "--no-pager" command args)))
 
 (defun vc-git--out-ok (command &rest args)
   (zerop (apply 'vc-git--call '(t nil) command args)))

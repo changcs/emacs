@@ -1,6 +1,6 @@
 ;;; cus-start.el --- define customization properties of builtins  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1997, 1999-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1997, 1999-2020 Free Software Foundation, Inc.
 
 ;; Author: Per Abrahamsen <abraham@dina.kvl.dk>
 ;; Keywords: internal
@@ -324,7 +324,7 @@ Leaving \"Default\" unchecked is equivalent with specifying a default of
 			    ;; FIXME?
                             ;; :initialize custom-initialize-default
 			    :set custom-set-minor-mode)
-	     (tab-bar-mode (frames mouse) boolean nil
+	     (tab-bar-mode tab-bar boolean nil
                            ;; :initialize custom-initialize-default
 			   :set custom-set-minor-mode)
 	     (tool-bar-mode (frames mouse) boolean nil
@@ -424,16 +424,23 @@ Leaving \"Default\" unchecked is equivalent with specifying a default of
 	     ;; msdos.c
 	     (dos-unsupported-char-glyph display integer)
 	     ;; nsterm.m
-             ;;
-             ;; FIXME: Why does ⌃ use nil instead of none?  Also the
-             ;; description is confusing; setting it to nil disables ⌃
-             ;; entirely.
 	     (ns-control-modifier
 	      ns
-	      (choice (const :tag "No modifier" nil)
+	      (choice (const :tag "No modifier" none)
 		      (const control) (const meta)
 		      (const alt) (const hyper)
-		      (const super)) "23.1")
+		      (const super)
+                      (plist :key-type (choice (const :ordinary)
+                                               (const :function)
+                                               (const :mouse))
+                             :value-type (choice (const control)
+                                                 (const meta)
+                                                 (const alt)
+                                                 (const hyper)
+                                                 (const super)
+                                                 (const :tag "No modifier"
+                                                        none))))
+              "23.1")
 	     (ns-right-control-modifier
 	      ns
 	      (choice (const :tag "No modifier (work as control)" none)
@@ -441,13 +448,35 @@ Leaving \"Default\" unchecked is equivalent with specifying a default of
 			     left)
 		      (const control) (const meta)
 		      (const alt) (const hyper)
-		      (const super)) "24.1")
+		      (const super)
+                      (plist :key-type (choice (const :ordinary)
+                                               (const :function)
+                                               (const :mouse))
+                             :value-type (choice (const control)
+                                                 (const meta)
+                                                 (const alt)
+                                                 (const hyper)
+                                                 (const super)
+                                                 (const :tag "No modifier"
+                                                        none))))
+              "24.1")
 	     (ns-command-modifier
 	      ns
 	      (choice (const :tag "No modifier (work as layout switch)" none)
 		      (const control) (const meta)
 		      (const alt) (const hyper)
-		      (const super)) "23.1")
+		      (const super)
+                      (plist :key-type (choice (const :ordinary)
+                                               (const :function)
+                                               (const :mouse))
+                             :value-type (choice (const control)
+                                                 (const meta)
+                                                 (const alt)
+                                                 (const hyper)
+                                                 (const super)
+                                                 (const :tag "No modifier"
+                                                        none))))
+              "23.1")
 	     (ns-right-command-modifier
 	      ns
 	      (choice (const :tag "No modifier (work as layout switch)" none)
@@ -455,13 +484,35 @@ Leaving \"Default\" unchecked is equivalent with specifying a default of
 			     left)
 		      (const control) (const meta)
 		      (const alt) (const hyper)
-		      (const super)) "24.1")
+		      (const super)
+                      (plist :key-type (choice (const :ordinary)
+                                               (const :function)
+                                               (const :mouse))
+                             :value-type (choice (const control)
+                                                 (const meta)
+                                                 (const alt)
+                                                 (const hyper)
+                                                 (const super)
+                                                 (const :tag "No modifier"
+                                                        none))))
+              "24.1")
 	     (ns-alternate-modifier
 	      ns
 	      (choice (const :tag "No modifier (work as alternate/option)" none)
 		      (const control) (const meta)
 		      (const alt) (const hyper)
-		      (const super)) "23.1")
+		      (const super)
+                      (plist :key-type (choice (const :ordinary)
+                                               (const :function)
+                                               (const :mouse))
+                             :value-type (choice (const control)
+                                                 (const meta)
+                                                 (const alt)
+                                                 (const hyper)
+                                                 (const super)
+                                                 (const :tag "No modifier"
+                                                        none))))
+              "23.1")
 	     (ns-right-alternate-modifier
 	      ns
 	      (choice (const :tag "No modifier (work as alternate/option)" none)
@@ -469,13 +520,35 @@ Leaving \"Default\" unchecked is equivalent with specifying a default of
 			     left)
 		      (const control) (const meta)
 		      (const alt) (const hyper)
-		      (const super)) "23.3")
+		      (const super)
+                      (plist :key-type (choice (const :ordinary)
+                                               (const :function)
+                                               (const :mouse))
+                             :value-type (choice (const control)
+                                                 (const meta)
+                                                 (const alt)
+                                                 (const hyper)
+                                                 (const super)
+                                                 (const :tag "No modifier"
+                                                        none))))
+              "23.3")
 	     (ns-function-modifier
 	      ns
 	      (choice (const :tag "No modifier (work as function)" none)
 		      (const control) (const meta)
 		      (const alt) (const hyper)
-		      (const super)) "23.1")
+		      (const super)
+                      (plist :key-type (choice (const :ordinary)
+                                               (const :function)
+                                               (const :mouse))
+                             :value-type (choice (const control)
+                                                 (const meta)
+                                                 (const alt)
+                                                 (const hyper)
+                                                 (const super)
+                                                 (const :tag "No modifier"
+                                                        none))))
+              "23.1")
 	     (ns-antialias-text ns boolean "23.1")
 	     (ns-auto-hide-menu-bar ns boolean "24.1")
              (ns-confirm-quit ns boolean "25.1")
@@ -591,6 +664,16 @@ since it could result in memory overflow and make Emacs crash."
 		      (const :tag "Text-image-horiz" :value text-image-horiz)
 		      (const :tag "System default" :value nil)) "24.1")
              (tool-bar-max-label-size frames integer "24.1")
+             (tab-bar-position
+              tab-bar (choice
+                       (const :tag "Tab bar above tool bar" nil)
+                       (const :tag "Tab bar below tool bar" t))
+              "27.1"
+              :set (lambda (sym val)
+                     (set-default sym val)
+                     ;; Redraw the bars:
+                     (tab-bar-mode -1)
+                     (tab-bar-mode 1)))
 	     (auto-hscroll-mode scrolling
                                 (choice
                                  (const :tag "Don't scroll automatically"
@@ -655,6 +738,20 @@ since it could result in memory overflow and make Emacs crash."
                (const :tag "Count lines from beginning of narrowed region"
                       :value nil))
               "26.1")
+             (display-line-numbers-major-tick
+              display-line-numbers
+              (choice
+               (const :tag "No line" 0)
+               (integer :tag "Multiples of"
+                        :value 10))
+              "27.1")
+             (display-line-numbers-minor-tick
+              display-line-numbers
+              (choice
+               (const :tag "No line" 0)
+               (integer :tag "Multiples of"
+                        :value 5))
+              "27.1")
 
              (display-fill-column-indicator
               display-fill-column-indicator
@@ -674,9 +771,16 @@ since it could result in memory overflow and make Emacs crash."
               :safe (lambda (value) (or (booleanp value) (integerp value))))
              (display-fill-column-indicator-character
               display-fill-column-indicator
-              character
+              (choice
+               (character :tag "Use U+2502 to indicate fill column"
+                      :value ?│)
+               (character :tag "Use | to indicate fill column"
+                      :value ?|)
+               (const :tag "If possible, use U+2502 to indicate fill column, otherwise use |"
+                      :value nil)
+               character)
               "27.1"
-              :safe characterp)
+              :safe (lambda (value) (or (characterp value) (null value))))
 	     ;; xfaces.c
 	     (scalable-fonts-allowed display boolean "22.1")
 	     ;; xfns.c

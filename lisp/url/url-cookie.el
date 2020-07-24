@@ -1,6 +1,6 @@
 ;;; url-cookie.el --- URL cookie support  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1996-1999, 2004-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1996-1999, 2004-2020 Free Software Foundation, Inc.
 
 ;; Keywords: comm, data, processes, hypermedia
 
@@ -304,9 +304,10 @@ i.e. 1970-1-1) are loaded as expiring one year from now instead."
 			 (url-filename url-current-object))))
 	 (expires nil))
     (if (and max-age (string-match "\\`-?[0-9]+\\'" max-age))
-	(setq expires (format-time-string "%a %b %d %H:%M:%S %Y GMT"
-					  (time-add nil (read max-age))
-					  t))
+	(setq expires (ignore-errors
+                        (format-time-string "%a %b %d %H:%M:%S %Y GMT"
+					    (time-add nil (read max-age))
+					    t)))
       (setq expires (cdr-safe (assoc-string "expires" args t))))
     (while (consp trusted)
       (if (string-match (car trusted) current-url)
@@ -318,7 +319,7 @@ i.e. 1970-1-1) are loaded as expiring one year from now instead."
 	(pop untrusted)))
     (and trusted untrusted
 	 ;; Choose the more specific match.
-	 (set (if (> trusted untrusted) 'untrusted 'trusted) nil))
+	 (if (> trusted untrusted) (setq untrusted nil) (setq trusted nil)))
     (cond
      (untrusted
       ;; The site was explicitly marked as untrusted by the user.

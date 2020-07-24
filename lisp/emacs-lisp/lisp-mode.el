@@ -1,6 +1,6 @@
 ;;; lisp-mode.el --- Lisp mode, and its idiosyncratic commands  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1985-1986, 1999-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1985-1986, 1999-2020 Free Software Foundation, Inc.
 
 ;; Maintainer: emacs-devel@gnu.org
 ;; Keywords: lisp, languages
@@ -280,6 +280,19 @@ This will generate compile-time constants from BINDINGS."
          `(face ,font-lock-warning-face
                 help-echo "This \\ has no effect"))))
 
+(defun lisp--match-confusable-symbol-character  (limit)
+  ;; Match a confusable character within a Lisp symbol.
+  (catch 'matched
+    (while t
+      (if (re-search-forward help-uni-confusables-regexp limit t)
+          ;; Skip confusables which are backslash escaped, or inside
+          ;; strings or comments.
+          (save-match-data
+            (unless (or (eq (char-before (match-beginning 0)) ?\\)
+                        (nth 8 (syntax-ppss)))
+              (throw 'matched t)))
+        (throw 'matched nil)))))
+
 (let-when-compile
     ((lisp-fdefs '("defmacro" "defun"))
      (lisp-vdefs '("defvar"))
@@ -443,7 +456,7 @@ This will generate compile-time constants from BINDINGS."
          (,(concat "\\_<:" lisp-mode-symbol-regexp "\\_>")
           (0 font-lock-builtin-face))
          ;; ELisp and CLisp `&' keywords as types.
-         (,(concat "\\_<\\&" lisp-mode-symbol-regexp "\\_>")
+         (,(concat "\\_<&" lisp-mode-symbol-regexp "\\_>")
           . font-lock-type-face)
          ;; ELisp regexp grouping constructs
          (,(lambda (bound)
@@ -463,7 +476,10 @@ This will generate compile-time constants from BINDINGS."
            (3 'font-lock-regexp-grouping-construct prepend))
          (lisp--match-hidden-arg
           (0 '(face font-lock-warning-face
-               help-echo "Hidden behind deeper element; move to another line?")))
+                    help-echo "Hidden behind deeper element; move to another line?")))
+         (lisp--match-confusable-symbol-character
+          0 '(face font-lock-warning-face
+                    help-echo "Confusable character"))
          ))
       "Gaudy level highlighting for Emacs Lisp mode.")
 
@@ -495,7 +511,7 @@ This will generate compile-time constants from BINDINGS."
          (,(concat "\\_<:" lisp-mode-symbol-regexp "\\_>")
           (0 font-lock-builtin-face))
          ;; ELisp and CLisp `&' keywords as types.
-         (,(concat "\\_<\\&" lisp-mode-symbol-regexp "\\_>")
+         (,(concat "\\_<&" lisp-mode-symbol-regexp "\\_>")
           . font-lock-type-face)
          ;; This is too general -- rms.
          ;; A user complained that he has functions whose names start with `do'
@@ -519,7 +535,7 @@ This will generate compile-time constants from BINDINGS."
 
 ;; Support backtrace mode.
 (defconst lisp-el-font-lock-keywords-for-backtraces lisp-el-font-lock-keywords
-  "Default highlighting from Emacs Lisp mod used in Backtrace mode.")
+  "Default highlighting from Emacs Lisp mode used in Backtrace mode.")
 (defconst lisp-el-font-lock-keywords-for-backtraces-1 lisp-el-font-lock-keywords-1
   "Subdued highlighting from Emacs Lisp mode used in Backtrace mode.")
 (defconst lisp-el-font-lock-keywords-for-backtraces-2
@@ -595,6 +611,8 @@ Value for `adaptive-fill-function'."
   ;; a single docstring.  Let's fix it here.
   (if (looking-at "\\s-+\"[^\n\"]+\"\\s-*$") ""))
 
+;; Maybe this should be discouraged/obsoleted and users should be
+;; encouraged to use `lisp-data-mode` instead.
 (defun lisp-mode-variables (&optional lisp-syntax keywords-case-insensitive
                                       elisp)
   "Common initialization routine for lisp modes.
@@ -641,6 +659,14 @@ font-lock keywords will not be case sensitive."
   (setq-local prettify-symbols-alist lisp-prettify-symbols-alist)
   (setq-local electric-pair-skip-whitespace 'chomp)
   (setq-local electric-pair-open-newline-between-pairs nil))
+
+;;;###autoload
+(define-derived-mode lisp-data-mode prog-mode "Lisp-Data"
+  "Major mode for buffers holding data written in Lisp syntax."
+  :group 'lisp
+  (lisp-mode-variables t t nil)
+  (setq-local electric-quote-string t)
+  (setq imenu-case-fold-search nil))
 
 (defun lisp-outline-level ()
   "Lisp mode `outline-level' function."
@@ -721,7 +747,7 @@ font-lock keywords will not be case sensitive."
   "Keymap for ordinary Lisp mode.
 All commands in `lisp-mode-shared-map' are inherited by this map.")
 
-(define-derived-mode lisp-mode prog-mode "Lisp"
+(define-derived-mode lisp-mode lisp-data-mode "Lisp"
   "Major mode for editing Lisp code for Lisps other than GNU Emacs Lisp.
 Commands:
 Delete converts tabs to spaces as it moves back.
@@ -730,10 +756,10 @@ Blank lines separate paragraphs.  Semicolons start comments.
 \\{lisp-mode-map}
 Note that `run-lisp' may be used either to start an inferior Lisp job
 or to switch back to an existing one."
-  (lisp-mode-variables nil t)
+  (setq-local lisp-indent-function 'common-lisp-indent-function)
   (setq-local find-tag-default-function 'lisp-find-tag-default)
   (setq-local comment-start-skip
-	      "\\(\\(^\\|[^\\\\\n]\\)\\(\\\\\\\\\\)*\\)\\(;+\\|#|\\) *")
+	      "\\(\\(^\\|[^\\\n]\\)\\(\\\\\\\\\\)*\\)\\(;+\\|#|\\) *")
   (setq imenu-case-fold-search t))
 
 (defun lisp-find-tag-default ()
@@ -930,6 +956,7 @@ is the buffer position of the start of the containing expression."
           ;; setting this to a number inhibits calling hook
           (desired-indent nil)
           (retry t)
+          whitespace-after-open-paren
           calculate-lisp-indent-last-sexp containing-sexp)
       (cond ((or (markerp parse-start) (integerp parse-start))
              (goto-char parse-start))
@@ -959,6 +986,7 @@ is the buffer position of the start of the containing expression."
           nil
         ;; Innermost containing sexp found
         (goto-char (1+ containing-sexp))
+        (setq whitespace-after-open-paren (looking-at (rx whitespace)))
         (if (not calculate-lisp-indent-last-sexp)
 	    ;; indent-point immediately follows open paren.
 	    ;; Don't call hook.
@@ -973,9 +1001,11 @@ is the buffer position of the start of the containing expression."
 		    calculate-lisp-indent-last-sexp)
 		 ;; This is the first line to start within the containing sexp.
 		 ;; It's almost certainly a function call.
-		 (if (= (point) calculate-lisp-indent-last-sexp)
+		 (if (or (= (point) calculate-lisp-indent-last-sexp)
+                         whitespace-after-open-paren)
 		     ;; Containing sexp has nothing before this line
-		     ;; except the first element.  Indent under that element.
+		     ;; except the first element, or the first element is
+                     ;; preceded by whitespace.  Indent under that element.
 		     nil
 		   ;; Skip the first element, find start of second (the first
 		   ;; argument of the function call) and indent under.

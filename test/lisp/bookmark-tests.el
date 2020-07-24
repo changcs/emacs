@@ -1,6 +1,6 @@
 ;;; bookmark-tests.el --- Tests for bookmark.el  -*- lexical-binding: t -*-
 
-;; Copyright (C) 2019 Free Software Foundation, Inc.
+;; Copyright (C) 2019-2020 Free Software Foundation, Inc.
 
 ;; Author: Stefan Kangas <stefankangas@gmail.com>
 
@@ -25,6 +25,7 @@
 
 (require 'ert)
 (require 'bookmark)
+(require 'cl-lib)
 
 (defvar bookmark-tests-data-dir
   (file-truename
@@ -38,7 +39,7 @@
   "Bookmark file used for testing.")
 
 (defvar bookmark-tests-example-file
-  ;; We use abbreviate-file-name here to match the behaviour of
+  ;; We use abbreviate-file-name here to match the behavior of
   ;; `bookmark-buffer-file-name'.
   (abbreviate-file-name (expand-file-name "example.txt" bookmark-tests-data-dir))
   "Example file used for testing.")
@@ -339,21 +340,21 @@ testing `bookmark-bmenu-list'."
             ,@body)
         (kill-buffer bookmark-bmenu-buffer)))))
 
-(ert-deftest bookmark-bmenu.enu-edit-annotation/show-annotation ()
+(ert-deftest bookmark-test-bmenu-edit-annotation/show-annotation ()
   (with-bookmark-bmenu-test
    (bookmark-set-annotation "name" "foo")
    (bookmark-bmenu-edit-annotation)
    (should (string-match "foo" (buffer-string)))
    (kill-buffer (current-buffer))))
 
-(ert-deftest bookmark-bmenu-send-edited-annotation ()
+(ert-deftest bookmark-test-bmenu-send-edited-annotation ()
   (with-bookmark-bmenu-test
    (bookmark-bmenu-edit-annotation)
    (insert "foo")
    (bookmark-send-edited-annotation)
    (should (equal (bookmark-get-annotation "name") "foo"))))
 
-(ert-deftest bookmark-bmenu-send-edited-annotation/restore-focus ()
+(ert-deftest bookmark-test-bmenu-send-edited-annotation/restore-focus ()
   "Test for https://debbugs.gnu.org/20150 ."
   (with-bookmark-bmenu-test
    (bookmark-bmenu-edit-annotation)
@@ -361,6 +362,74 @@ testing `bookmark-bmenu-list'."
    (bookmark-send-edited-annotation)
    (should (equal (buffer-name (current-buffer)) bookmark-bmenu-buffer))
    (should (looking-at "name"))))
+
+(ert-deftest bookmark-test-bmenu-toggle-filenames ()
+  (with-bookmark-bmenu-test
+   (should (re-search-forward "/some/file" nil t))
+   (bookmark-bmenu-toggle-filenames)
+   (goto-char (point-min))
+   (should-not (re-search-forward "/some/file" nil t))))
+
+(ert-deftest bookmark-test-bmenu-toggle-filenames/show ()
+  (with-bookmark-bmenu-test
+   (bookmark-bmenu-toggle-filenames t)
+   (should (re-search-forward "/some/file"))))
+
+(ert-deftest bookmark-test-bmenu-show-filenames ()
+  (with-bookmark-bmenu-test
+   (bookmark-bmenu-show-filenames)
+   (should (re-search-forward "/some/file"))))
+
+(ert-deftest bookmark-test-bmenu-hide-filenames ()
+  (with-bookmark-bmenu-test
+   (bookmark-bmenu-hide-filenames)
+   (goto-char (point-min))
+   (should-not (re-search-forward "/some/file" nil t))))
+
+(ert-deftest bookmark-test-bmenu-bookmark ()
+  (with-bookmark-bmenu-test
+   (should (equal (bookmark-bmenu-bookmark) "name"))))
+
+(ert-deftest bookmark-test-bmenu-mark ()
+  (with-bookmark-bmenu-test
+   (bookmark-bmenu-mark)
+   (beginning-of-line)
+   (should (looking-at "^>"))))
+
+(ert-deftest bookmark-test-bmenu-any-marks ()
+  (with-bookmark-bmenu-test
+   (bookmark-bmenu-mark)
+   (beginning-of-line)
+   (should (bookmark-bmenu-any-marks))))
+
+(ert-deftest bookmark-test-bmenu-unmark ()
+  (with-bookmark-bmenu-test
+   (bookmark-bmenu-mark)
+   (goto-char (point-min))
+   (bookmark-bmenu-unmark)
+   (beginning-of-line)
+   (should (looking-at "^  "))))
+
+(ert-deftest bookmark-test-bmenu-delete ()
+  (with-bookmark-bmenu-test
+   (bookmark-bmenu-delete)
+   (bookmark-bmenu-execute-deletions)
+   (should (equal (length bookmark-alist) 0))))
+
+(ert-deftest bookmark-test-bmenu-locate ()
+  (let (msg)
+    (cl-letf (((symbol-function 'message)
+               (lambda (&rest args)
+                 (setq msg (apply #'format args)))))
+      (with-bookmark-bmenu-test
+       (bookmark-bmenu-locate)
+       (should (equal msg "/some/file"))))))
+
+(ert-deftest bookmark-test-bmenu-filter-alist-by-regexp ()
+  (with-bookmark-bmenu-test
+   (bookmark-bmenu-filter-alist-by-regexp regexp-unmatchable)
+   (goto-char (point-min))
+   (should (looking-at "^$"))))
 
 (provide 'bookmark-tests)
 ;;; bookmark-tests.el ends here

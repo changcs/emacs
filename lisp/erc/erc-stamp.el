@@ -1,11 +1,11 @@
 ;;; erc-stamp.el --- Timestamping for ERC messages  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2002-2004, 2006-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2002-2004, 2006-2020 Free Software Foundation, Inc.
 
 ;; Author: Mario Lang <mlang@delysid.org>
-;; Maintainer: emacs-devel@gnu.org
+;; Maintainer: Amin Bandali <bandali@gnu.org>
 ;; Keywords: comm, processes, timestamp
-;; URL: http://www.emacswiki.org/cgi-bin/wiki.pl?ErcStamp
+;; URL: https://www.emacswiki.org/emacs/ErcStamp
 
 ;; This file is part of GNU Emacs.
 
@@ -357,7 +357,7 @@ Return the empty string if FORMAT is nil."
 	ts)
     ""))
 
-;; This function is used to munge `buffer-invisibility-spec to an
+;; This function is used to munge `buffer-invisibility-spec' to an
 ;; appropriate value. Currently, it only handles timestamps, thus its
 ;; location.  If you add other features which affect invisibility,
 ;; please modify this function and move it to a more appropriate

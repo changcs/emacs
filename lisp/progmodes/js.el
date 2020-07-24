@@ -1,6 +1,6 @@
 ;;; js.el --- Major mode for editing JavaScript  -*- lexical-binding: t -*-
 
-;; Copyright (C) 2008-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2008-2020 Free Software Foundation, Inc.
 
 ;; Author: Karl Landstrom <karl.landstrom@brgeight.se>
 ;;         Daniel Colascione <dancol@dancol.org>
@@ -46,6 +46,9 @@
 ;;; Code:
 
 (require 'cc-mode)
+(eval-when-compile
+  (require 'cc-langs)
+  (require 'cc-fonts))
 (require 'newcomment)
 (require 'imenu)
 (require 'moz nil t)
@@ -65,7 +68,7 @@
 
 ;;; Constants
 
-(defconst js--name-start-re (concat "[[:alpha:]_$]")
+(defconst js--name-start-re "[[:alpha:]_$]"
   "Regexp matching the start of a JavaScript identifier, without grouping.")
 
 (defconst js--stmt-delim-chars "^;{}?:")
@@ -650,7 +653,8 @@ indentation looks like this (different):
       </element>
   )"
   :version "27.1"
-  :type 'integer
+  :type '(choice integer
+                 (const :tag "Not Set" nil))
   :safe (lambda (x) (or (null x) (integerp x)))
   :group 'js)
 ;; This is how indentation behaved out-of-the-box until Emacs 27.  JSX
@@ -2007,7 +2011,7 @@ For use by `syntax-propertize-extend-region-functions'."
 ;; When applying syntax properties, since `js-syntax-propertize' uses
 ;; `syntax-propertize-rules' to parse JSXBoundaryElements iteratively
 ;; and statelessly, whenever we exit such an element, we need to
-;; determine the JSX depth.  If >0, then we know we to apply syntax
+;; determine the JSX depth.  If >0, then we know to apply syntax
 ;; properties to JSXText up until the next JSXBoundaryElement occurs.
 ;; But if the JSX depth is 0, then—importantly—we know to NOT parse
 ;; the following code as JSXText, rather propertize it as regular JS
@@ -2055,24 +2059,26 @@ the match.  Return nil if a match can’t be found."
   (let ((tag-stack 1) tag-pos type last-pos pos)
     (catch 'stop
       (while (and (re-search-forward "<\\s-*" nil t) (not (eobp)))
-        (when (setq tag-pos (match-beginning 0)
-                    type (js-jsx--matched-tag-type))
-          (when last-pos
-            (setq pos (point))
-            (goto-char last-pos)
-            (while (re-search-forward js-jsx--self-closing-re pos 'move)
-              (setq tag-stack (1- tag-stack))))
-          (if (eq type 'close)
-              (progn
-                (setq tag-stack (1- tag-stack))
-                (when (= tag-stack 0)
-                  (throw 'stop tag-pos)))
-            ;; JSXOpeningElements that we know are self-closing aren’t
-            ;; added to the stack at all (because point is already
-            ;; past that syntax).
-            (unless (eq type 'self-closing)
-              (setq tag-stack (1+ tag-stack))))
-          (setq last-pos (point)))))))
+        ;; Not inside a comment or string.
+        (unless (nth 8 (save-excursion (syntax-ppss (match-beginning 0))))
+          (when (setq tag-pos (match-beginning 0)
+                      type (js-jsx--matched-tag-type))
+            (when last-pos
+              (setq pos (point))
+              (goto-char last-pos)
+              (while (re-search-forward js-jsx--self-closing-re pos 'move)
+                (setq tag-stack (1- tag-stack))))
+            (if (eq type 'close)
+                (progn
+                  (setq tag-stack (1- tag-stack))
+                  (when (= tag-stack 0)
+                    (throw 'stop tag-pos)))
+              ;; JSXOpeningElements that we know are self-closing
+              ;; aren’t added to the stack at all (because point is
+              ;; already past that syntax).
+              (unless (eq type 'self-closing)
+                (setq tag-stack (1+ tag-stack))))
+            (setq last-pos (point))))))))
 
 (defun js-jsx--enclosing-tag-pos ()
   "Return beginning and end of a JSXElement about point.
@@ -2702,7 +2708,7 @@ Whitespace and comments around the arrow are ignored.")
 
 (defun js--broken-arrow-terminates-line-p ()
   "Helper function for `js--proper-indentation'.
-Return t if the last non-comment, non-whitespace token of the
+Return non-nil if the last non-comment, non-whitespace token of the
 current line is the \"=>\" token (of an arrow function)."
   (let ((from (point)))
     (end-of-line)
@@ -4528,12 +4534,22 @@ This function is intended for use in `after-change-functions'."
         (when (js-jsx--detect-and-enable 'arbitrarily)
           (remove-hook 'after-change-functions #'js-jsx--detect-after-change t))))))
 
+;; Ensure all CC Mode "lang variables" are set to valid values.
+;; js-mode, however, currently uses only those needed for filling.
+(eval-and-compile
+  (c-add-language 'js-mode 'java-mode))
+
+(c-lang-defconst c-paragraph-start
+  js-mode "\\(@[[:alpha:]]+\\>\\|$\\)")
+
 ;;; Main Function
 
 ;;;###autoload
 (define-derived-mode js-mode prog-mode "JavaScript"
   "Major mode for editing JavaScript."
   :group 'js
+  ;; Ensure all CC Mode "lang variables" are set to valid values.
+  (c-init-language-vars js-mode)
   (setq-local indent-line-function #'js-indent-line)
   (setq-local beginning-of-defun-function #'js-beginning-of-defun)
   (setq-local end-of-defun-function #'js-end-of-defun)
@@ -4554,7 +4570,7 @@ This function is intended for use in `after-change-functions'."
 
   ;; Comments
   (setq-local comment-start "// ")
-  (setq-local comment-start-skip "\\(//+\\|/\\*+\\)\\s *")
+  (setq-local comment-start-skip "\\(?://+\\|/\\*+\\)\\s *")
   (setq-local comment-end "")
   (setq-local fill-paragraph-function #'js-fill-paragraph)
   (setq-local normal-auto-fill-function #'js-do-auto-fill)
@@ -4575,16 +4591,10 @@ This function is intended for use in `after-change-functions'."
   (setq imenu-create-index-function #'js--imenu-create-index)
 
   ;; for filling, pretend we're cc-mode
-  (setq c-comment-prefix-regexp "//+\\|\\**"
-        c-paragraph-start "\\(@[[:alpha:]]+\\>\\|$\\)"
-        c-paragraph-separate "$"
-        c-block-comment-prefix "* "
-        c-line-comment-starter "//"
-        c-comment-start-regexp "/[*/]\\|\\s!")
+  (c-foreign-init-lit-pos-cache)
+  (add-hook 'before-change-functions #'c-foreign-truncate-lit-pos-cache nil t)
   (setq-local comment-line-break-function #'c-indent-new-comment-line)
-  (setq-local c-block-comment-start-regexp "/\\*")
   (setq-local comment-multi-line t)
-
   (setq-local electric-indent-chars
 	      (append "{}():;," electric-indent-chars)) ;FIXME: js2-mode adds "[]*".
   (setq-local electric-layout-rules
@@ -4598,6 +4608,13 @@ This function is intended for use in `after-change-functions'."
     (make-local-variable 'paragraph-ignore-fill-prefix)
     (make-local-variable 'adaptive-fill-mode)
     (make-local-variable 'adaptive-fill-regexp)
+    ;; While the full CC Mode style system is not yet in use, set the
+    ;; pertinent style variables manually.
+    (c-initialize-builtin-style)
+    (let ((style (cc-choose-style-for-mode 'js-mode c-default-style)))
+      (c-set-style style))
+    (setq c-block-comment-prefix "* "
+          c-comment-prefix-regexp "//+\\|\\**")
     (c-setup-paragraph-variables))
 
   ;; Important to fontify the whole buffer syntactically! If we don't,

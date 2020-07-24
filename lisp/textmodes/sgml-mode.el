@@ -1,6 +1,6 @@
 ;;; sgml-mode.el --- SGML- and HTML-editing modes -*- lexical-binding:t -*-
 
-;; Copyright (C) 1992, 1995-1996, 1998, 2001-2019 Free Software
+;; Copyright (C) 1992, 1995-1996, 1998, 2001-2020 Free Software
 ;; Foundation, Inc.
 
 ;; Author: James Clark <jjc@jclark.com>
@@ -286,7 +286,10 @@ separated by a space."
 (defconst sgml-namespace-re "[_[:alpha:]][-_.[:alnum:]]*")
 (defconst sgml-name-re "[_:[:alpha:]][-_.:[:alnum:]]*")
 (defconst sgml-tag-name-re (concat "<\\([!/?]?" sgml-name-re "\\)"))
-(defconst sgml-attrs-re "\\(?:[^\"'/><]\\|\"[^\"]*\"\\|'[^']*'\\)*")
+(defconst sgml-attrs-re
+  ;; This pattern cannot begin with a character matched by the end of
+  ;; `sgml-name-re' above.
+  "\\(?:[^_.:\"'/><[:alnum:]-]\\(?:[^\"'/><]\\|\"[^\"]*\"\\|'[^']*'\\)*\\)?")
 (defconst sgml-start-tag-regex (concat "<" sgml-name-re sgml-attrs-re)
   "Regular expression that matches a non-empty start tag.
 Any terminating `>' or `/' is not matched.")
@@ -395,16 +398,19 @@ Any terminating `>' or `/' is not matched.")
                         (car (sgml--syntax-propertize-ppss
                               (match-beginning 0)))))
                (string-to-syntax ".")))))
-     )))
+     )
+    "Syntax-propertize rules for sgml text.
+These have to be run via `sgml-syntax-propertize'"))
 
-(defun sgml-syntax-propertize (start end)
+(defconst sgml--syntax-propertize
+  (syntax-propertize-rules sgml-syntax-propertize-rules))
+
+(defun sgml-syntax-propertize (start end &optional rules-function)
   "Syntactic keywords for `sgml-mode'."
   (setq sgml--syntax-propertize-ppss (cons start (syntax-ppss start)))
   (cl-assert (>= (cadr sgml--syntax-propertize-ppss) 0))
   (sgml-syntax-propertize-inside end)
-  (funcall
-   (syntax-propertize-rules sgml-syntax-propertize-rules)
-   start end)
+  (funcall (or rules-function sgml--syntax-propertize) (point) end)
   ;; Catch any '>' after the last quote.
   (sgml--syntax-propertize-ppss end))
 
@@ -1801,6 +1807,7 @@ This takes effect when first loading the library.")
     (define-key map "\C-c\C-cl" 'html-list-item)
     (define-key map "\C-c\C-ch" 'html-href-anchor)
     (define-key map "\C-c\C-cn" 'html-name-anchor)
+    (define-key map "\C-c\C-c#" 'html-id-anchor)
     (define-key map "\C-c\C-ci" 'html-image)
     (when html-quick-keys
       (define-key map "\C-c-" 'html-horizontal-rule)
@@ -1812,6 +1819,7 @@ This takes effect when first loading the library.")
       (define-key map "\C-cl" 'html-list-item)
       (define-key map "\C-ch" 'html-href-anchor)
       (define-key map "\C-cn" 'html-name-anchor)
+      (define-key map "\C-c#" 'html-id-anchor)
       (define-key map "\C-ci" 'html-image)
       (define-key map "\C-cs" 'html-span))
     (define-key map "\C-c\C-s" 'html-autoview-mode)
@@ -1839,12 +1847,13 @@ This takes effect when first loading the library.")
     (define-key menu-map "i" '("Image" . html-image))
     (define-key menu-map "h" '("Href Anchor" . html-href-anchor))
     (define-key menu-map "n" '("Name Anchor" . html-name-anchor))
+    (define-key menu-map "#" '("ID Anchor" . html-id-anchor))
     map)
   "Keymap for commands for use in HTML mode.")
 
 (defvar html-face-tag-alist
-  '((bold . "b")
-    (italic . "i")
+  '((bold . "strong")
+    (italic . "em")
     (underline . "u")
     (mode-line . "rev"))
   "Value of `sgml-face-tag-alist' for HTML mode.")
@@ -2354,7 +2363,7 @@ have <h1>Very Major Headlines</h1> through <h6>Very Minor Headlines</h6>
 
 <p>Paragraphs only need an opening tag.  Line breaks and multiple spaces are
 ignored unless the text is <pre>preformatted.</pre>  Text can be marked as
-<b>bold</b>, <i>italic</i> or <u>underlined</u> using the normal M-o or
+<strong>bold</strong>, <em>italic</em> or <u>underlined</u> using the normal M-o or
 Edit/Text Properties/Face commands.
 
 Pages can have <a name=\"SOMENAME\">named points</a> and can link other points
@@ -2450,6 +2459,11 @@ HTML Autoview mode is a buffer-local minor mode for use with
   "<a name=\"" str "\""
   (if sgml-xml-mode (concat " id=\"" str "\""))
   ">" _ "</a>")
+
+(define-skeleton html-id-anchor
+  "HTML anchor tag with id attribute."
+  "ID: "
+  "<a id=\"" str "\">" _ "</a>")
 
 (define-skeleton html-headline-1
   "HTML level 1 headline tags."

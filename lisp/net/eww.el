@@ -1,6 +1,6 @@
 ;;; eww.el --- Emacs Web Wowser  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2013-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2013-2020 Free Software Foundation, Inc.
 
 ;; Author: Lars Magne Ingebrigtsen <larsi@gnus.org>
 ;; Keywords: html
@@ -25,14 +25,14 @@
 ;;; Code:
 
 (require 'cl-lib)
-(require 'format-spec)
-(require 'shr)
-(require 'url)
-(require 'url-queue)
-(require 'thingatpt)
 (require 'mm-url)
 (require 'puny)
-(eval-when-compile (require 'subr-x)) ;; for string-trim
+(require 'shr)
+(require 'text-property-search)
+(require 'thingatpt)
+(require 'url)
+(require 'url-queue)
+(eval-when-compile (require 'subr-x))
 
 (defgroup eww nil
   "Emacs Web Wowser"
@@ -127,6 +127,18 @@ The string will be passed through `substitute-command-keys'."
   :group 'eww
   :type '(choice (const :tag "Never" nil)
                  regexp))
+
+(defcustom eww-browse-url-new-window-is-tab 'tab-bar
+  "Whether to open up new windows in a tab or a new buffer.
+If t, then open the URL in a new tab rather than a new buffer if
+`eww-browse-url' is asked to open it in a new window.
+If `tab-bar', then open the URL in a new tab only when
+the tab bar is enabled."
+  :version "27.1"
+  :group 'eww
+  :type '(choice (const :tag "Always open URL in new tab" t)
+                 (const :tag "Open new tab when tab bar is enabled" tab-bar)
+                 (const :tag "Never open URL in new tab" nil)))
 
 (defcustom eww-after-render-hook nil
   "A hook called after eww has finished rendering the buffer."
@@ -251,13 +263,17 @@ This list can be customized via `eww-suggest-uris'."
     (nreverse uris)))
 
 ;;;###autoload
-(defun eww (url &optional arg)
+(defun eww (url &optional arg buffer)
   "Fetch URL and render the page.
 If the input doesn't look like an URL or a domain name, the
 word(s) will be searched for via `eww-search-prefix'.
 
 If called with a prefix ARG, use a new buffer instead of reusing
-the default EWW buffer."
+the default EWW buffer.
+
+If BUFFER, the data to be rendered is in that buffer.  In that
+case, this function doesn't actually fetch URL.  BUFFER will be
+killed after rendering."
   (interactive
    (let* ((uris (eww-suggested-uris))
 	  (prompt (concat "Enter URL or keywords"
@@ -295,8 +311,14 @@ the default EWW buffer."
     (insert (format "Loading %s..." url))
     (goto-char (point-min)))
   (let ((url-mime-accept-string eww-accept-content-types))
-    (url-retrieve url 'eww-render
-                  (list url nil (current-buffer)))))
+    (if buffer
+        (let ((eww-buffer (current-buffer)))
+          (with-current-buffer buffer
+            (eww-render nil url nil eww-buffer)))
+      (url-retrieve url #'eww-render
+                    (list url nil (current-buffer))))))
+
+(function-put 'eww 'browse-url-browser-kind 'internal)
 
 (defun eww--dwim-expand-url (url)
   (setq url (string-trim url))
@@ -347,7 +369,19 @@ the default EWW buffer."
   (eww (concat "file://"
 	       (and (memq system-type '(windows-nt ms-dos))
 		    "/")
-	       (expand-file-name file))))
+	       (expand-file-name file))
+       nil
+       ;; The file name may be a non-local Tramp file.  The URL
+       ;; library doesn't understand these file names, so use the
+       ;; normal Emacs machinery to load the file.
+       (with-current-buffer (generate-new-buffer " *eww file*")
+         (set-buffer-multibyte nil)
+         (insert "Content-type: " (or (mailcap-extension-to-mime
+			               (url-file-extension file))
+                                      "application/octet-stream")
+                 "\n\n")
+         (insert-file-contents file)
+         (current-buffer))))
 
 ;;;###autoload
 (defun eww-search-words ()
@@ -361,14 +395,19 @@ engine used."
       (let ((region-string (buffer-substring (region-beginning) (region-end))))
         (if (not (string-match-p "\\`[ \n\t\r\v\f]*\\'" region-string))
             (eww region-string)
-          (call-interactively 'eww)))
-    (call-interactively 'eww)))
+          (call-interactively #'eww)))
+    (call-interactively #'eww)))
 
 (defun eww-open-in-new-buffer ()
   "Fetch link at point in a new EWW buffer."
   (interactive)
   (let ((url (eww-suggested-uris)))
     (if (null url) (user-error "No link at point")
+      (when (or (eq eww-browse-url-new-window-is-tab t)
+                (and (eq eww-browse-url-new-window-is-tab 'tab-bar)
+                     tab-bar-mode))
+        (let ((tab-bar-new-tab-choice t))
+          (tab-new)))
       ;; clone useful to keep history, but
       ;; should not clone from non-eww buffer
       (with-current-buffer
@@ -501,6 +540,10 @@ Currently this means either text/html or application/xhtml+xml."
       (plist-put eww-data :dom document)
       (let ((inhibit-read-only t)
 	    (inhibit-modification-hooks t)
+            ;; Possibly set by the caller, e.g., `eww-render' which
+            ;; preserves the old URL #target before chasing redirects.
+            (shr-target-id (or shr-target-id
+                               (url-target (url-generic-parse-url url))))
 	    (shr-external-rendering-functions
              (append
               shr-external-rendering-functions
@@ -520,10 +563,10 @@ Currently this means either text/html or application/xhtml+xml."
 	  (goto-char point))
 	 (shr-target-id
 	  (goto-char (point-min))
-	  (let ((point (next-single-property-change
-			(point-min) 'shr-target-id)))
-	    (when point
-	      (goto-char point))))
+          (let ((match (text-property-search-forward
+                        'shr-target-id shr-target-id t)))
+            (when match
+              (goto-char (prop-match-beginning match)))))
 	 (t
 	  (goto-char (point-min))
 	  ;; Don't leave point inside forms, because the normal eww
@@ -878,7 +921,25 @@ the like."
 
 ;;;###autoload
 (defun eww-browse-url (url &optional new-window)
+  "Ask the EWW browser to load URL.
+
+Interactively, if the variable `browse-url-new-window-flag' is non-nil,
+loads the document in a new buffer tab on the window tab-line.  A non-nil
+prefix argument reverses the effect of `browse-url-new-window-flag'.
+
+If `tab-bar-mode' is enabled, then whenever a document would
+otherwise be loaded in a new buffer, it is loaded in a new tab
+in the tab-bar on an existing frame.  See more options in
+`eww-browse-url-new-window-is-tab'.
+
+Non-interactively, this uses the optional second argument NEW-WINDOW
+instead of `browse-url-new-window-flag'."
   (when new-window
+    (when (or (eq eww-browse-url-new-window-is-tab t)
+              (and (eq eww-browse-url-new-window-is-tab 'tab-bar)
+                   tab-bar-mode))
+      (let ((tab-bar-new-tab-choice t))
+        (tab-new)))
     (pop-to-buffer-same-window
      (generate-new-buffer
       (format "*eww-%s*" (url-host (url-generic-parse-url
@@ -972,7 +1033,7 @@ just re-display the HTML already fetched."
 	  (eww-display-html 'utf-8 url (plist-get eww-data :dom)
 			    (point) (current-buffer)))
       (let ((url-mime-accept-string eww-accept-content-types))
-        (url-retrieve url 'eww-render
+        (url-retrieve url #'eww-render
 		      (list url (point) (current-buffer) encode))))))
 
 ;; Form support.
@@ -1072,11 +1133,13 @@ just re-display the HTML already fetched."
 (defun eww-form-submit (dom)
   (let ((start (point))
 	(value (dom-attr dom 'value)))
-    (setq value
-	  (if (zerop (length value))
-	      "Submit"
-	    value))
-    (insert value)
+    (if (null value)
+        (shr-generic dom)
+      (insert value))
+    ;; If the contents of the <button>...</button> turns out to be
+    ;; empty, or the value was blank, default to this:
+    (when (= (point) start)
+      (insert "Submit"))
     (add-face-text-property start (point) 'eww-form-submit)
     (put-text-property start (point) 'eww-form
 		       (list :eww-form eww-form
@@ -1217,7 +1280,7 @@ See URL `https://developer.mozilla.org/en-US/docs/Web/HTML/Element/Input'.")
 
 (defun eww-tag-textarea (dom)
   (let ((start (point))
-	(value (or (dom-attr dom 'value) ""))
+        (value (or (dom-text dom) ""))
 	(lines (string-to-number (or (dom-attr dom 'rows) "10")))
 	(width (string-to-number (or (dom-attr dom 'cols) "10")))
 	end)
@@ -1533,8 +1596,10 @@ If EXTERNAL is double prefix, browse in new buffer."
     (cond
      ((not url)
       (message "No link under point"))
-     ((string-match "^mailto:" url)
-      (browse-url-mail url))
+     ((string-match-p "\\`mailto:" url)
+      ;; This respects the user options `browse-url-handlers'
+      ;; and `browse-url-mailto-function'.
+      (browse-url url))
      ((and (consp external) (<= (car external) 4))
       (funcall browse-url-secondary-browser-function url)
       (shr--blink-link))
@@ -1572,7 +1637,7 @@ Use link at point if there is one, else the current page's URL."
                  (eww-current-url))))
     (if (not url)
         (message "No URL under point")
-      (url-retrieve url 'eww-download-callback (list url)))))
+      (url-retrieve url #'eww-download-callback (list url)))))
 
 (defun eww-download-callback (status url)
   (unless (plist-get status :error)
@@ -1696,28 +1761,30 @@ If CHARSET is nil then use UTF-8."
 
 (defun eww-write-bookmarks ()
   (with-temp-file (expand-file-name "eww-bookmarks" eww-bookmarks-directory)
-    (insert ";; Auto-generated file; don't edit\n")
+    (insert ";; Auto-generated file; don't edit -*- mode: lisp-data -*-\n")
     (pp eww-bookmarks (current-buffer))))
 
-(defun eww-read-bookmarks ()
+(defun eww-read-bookmarks (&optional error-out)
+  "Read bookmarks from `eww-bookmarks'.
+If ERROR-OUT, signal user-error if there are no bookmarks."
   (let ((file (expand-file-name "eww-bookmarks" eww-bookmarks-directory)))
     (setq eww-bookmarks
 	  (unless (zerop (or (file-attribute-size (file-attributes file)) 0))
 	    (with-temp-buffer
 	      (insert-file-contents file)
-	      (read (current-buffer)))))))
+	      (read (current-buffer)))))
+    (when (and error-out (not eww-bookmarks))
+      (user-error "No bookmarks are defined"))))
 
 ;;;###autoload
 (defun eww-list-bookmarks ()
   "Display the bookmarks."
   (interactive)
+  (eww-read-bookmarks t)
   (pop-to-buffer "*eww bookmarks*")
   (eww-bookmark-prepare))
 
 (defun eww-bookmark-prepare ()
-  (eww-read-bookmarks)
-  (unless eww-bookmarks
-    (user-error "No bookmarks are defined"))
   (set-buffer (get-buffer-create "*eww bookmarks*"))
   (eww-bookmark-mode)
   (let* ((width (/ (window-width) 2))
@@ -1785,6 +1852,7 @@ If CHARSET is nil then use UTF-8."
 	bookmark)
     (unless (get-buffer "*eww bookmarks*")
       (setq first t)
+      (eww-read-bookmarks t)
       (eww-bookmark-prepare))
     (with-current-buffer (get-buffer "*eww bookmarks*")
       (when (and (not first)
@@ -1803,6 +1871,7 @@ If CHARSET is nil then use UTF-8."
 	bookmark)
     (unless (get-buffer "*eww bookmarks*")
       (setq first t)
+      (eww-read-bookmarks t)
       (eww-bookmark-prepare))
     (with-current-buffer (get-buffer "*eww bookmarks*")
       (if first
@@ -1901,8 +1970,8 @@ If CHARSET is nil then use UTF-8."
 (defvar eww-history-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map "\r" 'eww-history-browse)
-;;    (define-key map "n" 'next-error-no-select)
-;;    (define-key map "p" 'previous-error-no-select)
+    (define-key map "n" 'next-line)
+    (define-key map "p" 'previous-line)
 
     (easy-menu-define nil map
       "Menu for `eww-history-mode-map'."
@@ -2085,12 +2154,12 @@ entries (if any) will be removed from the list.
 Only the properties listed in `eww-desktop-data-save' are included.
 Generally, the list should not include the (usually overly large)
 :dom, :source and :text properties."
-  (let ((history  (mapcar 'eww-desktop-data-1
-			  (cons eww-data eww-history))))
-    (list :history  (if eww-desktop-remove-duplicates
-			(cl-remove-duplicates
-			 history :test 'eww-desktop-history-duplicate)
-		      history))))
+  (let ((history (mapcar #'eww-desktop-data-1
+                         (cons eww-data eww-history))))
+    (list :history (if eww-desktop-remove-duplicates
+                       (cl-remove-duplicates
+                        history :test #'eww-desktop-history-duplicate)
+                     history))))
 
 (defun eww-restore-desktop (file-name buffer-name misc-data)
   "Restore an eww buffer from its desktop file record.

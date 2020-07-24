@@ -1,6 +1,6 @@
 ;;; gnus-int.el --- backend interface functions for Gnus
 
-;; Copyright (C) 1996-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1996-2020 Free Software Foundation, Inc.
 
 ;; Author: Lars Magne Ingebrigtsen <larsi@gnus.org>
 ;; Keywords: news
@@ -253,7 +253,7 @@ If it is down, start it up (again)."
 
 (defun gnus-backend-trace (type form)
   (when gnus-backend-trace
-    (with-current-buffer (get-buffer-create "*gnus trace*")
+    (with-current-buffer (gnus-get-buffer-create "*gnus trace*")
       (buffer-disable-undo)
       (goto-char (point-max))
       (insert (format-time-string "%H:%M:%S")
@@ -727,7 +727,7 @@ If GROUP is nil, all groups on GNUS-COMMAND-METHOD are scanned."
 	       (let* ((range (if (= min 2) 1 (cons 1 (1- min))))
 		      (read (gnus-info-read info))
 		      (new-read (gnus-range-add read (list range))))
-		 (gnus-info-set-read info new-read)))
+		 (setf (gnus-info-read info) new-read)))
 	     info)))))
 
 (defun gnus-request-expire-articles (articles group &optional force)

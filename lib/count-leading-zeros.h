@@ -1,5 +1,5 @@
 /* count-leading-zeros.h -- counts the number of leading 0 bits in a word.
-   Copyright (C) 2012-2019 Free Software Foundation, Inc.
+   Copyright (C) 2012-2020 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -28,6 +28,10 @@
 _GL_INLINE_HEADER_BEGIN
 #ifndef COUNT_LEADING_ZEROS_INLINE
 # define COUNT_LEADING_ZEROS_INLINE _GL_INLINE
+#endif
+
+#ifdef __cplusplus
+extern "C" {
 #endif
 
 /* Assuming the GCC builtin is BUILTIN and the MSC builtin is MSC_BUILTIN,
@@ -100,13 +104,15 @@ count_leading_zeros_l (unsigned long int x)
   COUNT_LEADING_ZEROS (__builtin_clzl, _BitScanReverse, unsigned long int);
 }
 
-#if HAVE_UNSIGNED_LONG_LONG_INT
 /* Compute and return the number of leading zeros in X. */
 COUNT_LEADING_ZEROS_INLINE int
 count_leading_zeros_ll (unsigned long long int x)
 {
   COUNT_LEADING_ZEROS (__builtin_clzll, _BitScanReverse64,
                        unsigned long long int);
+}
+
+#ifdef __cplusplus
 }
 #endif
 

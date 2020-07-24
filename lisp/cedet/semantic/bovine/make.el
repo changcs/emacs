@@ -1,6 +1,6 @@
 ;;; semantic/bovine/make.el --- Makefile parsing rules.
 
-;; Copyright (C) 2000-2004, 2008-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2000-2004, 2008-2020 Free Software Foundation, Inc.
 
 ;; Author: Eric M. Ludlam <zappo@gnu.org>
 
@@ -175,7 +175,7 @@ This is the same as a regular prototype."
   (semantic-format-tag-prototype tag parent color))
 
 (define-mode-local-override semantic-analyze-possible-completions
-  makefile-mode (context)
+  makefile-mode (context &rest flags)
   "Return a list of possible completions in a Makefile.
 Uses default implementation, and also gets a list of filenames."
   (require 'semantic/analyze/complete)

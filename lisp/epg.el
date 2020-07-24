@@ -1,5 +1,5 @@
 ;;; epg.el --- the EasyPG Library -*- lexical-binding: t -*-
-;; Copyright (C) 1999-2000, 2002-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1999-2000, 2002-2020 Free Software Foundation, Inc.
 
 ;; Author: Daiki Ueno <ueno@unixuser.org>
 ;; Keywords: PGP, GnuPG
@@ -420,7 +420,7 @@ callback data (if any)."
      (if user-id
 	 (concat " "
 		 (if (stringp user-id)
-		     user-id
+		     (epg--decode-percent-escape-as-utf-8 user-id)
 		   (epg-decode-dn user-id)))
        "")
      (if (epg-signature-validity signature)
@@ -2032,7 +2032,7 @@ If you are unsure, use synchronous version of this function
     (epg-reset context)))
 
 (defun epg--decode-percent-escape (string)
-  (setq string (string-to-unibyte string))
+  (setq string (encode-coding-string string 'raw-text))
   (let ((index 0))
     (while (string-match "%\\(\\(%\\)\\|\\([[:xdigit:]][[:xdigit:]]\\)\\)"
 			 string index)

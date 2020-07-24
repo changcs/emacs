@@ -1,5 +1,5 @@
 /* ftfont.c -- FreeType font driver.
-   Copyright (C) 2006-2019 Free Software Foundation, Inc.
+   Copyright (C) 2006-2020 Free Software Foundation, Inc.
    Copyright (C) 2006, 2007, 2008, 2009, 2010, 2011
      National Institute of Advanced Industrial Science and Technology (AIST)
      Registration Number H13PRO009
@@ -102,7 +102,7 @@ static struct
     { "iso8859-15", { 0x00A0, 0x00A1, 0x00D0, 0x0152 }},
     { "iso8859-16", { 0x00A0, 0x0218}},
     { "gb2312.1980-0", { 0x4E13 }, "zh-cn"},
-    { "big5-0", { 0xF6B1 }, "zh-tw" },
+    { "big5-0", { 0x9C21 }, "zh-tw" },
     { "jisx0208.1983-0", { 0x4E55 }, "ja"},
     { "ksc5601.1985-0", { 0xAC00 }, "ko"},
     { "cns11643.1992-1", { 0xFE32 }, "zh-tw"},
@@ -119,7 +119,7 @@ static struct
     { "jisx0213.2004-1", { 0x20B9F }},
     { "viscii1.1-1", { 0x1EA0, 0x1EAE, 0x1ED2 }, "vi"},
     { "tis620.2529-1", { 0x0E01 }, "th"},
-    { "windows-1251", { 0x0401, 0x0490 }, "ru"},
+    { "microsoft-cp1251", { 0x0401, 0x0490 }, "ru"},
     { "koi8-r", { 0x0401, 0x2219 }, "ru"},
     { "mulelao-1", { 0x0E81 }, "lo"},
     { "unicode-sip", { 0x20000 }},
@@ -346,18 +346,15 @@ struct ftfont_cache_data
 static Lisp_Object
 ftfont_lookup_cache (Lisp_Object key, enum ftfont_cache_for cache_for)
 {
-  Lisp_Object cache, val, entity;
+  Lisp_Object cache, val;
   struct ftfont_cache_data *cache_data;
 
   if (FONT_ENTITY_P (key))
     {
-      entity = key;
-      val = assq_no_quit (QCfont_entity, AREF (entity, FONT_EXTRA_INDEX));
+      val = assq_no_quit (QCfont_entity, AREF (key, FONT_EXTRA_INDEX));
       eassert (CONSP (val));
       key = XCDR (val);
     }
-  else
-    entity = Qnil;
 
   if (NILP (ft_face_cache))
     cache = Qnil;
@@ -865,6 +862,9 @@ ftfont_list (struct frame *f, Lisp_Object spec)
 #ifdef FC_FONTFORMAT
 			     FC_FONTFORMAT,
 #endif
+#if defined HAVE_XFT && defined FC_COLOR
+                             FC_COLOR,
+#endif
 			     NULL);
   if (! objset)
     goto err;
@@ -904,7 +904,19 @@ ftfont_list (struct frame *f, Lisp_Object spec)
   for (i = 0; i < fontset->nfont; i++)
     {
       Lisp_Object entity;
-
+#if defined HAVE_XFT && defined FC_COLOR
+      {
+        /* Some fonts, notably NotoColorEmoji, have an FC_COLOR value
+           that's neither FcTrue nor FcFalse, which means FcFontList
+           returns them even when it shouldn't really do so, so we
+           need to manually skip them here (Bug#37786).  */
+        FcBool b;
+        if (Vxft_ignore_color_fonts
+            && FcPatternGetBool (fontset->fonts[i], FC_COLOR, 0, &b)
+            == FcResultMatch && b != FcFalse)
+            continue;
+      }
+#endif
       if (spacing >= 0)
 	{
 	  int this;
@@ -1264,6 +1276,8 @@ ftfont_entity_pattern (Lisp_Object entity, int pixel_size)
   return pat;
 }
 
+#ifndef USE_CAIRO
+
 Lisp_Object
 ftfont_open (struct frame *f, Lisp_Object entity, int pixel_size)
 {
@@ -1459,6 +1473,8 @@ ftfont_close (struct font *font)
     FT_Done_Size (ftfont_info->ft_size);
 }
 
+#endif /* !USE_CAIRO */
+
 int
 ftfont_has_char (Lisp_Object font, int c)
 {
@@ -1488,6 +1504,8 @@ ftfont_has_char (Lisp_Object font, int c)
 	      != 0);
     }
 }
+
+#ifndef USE_CAIRO
 
 unsigned
 ftfont_encode_char (struct font *font, int c)
@@ -1559,6 +1577,8 @@ ftfont_text_extents (struct font *font, const unsigned int *code,
     }
   metrics->width = width;
 }
+
+#endif /* !USE_CAIRO */
 
 int
 ftfont_get_bitmap (struct font *font, unsigned int code, struct font_bitmap *bitmap, int bits_per_pixel)
@@ -3031,6 +3051,8 @@ ftfont_combining_capability (struct font *font)
 
 static void syms_of_ftfont_for_pdumper (void);
 
+#ifndef USE_CAIRO
+
 static struct font_driver const ftfont_driver =
   {
   /* We can't draw a text without device dependent functions.  */
@@ -3058,6 +3080,8 @@ static struct font_driver const ftfont_driver =
   .filter_properties = ftfont_filter_properties,
   .combining_capability = ftfont_combining_capability,
   };
+
+#endif /* !USE_CAIRO */
 
 void
 syms_of_ftfont (void)
@@ -3108,7 +3132,7 @@ syms_of_ftfont_for_pdumper (void)
 #ifdef HAVE_HARFBUZZ
   fthbfont_driver = ftfont_driver;
   fthbfont_driver.type = Qfreetypehb;
-  fthbfont_driver.otf_capability = hbfont_otf_capability,
+  fthbfont_driver.otf_capability = hbfont_otf_capability;
   fthbfont_driver.shape = hbfont_shape;
   fthbfont_driver.combining_capability = hbfont_combining_capability;
   fthbfont_driver.begin_hb_font = fthbfont_begin_hb_font;

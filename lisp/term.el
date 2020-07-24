@@ -1,6 +1,6 @@
 ;;; term.el --- general command interpreter in a window stuff -*- lexical-binding: t -*-
 
-;; Copyright (C) 1988, 1990, 1992, 1994-1995, 2001-2019 Free Software
+;; Copyright (C) 1988, 1990, 1992, 1994-1995, 2001-2020 Free Software
 ;; Foundation, Inc.
 
 ;; Author: Per Bothner <per@bothner.com>
@@ -23,7 +23,7 @@
 ;; You should have received a copy of the GNU General Public License
 ;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
-;; Marck 13 2001
+;; March 13 2001
 ;; Fixes for CJK support by Yong Lu <lyongu@yahoo.com>.
 
 ;; Dir/Hostname tracking and ANSI colorization by
@@ -87,7 +87,7 @@
 ;; for maintenance reasons, you have to edit files 'as root': before
 ;; patching term.el, I su-ed in a term.el buffer and used vi :), now I
 ;; simply do a C-x C-f and, via ange-ftp, the file is automatically loaded
-;; 'as-root'.  ( If you don't want to enter the root password every time you
+;; 'as-root'.  (If you don't want to enter the root password every time you
 ;; can put it in your .netrc: note that this is -not- advisable if you're
 ;; connected to the internet or if somebody else works on your workstation!)
 ;;
@@ -102,9 +102,8 @@
 ;;
 ;;             ----------------------------------------
 ;;
-;;  With the term-buffer-maximum-size you can finally decide how many
-;; scrollback lines to keep: its default is 2048 but you can change it as
-;; usual.
+;;  With the variable term-buffer-maximum-size you can decide how many
+;; scrollback lines to keep: its default is 8192.
 ;;
 ;;             ----------------------------------------
 ;;
@@ -800,14 +799,15 @@ Buffer local variable.")
   "Face used to render white color code."
   :group 'term)
 
-;; Inspiration came from comint.el -mm
-(defcustom term-buffer-maximum-size 2048
+(defcustom term-buffer-maximum-size 8192
   "The maximum size in lines for term buffers.
 Term buffers are truncated from the top to be no greater than this number.
 Notice that a setting of 0 means \"don't truncate anything\".  This variable
 is buffer-local."
   :group 'term
-  :type 'integer)
+  :type 'integer
+  :version "27.1")
+
 
 ;; Set up term-raw-map, etc.
 
@@ -2796,12 +2796,12 @@ See `term-prompt-regexp'."
    "\\(?:[\r\n\000\007\t\b\016\017]\\|"
    ;; some Emacs specific control sequences, implemented by
    ;; `term-command-hook',
-   "\032[^\n]+\r?\n\\|"
+   "\032[^\n]+\n\\|"
    ;; a C1 escape coded character (see [ECMA-48] section 5.3 "Elements
    ;; of the C1 set"),
    "\e\\(?:[DM78c]\\|"
    ;; another Emacs specific control sequence,
-   "AnSiT[^\n]+\r?\n\\|"
+   "AnSiT[^\n]+\n\\|"
    ;; or an escape sequence (section 5.4 "Control Sequences"),
    "\\[\\([\x30-\x3F]*\\)[\x20-\x2F]*[\x40-\x7E]\\)\\)")
   "Regexp matching control sequences handled by term.el.")

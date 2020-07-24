@@ -1,6 +1,6 @@
 ;;; eieio-opt.el -- eieio optional functions (debug, printing, speedbar)
 
-;; Copyright (C) 1996, 1998-2003, 2005, 2008-2019 Free Software
+;; Copyright (C) 1996, 1998-2003, 2005, 2008-2020 Free Software
 ;; Foundation, Inc.
 
 ;; Author: Eric M. Ludlam <zappo@gnu.org>
@@ -278,14 +278,7 @@ are not abstract."
 
 (if eieio-class-speedbar-key-map
     nil
-  (if (not (featurep 'speedbar))
-      (add-hook 'speedbar-load-hook (lambda ()
-				      (eieio-class-speedbar-make-map)
-				      (speedbar-add-expansion-list
-				       '("EIEIO"
-					 eieio-class-speedbar-menu
-					 eieio-class-speedbar-key-map
-					 eieio-class-speedbar))))
+  (with-eval-after-load 'speedbar
     (eieio-class-speedbar-make-map)
     (speedbar-add-expansion-list '("EIEIO"
 				   eieio-class-speedbar-menu

@@ -1,9 +1,10 @@
 ;;; erc-log.el --- Logging facilities for ERC.
 
-;; Copyright (C) 2003-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2003-2020 Free Software Foundation, Inc.
 
 ;; Author: Lawrence Mitchell <wence@gmx.li>
-;; Maintainer: emacs-devel@gnu.org
+;; Maintainer: Amin Bandali <bandali@gnu.org>
+;; URL: https://www.emacswiki.org/emacs/ErcLogging
 ;; Keywords: IRC, chat, client, Internet, logging
 
 ;; Created 2003-04-26
@@ -283,7 +284,7 @@ The current buffer is given by BUFFER."
 	    erc-enable-logging nil))))
 
 (defun erc-log-all-but-server-buffers (buffer)
-  "Returns t if logging should be enabled in BUFFER.
+  "Return t if logging should be enabled in BUFFER.
 Returns nil if `erc-server-buffer-p' returns t."
   (save-excursion
     (save-window-excursion

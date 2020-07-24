@@ -1,6 +1,6 @@
 ;;; tar-mode.el --- simple editing of tar files from GNU Emacs  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1990-1991, 1993-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1990-1991, 1993-2020 Free Software Foundation, Inc.
 
 ;; Author: Jamie Zawinski <jwz@lucid.com>
 ;; Maintainer: emacs-devel@gnu.org
@@ -127,6 +127,11 @@ the file never exists on disk."
 This information is useful, but it takes screen space away from file names."
   :type 'boolean)
 
+(defcustom tar-copy-preserve-time nil
+  "Non-nil means that Tar mode preserves the timestamp when copying files."
+  :type 'boolean
+  :version "27.1")
+
 (defvar tar-parse-info nil)
 (defvar tar-superior-buffer nil
   "Buffer containing the tar archive from which a member was extracted.")
@@ -218,10 +223,14 @@ Preserve the modified states of the buffers and set `buffer-swapped-with'."
   "Round S up to the next multiple of 512."
   (ash (ash (+ s 511) -9) 9))
 
-(defun tar-header-block-tokenize (pos coding)
+(defun tar-header-block-tokenize (pos coding &optional disable-slash)
   "Return a `tar-header' structure.
 This is a list of name, mode, uid, gid, size,
-write-date, checksum, link-type, and link-name."
+write-date, checksum, link-type, and link-name.
+CODING is our best guess for decoding non-ASCII file names.
+DISABLE-SLASH, if non-nil, means don't decide an entry is a directory
+based on the trailing slash, only based on the \"link-type\" field
+of the file header.  This is used for \"old GNU\" Tar format."
   (if (> (+ pos 512) (point-max)) (error "Malformed Tar header"))
   (cl-assert (zerop (mod (- pos (point-min)) 512)))
   (cl-assert (not enable-multibyte-characters))
@@ -267,7 +276,7 @@ write-date, checksum, link-type, and link-name."
               (decode-coding-string name coding)
               linkname
               (decode-coding-string linkname coding))
-        (if (and (null link-p) (string-match "/\\'" name))
+        (if (and (null link-p) (null disable-slash) (string-match "/\\'" name))
             (setq link-p 5))            ; directory
 
         (if (and (equal name "././@LongLink")
@@ -278,12 +287,23 @@ write-date, checksum, link-type, and link-name."
             ;; This is a GNU Tar long-file-name header.
             (let* ((size (tar-parse-octal-integer
                           string tar-size-offset tar-time-offset))
-                   ;; -1 so as to strip the terminating 0 byte.
+                   ;; The long name is in the next 512-byte block.
+                   ;; We've already moved POS there, when we computed
+                   ;; STRING above.
 		   (name (decode-coding-string
+                          ;; -1 so as to strip the terminating 0 byte.
 			  (buffer-substring pos (+ pos size -1)) coding))
+                   ;; Tokenize the header of the _real_ file entry,
+                   ;; which is further 512 bytes into the archive.
                    (descriptor (tar-header-block-tokenize
-                                (+ pos (tar-roundup-512 size))
-				coding)))
+                                (+ pos (tar-roundup-512 size)) coding
+                                ;; Don't intuit directories from
+                                ;; the trailing slash, because the
+                                ;; truncated name might by chance end
+                                ;; in a slash.
+				'ignore-trailing-slash)))
+              ;; Fix the descriptor of the real file entry by using
+              ;; the information from the long name entry.
               (cond
                ((eq link-p (- ?L ?0))      ;GNUTYPE_LONGNAME.
                 (setf (tar-header-name descriptor) name))
@@ -291,6 +311,10 @@ write-date, checksum, link-type, and link-name."
                 (setf (tar-header-link-name descriptor) name))
                (t
                 (message "Unrecognized GNU Tar @LongLink format")))
+              ;; Fix the "link-type" attribute, based on the long name.
+              (if (and (null (tar-header-link-type descriptor))
+                       (string-match "/\\'" name))
+                  (setf (tar-header-link-type descriptor) 5)) ; directory
               (setf (tar-header-header-start descriptor)
                     (copy-marker (- pos 512) t))
               descriptor)
@@ -456,23 +480,9 @@ checksum before doing the check."
 
 (defun tar-grind-file-mode (mode)
   "Construct a `rw-r--r--' string indicating MODE.
-MODE should be an integer which is a file mode value."
-  (string
-   (if (zerop (logand 256 mode)) ?- ?r)
-   (if (zerop (logand 128 mode)) ?- ?w)
-   (if (zerop (logand 2048 mode))
-       (if (zerop (logand  64 mode)) ?- ?x)
-     (if (zerop (logand  64 mode)) ?S ?s))
-   (if (zerop (logand  32 mode)) ?- ?r)
-   (if (zerop (logand  16 mode)) ?- ?w)
-   (if (zerop (logand 1024 mode))
-       (if (zerop (logand   8 mode)) ?- ?x)
-     (if (zerop (logand   8 mode)) ?S ?s))
-   (if (zerop (logand   4 mode)) ?- ?r)
-   (if (zerop (logand   2 mode)) ?- ?w)
-   (if (zerop (logand 512 mode))
-       (if (zerop (logand   1 mode)) ?- ?x)
-     (if (zerop (logand   1 mode)) ?T ?t))))
+MODE should be an integer which is a file mode value.
+For instance, if mode is #o700, then it produces `rwx------'."
+  (substring (file-modes-number-to-symbolic mode) 1))
 
 (defun tar-header-block-summarize (tar-hblock &optional mod-p)
   "Return a line similar to the output of `tar -vtf'."
@@ -1001,11 +1011,16 @@ actually appear on disk when you save the tar-file's buffer."
 (defun tar-copy (&optional to-file)
   "In Tar mode, extract this entry of the tar file into a file on disk.
 If TO-FILE is not supplied, it is prompted for, defaulting to the name of
-the current tar-entry."
+the current tar-entry.
+
+If `tar-copy-preserve-time' is non-nil, the original
+timestamp (if present in the tar file) will be used on the
+extracted file."
   (interactive (list (tar-read-file-name)))
   (let* ((descriptor (tar-get-descriptor))
 	 (name (tar-header-name descriptor))
 	 (size (tar-header-size descriptor))
+	 (date (tar-header-date descriptor))
 	 (start (tar-header-data-start descriptor))
 	 (end (+ start size))
 	 (inhibit-file-name-handlers inhibit-file-name-handlers)
@@ -1024,7 +1039,10 @@ the current tar-entry."
 			   inhibit-file-name-handlers))
 		inhibit-file-name-operation 'write-region))
       (let ((coding-system-for-write 'no-conversion))
-	(write-region start end to-file nil nil nil t)))
+	(write-region start end to-file nil nil nil t))
+      (when (and tar-copy-preserve-time
+                 date)
+	(set-file-times to-file date 'nofollow)))
     (message "Copied tar entry %s to %s" name to-file)))
 
 (defun tar-new-entry (filename &optional index)

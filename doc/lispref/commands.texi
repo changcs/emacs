@@ -1,6 +1,6 @@
 @c -*-texinfo-*-
 @c This is part of the GNU Emacs Lisp Reference Manual.
-@c Copyright (C) 1990-1995, 1998-1999, 2001-2019 Free Software
+@c Copyright (C) 1990--1995, 1998--1999, 2001--2020 Free Software
 @c Foundation, Inc.
 @c See the file elisp.texi for copying conditions.
 @node Command Loop
@@ -1661,6 +1661,12 @@ events within its body.  Outside of @code{track-mouse} forms, Emacs
 does not generate events for mere motion of the mouse, and these
 events do not appear.  @xref{Mouse Tracking}.
 
+@defvar mouse-fine-grained-tracking
+When non-@code{nil}, mouse motion events are generated even for very
+small movements.  Otherwise, motion events are not generated as long
+as the mouse cursor remains pointing to the same glyph in the text.
+@end defvar
+
 @node Focus Events
 @subsection Focus Events
 @cindex focus event
@@ -1782,9 +1788,10 @@ additional data because signals do not carry additional information.
 They can be useful for debugging (@pxref{Error Debugging}).
 
 To catch a user signal, bind the corresponding event to an interactive
-command in the @code{special-event-map} (@pxref{Active Keymaps}).
+command in the @code{special-event-map} (@pxref{Controlling Active Maps}).
 The command is called with no arguments, and the specific signal event is
-available in @code{last-input-event}.  For example:
+available in @code{last-input-event} (@pxref{Event Input Misc}.  For
+example:
 
 @smallexample
 (defun sigusr-handler ()
@@ -2501,6 +2508,9 @@ and key sequences read from keyboard macros being executed.
   The lowest level functions for command input are @code{read-event},
 @code{read-char}, and @code{read-char-exclusive}.
 
+If you need a function to read a character using the minibuffer, use
+@code{read-char-from-minibuffer} (@pxref{Multiple Queries}).
+
 @defun read-event &optional prompt inherit-input-method seconds
 This function reads and returns the next event of command input,
 waiting if necessary until an event is available.
@@ -2959,7 +2969,7 @@ like this:
 
 @defvar while-no-input-ignore-events
 This variable allow setting which special events @code{while-no-input}
-should ignore.  It is a list of symbols.
+should ignore.  It is a list of event symbols (@pxref{Event Examples}).
 
 @end defvar
 
@@ -3009,7 +3019,7 @@ definition to find the actual event.
 user signals like @code{sigusr1} are normally handled in this way.
 The keymap which defines how to handle special events---and which
 events are special---is in the variable @code{special-event-map}
-(@pxref{Active Keymaps}).
+(@pxref{Controlling Active Maps}).
 
 @node Waiting
 @section Waiting for Elapsed Time or Input

@@ -1,6 +1,6 @@
 ;;; viper-util.el --- Utilities used by viper.el  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1994-1997, 1999-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1994-1997, 1999-2020 Free Software Foundation, Inc.
 
 ;; Author: Michael Kifer <kifer@cs.stonybrook.edu>
 ;; Package: viper
@@ -166,30 +166,21 @@ Otherwise return the normal value."
 
 (defun viper-get-saved-cursor-color-in-replace-mode ()
   (or
-   (funcall
-    (if (featurep 'emacs) 'frame-parameter 'frame-property)
-    (selected-frame)
-    'viper-saved-cursor-color-in-replace-mode)
+   (frame-parameter (selected-frame) 'viper-saved-cursor-color-in-replace-mode)
    (or (and (eq viper-current-state 'emacs-mode)
 	    (viper-frame-value viper-emacs-state-cursor-color))
        (viper-frame-value viper-vi-state-cursor-color))))
 
 (defun viper-get-saved-cursor-color-in-insert-mode ()
   (or
-   (funcall
-    (if (featurep 'emacs) 'frame-parameter 'frame-property)
-    (selected-frame)
-    'viper-saved-cursor-color-in-insert-mode)
+   (frame-parameter (selected-frame) 'viper-saved-cursor-color-in-insert-mode)
    (or (and (eq viper-current-state 'emacs-mode)
 	    (viper-frame-value viper-emacs-state-cursor-color))
        (viper-frame-value viper-vi-state-cursor-color))))
 
 (defun viper-get-saved-cursor-color-in-emacs-mode ()
   (or
-   (funcall
-    (if (featurep 'emacs) 'frame-parameter 'frame-property)
-    (selected-frame)
-    'viper-saved-cursor-color-in-emacs-mode)
+   (frame-parameter (selected-frame) 'viper-saved-cursor-color-in-emacs-mode)
    (viper-frame-value viper-vi-state-cursor-color)))
 
 ;; restore cursor color from replace overlay
@@ -214,6 +205,7 @@ Otherwise return the normal value."
 ;; incorrect.  However, this gives correct result in our cases, since we are
 ;; testing for sufficiently high Emacs versions.
 (defun viper-check-version (op major minor &optional type-of-emacs)
+  (declare (obsolete nil "28.1"))
   (if (and (boundp 'emacs-major-version) (boundp 'emacs-minor-version))
       (and (cond ((eq type-of-emacs 'xemacs) (featurep 'xemacs))
 		 ((eq type-of-emacs 'emacs) (featurep 'emacs))
@@ -694,7 +686,7 @@ Otherwise return the normal value."
 	     (y-or-n-p
 	      (format
 	       "File %s is checked in.  Check it out? "
-	       (viper-abbreviate-file-name file))))
+	       (abbreviate-file-name file))))
 	(with-current-buffer buf
 	  (command-execute checkout-function)))))
 
@@ -738,8 +730,7 @@ Otherwise return the normal value."
       (viper-move-replace-overlay beg end)
     (setq viper-replace-overlay (make-overlay beg end (current-buffer)))
     ;; never detach
-    (overlay-put
-     viper-replace-overlay (if (featurep 'emacs) 'evaporate 'detachable) nil)
+    (overlay-put viper-replace-overlay 'evaporate nil)
     (overlay-put
      viper-replace-overlay 'priority viper-replace-overlay-priority)
     ;; If Emacs will start supporting overlay maps, as it currently supports
@@ -747,7 +738,7 @@ Otherwise return the normal value."
     ;; just have keymap attached to replace overlay.
     ;;(overlay-put
     ;; viper-replace-overlay
-    ;; (if (featurep 'xemacs) 'keymap 'local-map)
+    ;; 'local-map
     ;; viper-replace-map)
     )
   (if (viper-has-face-support-p)
@@ -814,8 +805,8 @@ Otherwise return the normal value."
 
 ;;; XEmacs compatibility
 
-(defun viper-abbreviate-file-name (file)
-  (abbreviate-file-name file))
+(define-obsolete-function-alias 'viper-abbreviate-file-name
+  'abbreviate-file-name "27.1")
 
 ;; Sit for VAL milliseconds.  XEmacs doesn't support the millisecond arg
 ;; in sit-for, so this function smooths out the differences.
@@ -939,10 +930,10 @@ Otherwise return the normal value."
 		  (string-to-char key-name))
 		 ;; Emacs doesn't recognize `return' and `escape' as events on
 		 ;; dumb terminals, so we translate them into characters
-		 ((and (featurep 'emacs) (not (viper-window-display-p))
+		 ((and (not (viper-window-display-p))
 		       (string= key-name "return"))
 		  ?\C-m)
-		 ((and (featurep 'emacs) (not (viper-window-display-p))
+		 ((and (not (viper-window-display-p))
 		       (string= key-name "escape"))
 		  ?\e)
 		 ;; pass symbol-event as is
@@ -978,41 +969,28 @@ Otherwise return the normal value."
 (define-obsolete-function-alias 'viper-eventify-list-xemacs 'ignore "27.1")
 
 
-;; Smooths out the difference between Emacs's unread-command-events
-;; and XEmacs unread-command-event.  Arg is a character, an event, a list of
-;; events or a sequence of keys.
+;; Arg is a character, an event, a list of events or a sequence of
+;; keys.
 ;;
-;; Due to the way unread-command-events in Emacs (not XEmacs), a non-event
-;; symbol in unread-command-events list may cause Emacs to turn this symbol
-;; into an event.  Below, we delete nil from event lists, since nil is the most
-;; common symbol that might appear in this wrong context.
+;; Due to the way unread-command-events works in Emacs, a non-event
+;; symbol in unread-command-events list may cause Emacs to turn this
+;; symbol into an event.  Below, we delete nil from event lists, since
+;; nil is the most common symbol that might appear in this wrong
+;; context.
 (defun viper-set-unread-command-events (arg)
-  (if (featurep 'emacs)
-      (setq
-       unread-command-events
-       (let ((new-events
-	      (cond ((eventp arg) (list arg))
-		    ((listp arg) arg)
-		    ((sequencep arg)
-		     (listify-key-sequence arg))
-		    (t (error
-			"viper-set-unread-command-events: Invalid argument, %S"
-			arg)))))
-	 (if (not (eventp nil))
-	     (setq new-events (delq nil new-events)))
-	 (append new-events unread-command-events)))
-    ;; XEmacs
-    (setq
-     unread-command-events
-     (append
-      (cond ((characterp arg) (list (character-to-event arg)))
-	    ((eventp arg)  (list arg))
-	    ((stringp arg) (mapcar 'character-to-event arg))
-	    ((vectorp arg) (append arg nil)) ; turn into list
-	    ((listp arg) nil)
-	    (t (error
-		"viper-set-unread-command-events: Invalid argument, %S" arg)))
-      unread-command-events))))
+  (setq
+   unread-command-events
+   (let ((new-events
+	  (cond ((eventp arg) (list arg))
+		((listp arg) arg)
+		((sequencep arg)
+		 (listify-key-sequence arg))
+		(t (error
+		    "viper-set-unread-command-events: Invalid argument, %S"
+		    arg)))))
+     (if (not (eventp nil))
+	 (setq new-events (delq nil new-events)))
+     (append new-events unread-command-events))))
 
 
 ;; Check if vec is a vector of key-press events representing characters

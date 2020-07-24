@@ -1,6 +1,6 @@
 ;;; cus-edit.el --- tools for customizing Emacs and Lisp packages -*- lexical-binding:t -*-
 ;;
-;; Copyright (C) 1996-1997, 1999-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1996-1997, 1999-2020 Free Software Foundation, Inc.
 ;;
 ;; Author: Per Abrahamsen <abraham@dina.kvl.dk>
 ;; Maintainer: emacs-devel@gnu.org
@@ -1163,7 +1163,7 @@ Show the buffer in another window, but don't select it."
     (unless (eq symbol basevar)
       (message "`%s' is an alias for `%s'" symbol basevar))))
 
-(defvar customize-changed-options-previous-release "25.3"
+(defvar customize-changed-options-previous-release "26.3"
   "Version for `customize-changed-options' to refer back to by default.")
 
 ;; Packages will update this variable, so make it available.
@@ -2102,11 +2102,12 @@ and `face'."
 	(insert " "))
       (widget-put widget :children children))))
 
-(defun custom-magic-reset (widget)
+(defun custom-magic-reset (widget &optional buffer)
   "Redraw the :custom-magic property of WIDGET."
   (let ((magic (widget-get widget :custom-magic)))
     (when magic
-      (widget-value-set magic (widget-value magic)))))
+      (with-current-buffer (or buffer (current-buffer))
+        (widget-value-set magic (widget-value magic))))))
 
 ;;; The `custom' Widget.
 
@@ -2217,7 +2218,7 @@ and `face'."
       ;; commands like `M-u' (that work on a region in the buffer)
       ;; will upcase the wrong part of the buffer, since more text has
       ;; been inserted before point.
-      (run-with-idle-timer 0.0 nil #'custom-magic-reset widget)
+      (run-with-idle-timer 0.0 nil #'custom-magic-reset widget (current-buffer))
       (apply 'widget-default-notify widget args))))
 
 (defun custom-redraw (widget)
@@ -3035,17 +3036,18 @@ Update the widget to show that value.  The value that was current
 before this operation becomes the backup value."
   (let* ((symbol (widget-value widget))
 	 (saved-value (get symbol 'saved-value))
-	 (comment (get symbol 'saved-variable-comment)))
+	 (comment (get symbol 'saved-variable-comment))
+         value)
     (custom-variable-backup-value widget)
     (if (not (or saved-value comment))
-	;; If there is no saved value, remove the setting.
-	(custom-push-theme 'theme-value symbol 'user 'reset)
-      ;; Otherwise, apply the saved value.
-      (put symbol 'variable-comment comment)
-      (custom-push-theme 'theme-value symbol 'user 'set (car-safe saved-value))
-      (ignore-errors
-	(funcall (or (get symbol 'custom-set) 'set-default)
-		 symbol (eval (car saved-value)))))
+        ;; If there is no saved value, remove the setting.
+        (custom-push-theme 'theme-value symbol 'user 'reset)
+      (setq value (car-safe saved-value))
+      (custom-push-theme 'theme-value symbol 'user 'set value)
+      (put symbol 'variable-comment comment))
+    (ignore-errors
+      (funcall (or (get symbol 'custom-set) #'set-default) symbol
+               (eval (or value (car (get symbol 'standard-value))))))
     (put symbol 'customized-value nil)
     (put symbol 'customized-variable-comment nil)
     (widget-put widget :custom-state 'unknown)
@@ -3823,7 +3825,17 @@ Optional EVENT is the location for the menu."
 
 (defun custom-face-save (widget)
   "Save the face edited by WIDGET."
-  (custom-face-mark-to-save widget)
+  (let ((form (widget-get widget :custom-form)))
+    (if (memq form '(all lisp))
+        (custom-face-mark-to-save widget)
+      ;; The user is working on only a selected terminal type;
+      ;; make sure we save the entire spec to `custom-file'. (Bug #40866)
+      (custom-face-edit-all widget)
+      (custom-face-mark-to-save widget)
+      (if (eq form 'selected)
+          (custom-face-edit-selected widget)
+        ;; `form' is edit or mismatch; can't happen.
+        (widget-put widget :custom-form form))))
   (custom-save-all)
   (custom-face-state-set-and-redraw widget))
 
@@ -4062,6 +4074,22 @@ If GROUPS-ONLY is non-nil, return only those members that are groups."
 	  (push entry members)))
       (nreverse members))))
 
+(defun custom-group--draw-horizontal-line ()
+  "Draw a horizontal line at point.
+This works for both graphical and text displays."
+  (let ((p (point)))
+    (insert "\n")
+    (put-text-property p (1+ p) 'face '(:underline t))
+    (overlay-put (make-overlay p (1+ p))
+		 'before-string
+		 (propertize "\n" 'face '(:underline t)
+		             'display
+                             (list 'space :align-to
+                                   `(+ (0 . right)
+                                       ,(min (window-hscroll)
+                                             (- (line-end-position)
+                                                (line-beginning-position)))))))))
+
 (defun custom-group-value-create (widget)
   "Insert a customize group for WIDGET in the current buffer."
   (unless (eq (widget-get widget :custom-state) 'hidden)
@@ -4188,15 +4216,7 @@ If GROUPS-ONLY is non-nil, return only those members that are groups."
 
 	  ;; Nested style.
 	  (t				;Visible.
-	   ;; Draw a horizontal line (this works for both graphical
-	   ;; and text displays):
-	   (let ((p (point)))
-	     (insert "\n")
-	     (put-text-property p (1+ p) 'face '(:underline t))
-	     (overlay-put (make-overlay p (1+ p))
-			  'before-string
-			  (propertize "\n" 'face '(:underline t)
-				      'display '(space :align-to 999))))
+           (custom-group--draw-horizontal-line)
 
 	   ;; Add parent groups references above the group.
 	   (when (eq level 1)
@@ -4287,13 +4307,8 @@ If GROUPS-ONLY is non-nil, return only those members that are groups."
 	     (widget-put widget :children children)
 	     (custom-group-state-update widget))
 	   ;; End line
-	   (let ((p (1+ (point))))
-	     (insert "\n\n")
-	     (put-text-property p (1+ p) 'face '(:underline t))
-	     (overlay-put (make-overlay p (1+ p))
-			  'before-string
-			  (propertize "\n" 'face '(:underline t)
-				      'display '(space :align-to 999))))))))
+           (insert "\n")
+           (custom-group--draw-horizontal-line)))))
 
 (defvar custom-group-menu
   `(("Set for Current Session" custom-group-set

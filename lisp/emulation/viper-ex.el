@@ -1,6 +1,6 @@
 ;;; viper-ex.el --- functions implementing the Ex commands for Viper
 
-;; Copyright (C) 1994-1998, 2000-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1994-1998, 2000-2020 Free Software Foundation, Inc.
 
 ;; Author: Michael Kifer <kifer@cs.stonybrook.edu>
 ;; Package: viper
@@ -1101,10 +1101,7 @@ reversed."
 	  (copy-keymap minibuffer-local-completion-map))
 	 beg end cont val)
 
-    (viper-add-keymap ex-read-filename-map
-		    (if (featurep 'emacs)
-			minibuffer-local-completion-map
-		      read-file-name-map))
+    (viper-add-keymap ex-read-filename-map minibuffer-local-completion-map)
 
     (setq cont (setq viper-keep-reading-filename t))
     (while cont

@@ -1,6 +1,6 @@
 ;;; smtpmail.el --- simple SMTP protocol (RFC 821) for sending mail  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1995-1996, 2001-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1995-1996, 2001-2020 Free Software Foundation, Inc.
 
 ;; Author: Tomoji Kagatani <kagatani@rbc.ncl.omron.co.jp>
 ;; Maintainer: emacs-devel@gnu.org
@@ -354,7 +354,8 @@ for `smtpmail-try-auth-method'.")
 		  (when (setq result
 			      (smtpmail-via-smtp
 			       smtpmail-recipient-address-list tembuf))
-		    (error "Sending failed: %s" result))
+		    (error "Sending failed: %s"
+                           (smtpmail--sanitize-error-message result)))
 		(error "Sending failed; no recipients"))
 	    (let* ((file-data
 		    (expand-file-name
@@ -437,12 +438,17 @@ for `smtpmail-try-auth-method'.")
                 (when (setq result (smtpmail-via-smtp
 				    smtpmail-recipient-address-list
 				    (current-buffer)))
-		  (error "Sending failed: %s" result))
+		  (error "Sending failed: %s"
+                         (smtpmail--sanitize-error-message result)))
               (error "Sending failed; no recipients"))))
 	(delete-file file-data)
 	(delete-file file-elisp)
 	(delete-region (point-at-bol) (point-at-bol 2)))
       (write-region (point-min) (point-max) qfile))))
+
+(defun smtpmail--sanitize-error-message (string)
+  "Try to remove passwords and the like from SMTP error messages."
+  (replace-regexp-in-string "\\bAUTH\\b.*" "AUTH" string))
 
 (defun smtpmail-fqdn ()
   (if smtpmail-local-domain

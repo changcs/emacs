@@ -1,6 +1,6 @@
 ;;; gnus-sum.el --- summary mode commands for Gnus  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1996-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1996-2020 Free Software Foundation, Inc.
 
 ;; Author: Lars Magne Ingebrigtsen <larsi@gnus.org>
 ;; Keywords: news
@@ -334,7 +334,7 @@ If threads are hidden, you have to run the command
   :group 'gnus-thread
   :type '(radio (sexp :format "Non-nil\n"
 		      :match (lambda (widget value)
-			       (not (or (consp value) (functionp value))))
+			       (and value (not (functionp value))))
 		      :value t)
 		(const nil)
 		(sexp :tag "Predicate specifier")))
@@ -1501,9 +1501,9 @@ the type of the variable (string, integer, character, etc).")
 
 ;; This is here rather than in gnus-art for compilation reasons.
 (defvar gnus-article-mode-line-format-alist
-  (nconc '((?w (gnus-article-wash-status) ?s)
-	   (?m (gnus-article-mime-part-status) ?s))
-	 gnus-summary-mode-line-format-alist))
+  (append '((?w (gnus-article-wash-status) ?s)
+	    (?m (gnus-article-mime-part-status) ?s))
+	  gnus-summary-mode-line-format-alist))
 
 (defvar gnus-last-search-regexp nil
   "Default regexp for article search command.")
@@ -1992,7 +1992,7 @@ increase the score of each group you read."
   "x" gnus-summary-limit-to-unread
   "s" gnus-summary-isearch-article
   "\t" gnus-summary-button-forward
-  [backtab] gnus-summary-widget-backward
+  [backtab] gnus-summary-button-backward
   "w" gnus-summary-browse-url
   "t" gnus-summary-toggle-header
   "g" gnus-summary-show-article
@@ -2161,7 +2161,7 @@ increase the score of each group you read."
   "g" gnus-summary-show-article
   "s" gnus-summary-isearch-article
   "\t" gnus-summary-button-forward
-  [backtab] gnus-summary-widget-backward
+  [backtab] gnus-summary-button-backward
   "w" gnus-summary-browse-url
   "P" gnus-summary-print-article
   "S" gnus-sticky-article
@@ -3124,7 +3124,7 @@ follow up an article, type `\\[gnus-summary-followup]'.  To mail a reply to the 
 of an article, type `\\[gnus-summary-reply]'.
 
 There are approx. one gazillion commands you can execute in this
-buffer; read the info pages for more information (`\\[gnus-info-find-node]').
+buffer; read the Info manual for more information (`\\[gnus-info-find-node]').
 
 The following commands are available:
 
@@ -5352,7 +5352,8 @@ or a straight list of headers."
 	      ;; We remember that we probably want to output a dummy
 	      ;; root.
 	      (setq gnus-tmp-dummy-line gnus-tmp-header)
-	      (setq gnus-tmp-prev-subject gnus-tmp-header))
+	      (setq gnus-tmp-prev-subject
+		    (gnus-simplify-subject-fully gnus-tmp-header)))
 	     (t
 	      ;; We do not make a root for the gathered
 	      ;; sub-threads at all.
@@ -6367,7 +6368,7 @@ The resulting hash table is returned, or nil if no Xrefs were found."
 	(gnus-undo-register
 	  `(progn
 	     (gnus-info-set-marks ',info ',(gnus-info-marks info) t)
-	     (gnus-info-set-read ',info ',(gnus-info-read info))
+	     (setf (gnus-info-read ',info) ',(gnus-info-read info))
 	     (gnus-get-unread-articles-in-group ',info (gnus-active ,group))
 	     (when ,set-marks
 	       (gnus-request-set-mark
@@ -6375,7 +6376,7 @@ The resulting hash table is returned, or nil if no Xrefs were found."
 	     (gnus-group-jump-to-group ,group)
 	     (gnus-group-update-group ,group t))))
       ;; Add the read articles to the range.
-      (gnus-info-set-read info range)
+      (setf (gnus-info-read info) range)
       (when set-marks
 	(gnus-request-set-mark group (list (list range 'add '(read)))))
       ;; Then we have to re-compute how many unread
@@ -7331,6 +7332,8 @@ If FORCE (the prefix), also save the .newsrc file(s)."
       (gnus-group-next-unread-group 1))
     (setq group-point (point))
     (gnus-article-stop-animations)
+    (unless leave-hidden
+      (gnus-configure-windows 'group 'force))
     (if temporary
 	nil				;Nothing to do.
       (set-buffer buf)
@@ -7350,8 +7353,6 @@ If FORCE (the prefix), also save the .newsrc file(s)."
       (if quit-config
 	  (gnus-handle-ephemeral-exit quit-config)
 	(goto-char group-point)
-	(unless leave-hidden
-	  (gnus-configure-windows 'group 'force))
 	;; If gnus-group-buffer is already displayed, make sure we also move
 	;; the cursor in the window that displays it.
 	(let ((win (get-buffer-window (current-buffer) 0)))
@@ -9127,7 +9128,7 @@ a non-numeric prefix arg will use nnir to search the entire
 server; without a prefix arg only the current group is
 searched.  If the variable `gnus-refer-thread-use-nnir' is
 non-nil the prefix arg has the reverse meaning.  If no
-backend-specific 'request-thread function is available fetch
+backend-specific `request-thread' function is available fetch
 LIMIT (the numerical prefix) old headers.  If LIMIT is
 non-numeric or nil fetch the number specified by the
 `gnus-refer-thread-limit' variable."
@@ -9494,15 +9495,15 @@ The 1st element is the button named by `gnus-collect-urls-primary-text'."
     (delete-dups urls)))
 
 (defun gnus-shorten-url (url max)
-  "Return an excerpt from URL."
+  "Return an excerpt from URL not exceeding MAX characters."
   (if (<= (length url) max)
       url
-    (let ((parsed (url-generic-parse-url url)))
-      (concat (url-host parsed)
-	      "..."
-	      (substring (url-filename parsed)
-			 (- (length (url-filename parsed))
-			    (max (- max (length (url-host parsed))) 0)))))))
+    (let* ((parsed (url-generic-parse-url url))
+           (host (url-host parsed))
+           (rest (concat (url-filename parsed)
+                         (when-let ((target (url-target parsed)))
+                           (concat "#" target)))))
+      (concat host (string-truncate-left rest (- max (length host)))))))
 
 (defun gnus-summary-browse-url (&optional external)
   "Scan the current article body for links, and offer to browse them.
@@ -10283,8 +10284,8 @@ ACTION can be either `move' (the default), `crosspost' or `copy'."
 	    (when (and (not (memq article gnus-newsgroup-unreads))
 		       (cdr art-group))
 	      (push 'read to-marks)
-	      (gnus-info-set-read
-	       info (gnus-add-to-range (gnus-info-read info)
+	      (setf (gnus-info-read info)
+		    (gnus-add-to-range (gnus-info-read info)
 				       (list (cdr art-group)))))
 
 	    ;; See whether the article is to be put in the cache.
@@ -10419,17 +10420,13 @@ ACTION can be either `move' (the default), `crosspost' or `copy'."
 
 (defun gnus-summary-copy-article (&optional n to-newsgroup select-method)
   "Copy the current article to some other group.
-If TO-NEWSGROUP is string, do not prompt for a newsgroup to copy to.
-When called interactively, if TO-NEWSGROUP is nil, use the value of
-the variable `gnus-move-split-methods' for finding a default target
-newsgroup.
-If SELECT-METHOD is non-nil, do not move to a specific newsgroup, but
-re-spool using this method."
+Arguments have the same meanings as in `gnus-summary-move-article'."
   (interactive "P")
   (gnus-summary-move-article n to-newsgroup select-method 'copy))
 
 (defun gnus-summary-crosspost-article (&optional n)
-  "Crosspost the current article to some other group."
+  "Crosspost the current article to some other group.
+Arguments have the same meanings as in `gnus-summary-move-article'."
   (interactive "P")
   (gnus-summary-move-article n nil nil 'crosspost))
 
@@ -12314,7 +12311,7 @@ no matter what the properties `:decode' and `:headers' are."
 					  (buffer-string))))))
       (put 'gnus-summary-save-in-pipe :headers headers))
     (unless (zerop (length result))
-      (if (with-current-buffer (get-buffer-create result-buffer)
+      (if (with-current-buffer (gnus-get-buffer-create result-buffer)
 	    (erase-buffer)
 	    (insert result)
 	    (prog1
@@ -12502,7 +12499,7 @@ save those articles instead."
 		       (gnus-activate-group to-newsgroup nil nil to-method)
 		       (gnus-subscribe-group to-newsgroup))
 		  (error "Couldn't create group %s" to-newsgroup)))
-	  (error "No such group: %s" to-newsgroup))
+	  (user-error "No such group: %s" to-newsgroup))
       to-newsgroup)))
 
 (defvar gnus-summary-save-parts-counter)
@@ -12512,10 +12509,15 @@ save those articles instead."
   "Save parts matching TYPE to DIR.
 If REVERSE, save parts that do not match TYPE."
   (interactive
-   (list (read-string "Save parts of type: "
-		      (or (car gnus-summary-save-parts-type-history)
-			  gnus-summary-save-parts-default-mime)
-		      'gnus-summary-save-parts-type-history)
+   (list (completing-read "Save parts of type: "
+			  (progn
+			    (gnus-summary-select-article nil t)
+			    (gnus-eval-in-buffer-window gnus-article-buffer
+			      (delete-dups
+			       (mapcar (lambda (h)
+					 (mm-handle-media-type (cdr h)))
+				       gnus-article-mime-handle-alist))))
+			  nil nil nil 'gnus-summary-save-parts-type-history)
 	 (setq gnus-summary-save-parts-last-directory
 	       (read-directory-name "Save to directory: "
                                     gnus-summary-save-parts-last-directory
@@ -12895,14 +12897,14 @@ UNREAD is a sorted list."
 	    (gnus-undo-register
 	      `(progn
 		 (gnus-info-set-marks ',info ',(gnus-info-marks info) t)
-		 (gnus-info-set-read ',info ',(gnus-info-read info))
+		 (setf (gnus-info-read ',info) ',(gnus-info-read info))
 		 (gnus-group-jump-to-group ,group)
 		 (gnus-get-unread-articles-in-group ',info
 						    (gnus-active ,group))
 		 (gnus-group-update-group ,group t)
 		 ,setmarkundo))))
 	;; Enter this list into the group info.
-	(gnus-info-set-read info read)
+	(setf (gnus-info-read info) read)
 	;; Set the number of unread articles in gnus-newsrc-hashtb.
 	(gnus-get-unread-articles-in-group info (gnus-active group))
 	t))))

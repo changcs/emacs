@@ -1,6 +1,6 @@
 ;;; flymake-proc.el --- Flymake backend for external tools  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2003-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2003-2020 Free Software Foundation, Inc.
 
 ;; Author: Pavel Kobyakov <pk_at_work@yahoo.com>
 ;; Maintainer: João Távora <joaotavora@gmail.com>
@@ -444,7 +444,7 @@ instead of reading master file from disk."
 
 (defun flymake-proc--check-include (source-file-name inc-name include-dirs)
   "Check if SOURCE-FILE-NAME can be found in include path.
-Return t if it can be found via include path using INC-NAME."
+Return non-nil if it can be found via include path using INC-NAME."
   (if (file-name-absolute-p inc-name)
       (flymake-proc--same-files source-file-name inc-name)
     (while (and include-dirs
@@ -458,7 +458,7 @@ Return t if it can be found via include path using INC-NAME."
 
 (defun flymake-proc--find-buffer-for-file (file-name)
   "Check if there exists a buffer visiting FILE-NAME.
-Return t if so, nil if not."
+Return the buffer if it exists, nil if not."
   (let ((buffer-name (get-file-buffer file-name)))
     (if buffer-name
 	(get-buffer buffer-name))))
@@ -851,7 +851,7 @@ can also be executed interactively independently of
   (interactive (list "Interrupted by user"))
   (dolist (buf (buffer-list))
     (with-current-buffer buf
-      (let (p flymake-proc--current-process)
+      (let ((p flymake-proc--current-process))
         (when (process-live-p p)
           (kill-process p)
           (process-put p 'flymake-proc--interrupted reason)

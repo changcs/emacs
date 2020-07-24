@@ -1,6 +1,6 @@
 ;;; em-ls.el --- implementation of ls in Lisp  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1999-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1999-2020 Free Software Foundation, Inc.
 
 ;; Author: John Wiegley <johnw@gnu.org>
 
@@ -239,7 +239,6 @@ scope during the evaluation of TEST-SEXP."
 (defvar show-recursive)
 (defvar show-size)
 (defvar sort-method)
-(defvar ange-cache)
 (defvar dired-flag)
 
 ;;; Functions:
@@ -406,7 +405,7 @@ Sort entries alphabetically across.")
      (setq listing-style 'by-columns))
    (unless args
      (setq args (list ".")))
-   (let ((eshell-ls-exclude-regexp eshell-ls-exclude-regexp) ange-cache)
+   (let ((eshell-ls-exclude-regexp eshell-ls-exclude-regexp))
      (when ignore-pattern
        (unless (eshell-using-module 'eshell-glob)
 	 (error (concat "-I option requires that `eshell-glob'"

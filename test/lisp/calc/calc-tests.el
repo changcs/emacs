@@ -1,6 +1,6 @@
 ;;; calc-tests.el --- tests for calc                 -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2014-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2014-2020 Free Software Foundation, Inc.
 
 ;; Author: Leo Liu <sdl.web@gmail.com>
 ;; Keywords: maint
@@ -29,6 +29,7 @@
 (require 'calc)
 (require 'calc-ext)
 (require 'calc-units)
+(require 'calc-forms)
 
 ;; XXX The order in which calc libraries (in particular calc-units)
 ;; are loaded influences whether a calc integer in an expression
@@ -271,7 +272,7 @@ An existing calc stack is reused, otherwise a new one is created."
                (+ (- (* 2 (var y var-y)) (var x var-x)) (* 3 (var z var-z)))
                -3))
             '(vec (var x var-x) (var y var-y) (var z var-z)))
-           ;; The `float' forms in the result are just artefacts of Calc's
+           ;; The `float' forms in the result are just artifacts of Calc's
            ;; current solver; it should be fixed to produce exact (integral)
            ;; results in this case.
            '(vec (calcFunc-eq (var x var-x) (float 1 0))
@@ -317,6 +318,84 @@ An existing calc stack is reused, otherwise a new one is created."
             '(vec (var x var-x) (var y var-y)))
            '(vec (calcFunc-eq (var x var-x) 3)
                  (calcFunc-eq (var y var-y) 0)))))
+
+(ert-deftest calc-poly-div ()
+  "Test polynomial division, and that the remainder is recorded in the trail."
+  (with-current-buffer (calc-trail-buffer)
+    (let ((inhibit-read-only t))
+      (erase-buffer)
+
+      (calc-eval "2x**3+1" 'push)
+      (calc-eval "x**2+2x" 'push)
+      (calc-poly-div nil)
+      (let ((tos (calc-top-n 1))
+            (trail (buffer-string)))
+        (calc-pop 0)
+        (should (equal tos '(- (* 2 (var x var-x)) 4)))
+        (should (equal trail "pdiv 2 * x - 4\nprem 8 * x + 1\n"))))))
+
+(ert-deftest calc-Math-integerp ()
+  (should (Math-integerp -7))
+  (should (Math-integerp (ash 1 65)))
+  (should-not (Math-integerp '(float 1 0)))
+  (should-not (Math-integerp nil))
+
+  (should (Math-num-integerp -7))
+  (should (Math-num-integerp (ash 1 65)))
+  (should (Math-num-integerp '(float 1 0)))
+  (should-not (Math-num-integerp nil)))
+
+(ert-deftest calc-matrix-determinant ()
+  (should (equal (calcFunc-det '(vec (vec 3)))
+                 3))
+  (should (equal (calcFunc-det '(vec (vec 2 3) (vec 6 7)))
+                 -4))
+  (should (equal (calcFunc-det '(vec (vec 1 2 3) (vec 4 5 7) (vec 9 6 2)))
+                 15))
+  (should (equal (calcFunc-det '(vec (vec 0 5 7 3)
+                                     (vec 0 0 2 0)
+                                     (vec 1 2 3 4)
+                                     (vec 0 0 0 3)))
+                 30))
+  (should (equal (calcFunc-det '(vec (vec (var a var-a))))
+                 '(var a var-a)))
+  (should (equal (calcFunc-det '(vec (vec 2 (var a var-a))
+                                     (vec 7 (var a var-a))))
+                 '(* -5 (var a var-a))))
+  (should (equal (calcFunc-det '(vec (vec 1 0 0 0)
+                                     (vec 0 1 0 0)
+                                     (vec 0 0 0 1)
+                                     (vec 0 0 (var a var-a) 0)))
+                 '(neg (var a var-a)))))
+
+(ert-deftest calc-gcd ()
+  (should (equal (calcFunc-gcd 3 4) 1))
+  (should (equal (calcFunc-gcd 12 15) 3))
+  (should (equal (calcFunc-gcd -12 15) 3))
+  (should (equal (calcFunc-gcd 12 -15) 3))
+  (should (equal (calcFunc-gcd -12 -15) 3))
+  (should (equal (calcFunc-gcd 0 5) 5))
+  (should (equal (calcFunc-gcd 5 0) 5))
+  (should (equal (calcFunc-gcd 0 -5) 5))
+  (should (equal (calcFunc-gcd -5 0) 5))
+  (should (equal (calcFunc-gcd 0 0) 0))
+  (should (equal (calcFunc-gcd 0 '(var x var-x))
+                 '(calcFunc-abs (var x var-x))))
+  (should (equal (calcFunc-gcd '(var x var-x) 0)
+                 '(calcFunc-abs (var x var-x)))))
+
+(ert-deftest calc-sum-gcd ()
+  ;; sum(gcd(0,n),n,-1,-1)
+  (should (equal (math-simplify '(calcFunc-sum (calcFunc-gcd 0 (var n var-n))
+                                               (var n var-n) -1 -1))
+                 1))
+  ;; sum(sum(gcd(n,k),k,-1,1),n,-1,1)
+  (should (equal (math-simplify
+                  '(calcFunc-sum
+                    (calcFunc-sum (calcFunc-gcd (var n var-n) (var k var-k))
+                                  (var k var-k) -1 1)
+                    (var n var-n) -1 1))
+                 8)))
 
 (provide 'calc-tests)
 ;;; calc-tests.el ends here

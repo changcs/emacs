@@ -1,5 +1,5 @@
 /* xftfont.c -- XFT font driver.
-   Copyright (C) 2006-2019 Free Software Foundation, Inc.
+   Copyright (C) 2006-2020 Free Software Foundation, Inc.
    Copyright (C) 2006, 2007, 2008, 2009, 2010, 2011
      National Institute of Advanced Industrial Science and Technology (AIST)
      Registration Number H13PRO009
@@ -211,6 +211,9 @@ xftfont_open (struct frame *f, Lisp_Object entity, int pixel_size)
 #ifdef FC_DUAL
       && spacing != FC_DUAL
 #endif	/* FC_DUAL */
+#ifdef FC_CHARCELL
+      && spacing != FC_CHARCELL
+#endif	/* FC_CHARCELL */
       )
     {
       font->min_width = font->max_width = font->average_width
@@ -699,7 +702,7 @@ syms_of_xftfont_for_pdumper (void)
   xfthbfont_driver.type = Qxfthb;
   xfthbfont_driver.list = xfthbfont_list;
   xfthbfont_driver.match = xfthbfont_match;
-  xfthbfont_driver.otf_capability = hbfont_otf_capability,
+  xfthbfont_driver.otf_capability = hbfont_otf_capability;
   xfthbfont_driver.shape = hbfont_shape;
   xfthbfont_driver.combining_capability = hbfont_combining_capability;
   xfthbfont_driver.begin_hb_font = xfthbfont_begin_hb_font;

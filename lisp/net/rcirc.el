@@ -1,6 +1,6 @@
 ;;; rcirc.el --- default, simple IRC client          -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2005-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2005-2020 Free Software Foundation, Inc.
 
 ;; Author: Ryan Yeske <rcyeske@gmail.com>
 ;; Maintainers: Ryan Yeske <rcyeske@gmail.com>,
@@ -254,7 +254,7 @@ Examples:
   (\"bitlbee\" bitlbee \"robert\" \"sekrit\")
   (\"dal.net\" nickserv \"bob\" \"sekrit\" \"NickServ@services.dal.net\")
   (\"quakenet.org\" quakenet \"bobby\" \"sekrit\"))"
-  :type '(alist :key-type (string :tag "Server")
+  :type '(alist :key-type (regexp :tag "Server")
 		:value-type (choice (list :tag "NickServ"
 					  (const nickserv)
 					  (string :tag "Nick")
@@ -359,9 +359,9 @@ If VAL is a coding system, it is used for both decoding and encoding
 messages.
 If VAL is a cons of coding systems, the car part is used for decoding,
 and the cdr part is used for encoding."
-  :type '(alist :key-type (choice (string :tag "Channel Regexp")
-					  (cons (string :tag "Channel Regexp")
-						(string :tag "Server Regexp")))
+  :type '(alist :key-type (choice (regexp :tag "Channel Regexp")
+					  (cons (regexp :tag "Channel Regexp")
+						(regexp :tag "Server Regexp")))
 		:value-type (choice coding-system
 				    (cons (coding-system :tag "Decode")
                                           (coding-system :tag "Encode")))))
@@ -827,6 +827,7 @@ Function is called with PROCESS, COMMAND, SENDER, ARGS and LINE.")
     (process-send-string process string)))
 
 (defun rcirc-send-privmsg (process target string)
+  (cl-check-type target string)
   (rcirc-send-string process (format "PRIVMSG %s :%s" target string)))
 
 (defun rcirc-send-ctcp (process target request &optional args)
@@ -2332,8 +2333,8 @@ With a prefix arg, prompt for new topic."
   (let ((timestamp (format-time-string "%s")))
     (rcirc-send-ctcp process target "PING" timestamp)))
 
-(defun rcirc-cmd-me (args &optional process target)
-  (rcirc-send-ctcp process target "ACTION" args))
+(defun rcirc-cmd-me (args process target)
+  (when target (rcirc-send-ctcp process target "ACTION" args)))
 
 (defun rcirc-add-or-remove (set &rest elements)
   (dolist (elt elements)
@@ -2420,7 +2421,7 @@ keywords when no KEYWORD is given."
 	 (concat
 	  "\\(?:"
 	  ;; Match paired parentheses, e.g. in Wikipedia URLs:
-	  "[" chars punct "]+" "(" "[" chars punct "]+" "[" chars "]*)" "[" chars "]"
+	  "[" chars punct "]+" "(" "[" chars punct "]+" ")" "[" chars "]"
 	  "\\|"
 	  "[" chars punct     "]+" "[" chars "]"
 	  "\\)"))
@@ -2625,12 +2626,16 @@ the only argument."
                (and ;; nickserv
                 (string= sender "NickServ")
                 (string= target rcirc-nick)
-                (member message
-                        (list
-                         (format "You are now identified for \C-b%s\C-b." rcirc-nick)
-			 (format "You are successfully identified as \C-b%s\C-b." rcirc-nick)
-                         "Password accepted - you are now recognized."
-                         )))
+                (cl-member
+                 message
+                 (list
+                  (format "You are now identified for \C-b%s\C-b." rcirc-nick)
+                  (format "You are successfully identified as \C-b%s\C-b."
+                          rcirc-nick)
+                  "Password accepted - you are now recognized.")
+                 ;; The nick may have a different case, so match
+                 ;; case-insensitively (Bug#39345).
+                 :test #'cl-equalp))
                (and ;; quakenet
                 (string= sender "Q")
                 (string= target rcirc-nick)
@@ -3063,7 +3068,7 @@ Passwords are stored in `rcirc-authinfo' (which see)."
 ;; When using M-x flyspell-mode, only check words after the prompt
 (put 'rcirc-mode 'flyspell-mode-predicate 'rcirc-looking-at-input)
 (defun rcirc-looking-at-input ()
-  "Returns true if point is past the input marker."
+  "Return true if point is past the input marker."
   (>= (point) rcirc-prompt-end-marker))
 
 

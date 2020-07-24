@@ -1,6 +1,6 @@
 ;;; calc-comb.el --- combinatoric functions for Calc
 
-;; Copyright (C) 1990-1993, 2001-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1990-1993, 2001-2020 Free Software Foundation, Inc.
 
 ;; Author: David Gillespie <daveg@synaptics.com>
 
@@ -241,8 +241,8 @@
 	 (calcFunc-gcd (math-neg a) b))
 	((Math-looks-negp b)
 	 (calcFunc-gcd a (math-neg b)))
-	((Math-zerop a) b)
-	((Math-zerop b) a)
+	((Math-zerop a) (math-abs b))
+	((Math-zerop b) (math-abs a))
 	((and (Math-ratp a)
 	      (Math-ratp b))
 	 (math-make-frac (math-gcd (if (eq (car-safe a) 'frac) (nth 1 a) a)

@@ -1,10 +1,10 @@
 ;;; fortran.el --- Fortran mode for GNU Emacs
 
-;; Copyright (C) 1986, 1993-1995, 1997-2019 Free Software Foundation,
+;; Copyright (C) 1986, 1993-1995, 1997-2020 Free Software Foundation,
 ;; Inc.
 
 ;; Author: Michael D. Prange <prange@erl.mit.edu>
-;; Maintainer: Glenn Morris <rgm@gnu.org>
+;; Maintainer: emacs-devel@gnu.org
 ;; Keywords: fortran, languages
 
 ;; This file is part of GNU Emacs.
@@ -429,7 +429,7 @@ The only difference is, it returns t in a case when the default returns nil."
    fortran-font-lock-keywords-1
    ;; All type specifiers plus their declared items.
    (list
-    (list (concat fortran-type-types "[ \t(/]*\\(*\\)?")
+    (list (concat fortran-type-types "[ \t(/]*\\(\\*\\)?")
           ;; Type specifier.
           '(1 font-lock-type-face)
           ;; Declaration item (or just /.../ block name).

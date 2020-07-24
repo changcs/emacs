@@ -1,6 +1,6 @@
 ;;; nnmail.el --- mail support functions for the Gnus mail backends
 
-;; Copyright (C) 1995-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1995-2020 Free Software Foundation, Inc.
 
 ;; Author: Lars Magne Ingebrigtsen <larsi@gnus.org>
 ;; Keywords: news, mail
@@ -646,7 +646,7 @@ These will be logged to the \"*nnmail split*\" buffer."
    (or file "")))
 
 (defun nnmail-get-active ()
-  "Returns an assoc of group names and active ranges.
+  "Return an assoc of group names and active ranges.
 nn*-request-list should have been called before calling this function."
   ;; Go through all groups from the active list.
   (with-current-buffer nntp-server-buffer
@@ -1047,7 +1047,7 @@ will be copied over from that buffer."
 				  (list (list group ""))
 				nnmail-split-methods)))
     ;; Insert the incoming file.
-    (with-current-buffer (get-buffer-create nnmail-article-buffer)
+    (with-current-buffer (gnus-get-buffer-create nnmail-article-buffer)
       (erase-buffer)
       (if (bufferp incoming)
 	  (insert-buffer-substring incoming)
@@ -1574,7 +1574,7 @@ See the documentation for the variable `nnmail-split-fancy' for details."
       ()				; The buffer is open.
     (with-current-buffer
        (setq nnmail-cache-buffer
-	     (get-buffer-create " *nnmail message-id cache*"))
+	     (gnus-get-buffer-create " *nnmail message-id cache*"))
       (gnus-add-buffer)
       (when (file-exists-p nnmail-message-id-cache-file)
 	(nnheader-insert-file-contents nnmail-message-id-cache-file))
@@ -1909,7 +1909,7 @@ If TIME is nil, then return the cutoff time for oldness instead."
 	    (gnus-group-mark-article-read target (cdr group-art))))))))
 
 (defun nnmail-fancy-expiry-target (group)
-  "Returns a target expiry group determined by `nnmail-fancy-expiry-targets'."
+  "Return a target expiry group determined by `nnmail-fancy-expiry-targets'."
   (let* (header
 	 (case-fold-search nil)
 	 (from (or (message-fetch-field "from") ""))
@@ -1953,12 +1953,14 @@ If TIME is nil, then return the cutoff time for oldness instead."
       (unless (re-search-forward "^Message-ID[ \t]*:" nil t)
 	(insert "Message-ID: " (nnmail-message-id) "\n")))))
 
-(defun nnmail-write-region (start end filename &optional append visit lockname)
+(defun nnmail-write-region (start end filename
+				  &optional append visit lockname mustbenew)
   "Do a `write-region', and then set the file modes."
   (let ((coding-system-for-write nnmail-file-coding-system)
 	(file-name-coding-system nnmail-pathname-coding-system))
-    (write-region start end filename append visit lockname)
-    (set-file-modes filename nnmail-default-file-modes)))
+    (write-region start end filename append visit lockname mustbenew)
+    (set-file-modes filename nnmail-default-file-modes
+		    (when (eq mustbenew 'excl) 'nofollow))))
 
 ;;;
 ;;; Status functions
@@ -2065,7 +2067,7 @@ Doesn't change point."
   (when nnmail-split-tracing
     (push split nnmail-split-trace))
   (when nnmail-debug-splitting
-    (with-current-buffer (get-buffer-create "*nnmail split*")
+    (with-current-buffer (gnus-get-buffer-create "*nnmail split*")
       (goto-char (point-max))
       (insert (format-time-string "%FT%T")
 	      " "

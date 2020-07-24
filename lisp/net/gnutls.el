@@ -1,6 +1,6 @@
 ;;; gnutls.el --- Support SSL/TLS connections through GnuTLS
 
-;; Copyright (C) 2010-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2010-2020 Free Software Foundation, Inc.
 
 ;; Author: Ted Zlatanov <tzz@lifelogs.com>
 ;; Keywords: comm, tls, ssl, encryption
@@ -105,12 +105,14 @@ Security'."
 
 (defcustom gnutls-trustfiles
   '(
-    "/etc/ssl/certs/ca-certificates.crt"     ; Debian, Ubuntu, Gentoo and Arch Linux
+    "/etc/ssl/certs/ca-certificates.crt"     ; Debian, Ubuntu, Gentoo,
+                                             ; Arch, Guix, Parabola
     "/etc/pki/tls/certs/ca-bundle.crt"       ; Fedora and RHEL
     "/etc/ssl/ca-bundle.pem"                 ; Suse
     "/usr/ssl/certs/ca-bundle.crt"           ; Cygwin
     "/usr/local/share/certs/ca-root-nss.crt" ; FreeBSD
-    "/etc/ssl/cert.pem"                      ; macOS
+    "/etc/ssl/cert.pem"                      ; macOS, Dragora, Parabola
+    "/etc/certs/ca-certificates.crt"         ; OpenIndiana
     )
   "List of CA bundle location filenames or a function returning said list.
 If a file path contains glob wildcards, they will be expanded.
@@ -137,7 +139,8 @@ network security is handled at a higher level via
 node `(emacs) Network Security'."
   :type '(choice (const :tag "Use default value" nil)
                  (integer :tag "Number of bits" 2048))
-  :group 'gnutls)
+  :group 'gnutls
+  :version "27.1")
 
 (defcustom gnutls-crlfiles
   '(
@@ -167,8 +170,9 @@ Third arg HOST is the name of the host to connect to, or its IP address.
 Fourth arg SERVICE is the name of the service desired, or an integer
 specifying a port number to connect to.
 Fifth arg PARAMETERS is an optional list of keyword/value pairs.
-Only :client-certificate and :nowait keywords are recognized, and
-have the same meaning as for `open-network-stream'.
+Only :client-certificate, :nowait, and :coding keywords are
+recognized, and have the same meaning as for
+`open-network-stream'.
 For historical reasons PARAMETERS can also be a symbol, which is
 interpreted the same as passing a list containing :nowait and the
 value of that symbol.
@@ -206,7 +210,8 @@ trust and key files, and priority string."
                               (gnutls-boot-parameters
                                :type 'gnutls-x509pki
                                :keylist keylist
-                               :hostname (puny-encode-domain host)))))))
+                               :hostname (puny-encode-domain host))))
+                   :coding (plist-get parameters :coding))))
     (if nowait
         process
       (gnutls-negotiate :process process

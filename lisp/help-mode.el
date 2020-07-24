@@ -1,6 +1,6 @@
-;;; help-mode.el --- `help-mode' used by *Help* buffers
+;;; help-mode.el --- `help-mode' used by *Help* buffers  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 1985-1986, 1993-1994, 1998-2019 Free Software
+;; Copyright (C) 1985-1986, 1993-1994, 1998-2020 Free Software
 ;; Foundation, Inc.
 
 ;; Maintainer: emacs-devel@gnu.org
@@ -47,10 +47,10 @@
     (define-key map "\C-c\C-c" 'help-follow-symbol)
     (define-key map "\r" 'help-follow)
     map)
-  "Keymap for help mode.")
+  "Keymap for Help mode.")
 
 (easy-menu-define help-mode-menu help-mode-map
-  "Menu for Help Mode."
+  "Menu for Help mode."
   '("Help-Mode"
     ["Show Help for Symbol" help-follow-symbol
      :help "Show the docs for the symbol at point"]
@@ -190,32 +190,34 @@ The format is (FUNCTION ARGS...).")
 		   (customize-face v))
   'help-echo (purecopy "mouse-2, RET: customize face"))
 
+(defun help-function-def--button-function (fun &optional file type)
+  (or file
+      (setq file (find-lisp-object-file-name fun type)))
+  (if (not file)
+      (message "Unable to find defining file")
+    (require 'find-func)
+    (when (eq file 'C-source)
+      (setq file
+            (help-C-file-name (indirect-function fun) 'fun)))
+    ;; Don't use find-function-noselect because it follows
+    ;; aliases (which fails for built-in functions).
+    (let* ((location
+            (find-function-search-for-symbol fun type file))
+           (position (cdr location)))
+      (pop-to-buffer (car location))
+      (run-hooks 'find-function-after-hook)
+      (if position
+          (progn
+            ;; Widen the buffer if necessary to go to this position.
+            (when (or (< position (point-min))
+                      (> position (point-max)))
+              (widen))
+            (goto-char position))
+        (message "Unable to find location in file")))))
+
 (define-button-type 'help-function-def
   :supertype 'help-xref
-  'help-function (lambda (fun &optional file type)
-                   (or file
-                       (setq file (find-lisp-object-file-name fun type)))
-                   (if (not file)
-                       (message "Unable to find defining file")
-                     (require 'find-func)
-                     (when (eq file 'C-source)
-                       (setq file
-                             (help-C-file-name (indirect-function fun) 'fun)))
-                     ;; Don't use find-function-noselect because it follows
-                     ;; aliases (which fails for built-in functions).
-                     (let* ((location
-                             (find-function-search-for-symbol fun type file))
-                            (position (cdr location)))
-                       (pop-to-buffer (car location))
-                       (run-hooks 'find-function-after-hook)
-                       (if position
-                           (progn
-                             ;; Widen the buffer if necessary to go to this position.
-                             (when (or (< position (point-min))
-                                       (> position (point-max)))
-                               (widen))
-                             (goto-char position))
-                         (message "Unable to find location in file")))))
+  'help-function #'help-function-def--button-function
   'help-echo (purecopy "mouse-2, RET: find function's definition"))
 
 (define-button-type 'help-function-cmacro ; FIXME: Obsolete since 24.4.
@@ -325,13 +327,13 @@ Commands:
 
 ;;;###autoload
 (defun help-mode-setup ()
-  "Enter Help Mode in the current buffer."
+  "Enter Help mode in the current buffer."
   (help-mode)
   (setq buffer-read-only nil))
 
 ;;;###autoload
 (defun help-mode-finish ()
-  "Finalize Help Mode setup in current buffer."
+  "Finalize Help mode setup in current buffer."
   (when (derived-mode-p 'help-mode)
     (setq buffer-read-only t)
     (help-make-xrefs (current-buffer))))
@@ -717,7 +719,8 @@ a proper [back] button."
   ;; There is a reference at point.  Follow it.
   (let ((help-xref-following t))
     (apply function (if (eq function 'info)
-			(append args (list (generate-new-buffer-name "*info*"))) args))))
+                        (append args (list (generate-new-buffer-name "*info*")))
+                      args))))
 
 ;; The doc string is meant to explain what buttons do.
 (defun help-follow-mouse ()
@@ -747,10 +750,11 @@ Show all docs for that symbol as either a variable, function or face."
 	    (buffer-substring (point)
 			      (progn (skip-syntax-forward "w_")
 				     (point)))))))
-    (when (or (boundp sym)
-	      (get sym 'variable-documentation)
-	      (fboundp sym) (facep sym))
-      (help-do-xref pos #'describe-symbol (list sym)))))
+    (if (or (boundp sym)
+	    (get sym 'variable-documentation)
+	    (fboundp sym) (facep sym))
+        (help-do-xref pos #'describe-symbol (list sym))
+      (user-error "No symbol here"))))
 
 (defun help-mode-revert-buffer (_ignore-auto noconfirm)
   (when (or noconfirm (yes-or-no-p "Revert help buffer? "))

@@ -1,6 +1,6 @@
 ;;; filenotify-tests.el --- Tests of file notifications  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2013-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2013-2020 Free Software Foundation, Inc.
 
 ;; Author: Michael Albinus <michael.albinus@gmx.de>
 
@@ -200,8 +200,7 @@ Return nil when any other file notification watch is still active."
 
 (setq file-notify-debug nil
       password-cache-expiry nil
-      tramp-verbose 0
-      tramp-message-show-message nil)
+      tramp-verbose 0)
 
 ;; This should happen on hydra only.
 (when (getenv "EMACS_HYDRA_CI")
@@ -220,7 +219,8 @@ remote case we return always t."
   (or file-notify--library
       (file-remote-p temporary-file-directory)))
 
-(defvar file-notify--test-remote-enabled-checked nil
+(defvar file-notify--test-remote-enabled-checked
+  (if (getenv "EMACS_HYDRA_CI") '(t . nil))
   "Cached result of `file-notify--test-remote-enabled'.
 If the function did run, the value is a cons cell, the `cdr'
 being the result.")
@@ -772,9 +772,9 @@ delivered."
 	  (copy-file file-notify--test-tmpfile file-notify--test-tmpfile1)
 	  ;; The next two events shall not be visible.
 	  (file-notify--test-read-event)
-	  (set-file-modes file-notify--test-tmpfile 000)
+	  (set-file-modes file-notify--test-tmpfile 000 'nofollow)
 	  (file-notify--test-read-event)
-	  (set-file-times file-notify--test-tmpfile '(0 0))
+	  (set-file-times file-notify--test-tmpfile '(0 0) 'nofollow)
 	  (file-notify--test-read-event)
           (delete-directory file-notify--test-tmpdir 'recursive))
         (file-notify-rm-watch file-notify--test-desc)
@@ -865,9 +865,9 @@ delivered."
 	  (write-region
 	   "any text" nil file-notify--test-tmpfile nil 'no-message)
 	  (file-notify--test-read-event)
-	  (set-file-modes file-notify--test-tmpfile 000)
+	  (set-file-modes file-notify--test-tmpfile 000 'nofollow)
 	  (file-notify--test-read-event)
-	  (set-file-times file-notify--test-tmpfile '(0 0))
+	  (set-file-times file-notify--test-tmpfile '(0 0) 'nofollow)
 	  (file-notify--test-read-event)
 	  (delete-file file-notify--test-tmpfile))
         (file-notify-rm-watch file-notify--test-desc)
@@ -929,17 +929,18 @@ delivered."
 	    ;; Modify file.  We wait for a second, in order to have
             ;; another timestamp.
             (ert-with-message-capture captured-messages
-              (sleep-for 1)
-              (write-region
-               "another text" nil file-notify--test-tmpfile nil 'no-message)
+              (let ((inhibit-message t))
+                (sleep-for 1)
+                (write-region
+                 "another text" nil file-notify--test-tmpfile nil 'no-message)
 
-              ;; Check, that the buffer has been reverted.
-              (file-notify--test-wait-for-events
-               timeout
-               (string-match
-                (format-message "Reverting buffer `%s'." (buffer-name buf))
-                captured-messages))
-              (should (string-match "another text" (buffer-string))))
+                ;; Check, that the buffer has been reverted.
+                (file-notify--test-wait-for-events
+                 timeout
+                 (string-match
+                  (format-message "Reverting buffer `%s'." (buffer-name buf))
+                  captured-messages))
+                (should (string-match "another text" (buffer-string)))))
 
             ;; Stop file notification.  Autorevert shall still work via polling.
 	    (file-notify-rm-watch auto-revert-notify-watch-descriptor)
@@ -953,17 +954,18 @@ delivered."
 	    ;; have another timestamp.  One second seems to be too
             ;; short.  And Cygwin sporadically requires more than two.
             (ert-with-message-capture captured-messages
-              (sleep-for (if (eq system-type 'cygwin) 3 2))
-              (write-region
-               "foo bla" nil file-notify--test-tmpfile nil 'no-message)
+              (let ((inhibit-message t))
+                (sleep-for (if (eq system-type 'cygwin) 3 2))
+                (write-region
+                 "foo bla" nil file-notify--test-tmpfile nil 'no-message)
 
-              ;; Check, that the buffer has been reverted.
-              (file-notify--test-wait-for-events
-               timeout
-               (string-match
-                (format-message "Reverting buffer `%s'." (buffer-name buf))
-                captured-messages))
-              (should (string-match "foo bla" (buffer-string))))
+                ;; Check, that the buffer has been reverted.
+                (file-notify--test-wait-for-events
+                 timeout
+                 (string-match
+                  (format-message "Reverting buffer `%s'." (buffer-name buf))
+                  captured-messages))
+                (should (string-match "foo bla" (buffer-string)))))
 
             ;; Stop autorevert, in order to cleanup descriptor.
             (auto-revert-mode -1))

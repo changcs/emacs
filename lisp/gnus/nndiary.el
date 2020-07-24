@@ -1,6 +1,6 @@
 ;;; nndiary.el --- A diary back end for Gnus
 
-;; Copyright (C) 1999-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1999-2020 Free Software Foundation, Inc.
 
 ;; Author:        Didier Verna <didier@didierverna.net>
 ;; Created:       Fri Jul 16 18:55:42 1999
@@ -124,13 +124,13 @@ Hortense, would you be so kind as to remind me of my appointments 3 days
 before the date, thank you very much.  Anda, hmmm... by the way, are you
 doing anything special tonight ?\".
 
-The units of measure are 'minute 'hour 'day 'week 'month and 'year (no,
-not 'century, sorry).
+The units of measure are `minute' `hour' `day' `week' `month' and `year' (no,
+not `century', sorry).
 
 NOTE: the units of measure actually express dates, not durations: if you
-use 'week, messages will pop up on Sundays at 00:00 (or Mondays if
+use `week', messages will pop up on Sundays at 00:00 (or Mondays if
 `nndiary-week-starts-on-monday' is non-nil) and *not* 7 days before the
-appointment, if you use 'month, messages will pop up on the first day of
+appointment, if you use `month', messages will pop up on the first day of
 each months, at 00:00 and so on.
 
 If you really want to specify a duration (like 24 hours exactly), you can
@@ -597,7 +597,7 @@ all.  This may very well take some time.")
 
 (deffoo nndiary-request-move-article
     (article group server accept-form &optional last move-is-internal)
-  (let ((buf (get-buffer-create " *nndiary move*"))
+  (let ((buf (gnus-get-buffer-create " *nndiary move*"))
 	result)
     (nndiary-possibly-change-directory group server)
     (nndiary-update-file-alist)
@@ -793,10 +793,10 @@ all.  This may very well take some time.")
 	  ;;(message "unread: %s" unread)
 	  (sit-for 1)
 	  (kill-buffer buf))
-	(setq unread (sort unread '<))
+	(setq unread (sort unread #'<))
 	(and unread
-	     (gnus-info-set-read info (gnus-update-read-articles
-				       (gnus-info-group info) unread t)))
+	     (setf (gnus-info-read info)
+		   (gnus-update-read-articles (gnus-info-group info) unread t)))
 	))
     (run-hook-with-args 'nndiary-request-update-info-functions
 			(gnus-info-group info))
@@ -831,7 +831,7 @@ all.  This may very well take some time.")
 
 ;; Find an article number in the current group given the Message-ID.
 (defun nndiary-find-group-number (id)
-  (with-current-buffer (get-buffer-create " *nndiary id*")
+  (with-current-buffer (gnus-get-buffer-create " *nndiary id*")
     (let ((alist nndiary-group-alist)
 	  number)
       ;; We want to look through all .overview files, but we want to
@@ -999,8 +999,8 @@ all.  This may very well take some time.")
 
 (defun nndiary-open-nov (group)
   (or (cdr (assoc group nndiary-nov-buffer-alist))
-      (let ((buffer (get-buffer-create (format " *nndiary overview %s*"
-					       group))))
+      (let ((buffer (gnus-get-buffer-create
+                     (format " *nndiary overview %s*" group))))
 	(with-current-buffer buffer
 	  (set (make-local-variable 'nndiary-nov-buffer-file-name)
 	       (expand-file-name
@@ -1086,7 +1086,7 @@ all.  This may very well take some time.")
 (defun nndiary-generate-nov-file (dir files)
   (let* ((dir (file-name-as-directory dir))
 	 (nov (concat dir nndiary-nov-file-name))
-	 (nov-buffer (get-buffer-create " *nov*"))
+	 (nov-buffer (gnus-get-buffer-create " *nov*"))
 	 chars file headers)
     ;; Init the nov buffer.
     (with-current-buffer nov-buffer
@@ -1115,7 +1115,7 @@ all.  This may very well take some time.")
 	  (widen))
 	(setq files (cdr files)))
       (with-current-buffer nov-buffer
-	(nnmail-write-region 1 (point-max) nov nil 'nomesg)
+	(nnmail-write-region 1 (point-max) nov nil 'nomesg nil 'excl)
 	(kill-buffer (current-buffer))))))
 
 (defun nndiary-nov-delete-article (group article)

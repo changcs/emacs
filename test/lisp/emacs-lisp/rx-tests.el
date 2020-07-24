@@ -1,6 +1,6 @@
 ;;; rx-tests.el --- tests for rx.el              -*- lexical-binding: t -*-
 
-;; Copyright (C) 2016-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2016-2020 Free Software Foundation, Inc.
 
 ;; This file is part of GNU Emacs.
 
@@ -42,16 +42,28 @@
 (ert-deftest rx-or ()
   (should (equal (rx (or "ab" (| "c" nonl) "de"))
                  "ab\\|c\\|.\\|de"))
-  (should (equal (rx (or "ab" "abc" "a"))
-                 "\\(?:ab\\|abc\\|a\\)"))
+  (should (equal (rx (or "ab" "abc" ?a))
+                 "\\(?:a\\(?:bc?\\)?\\)"))
+  (should (equal (rx (or "ab" (| (or "abcd" "abcde")) (or "a" "abc")))
+                 "\\(?:a\\(?:b\\(?:c\\(?:de?\\)?\\)?\\)?\\)"))
+  (should (equal (rx (or "a" (eval (string ?a ?b))))
+                 "\\(?:ab?\\)"))
   (should (equal (rx (| nonl "a") (| "b" blank))
                  "\\(?:.\\|a\\)\\(?:b\\|[[:blank:]]\\)"))
   (should (equal (rx (|))
                  "\\`a\\`")))
 
+(ert-deftest rx-def-in-or ()
+  (rx-let ((a b)
+           (b (or "abc" c))
+           (c ?a))
+    (should (equal (rx (or a (| "ab" "abcde") "abcd"))
+                   "\\(?:a\\(?:b\\(?:c\\(?:de?\\)?\\)?\\)?\\)"))))
+
 (ert-deftest rx-char-any ()
   "Test character alternatives with `]' and `-' (Bug#25123)."
   (should (equal
+           ;; relint suppression: Range .<-]. overlaps previous .]-{
            (rx string-start (1+ (char (?\] . ?\{) (?< . ?\]) (?- . ?:)))
                string-end)
            "\\`[.-:<-{-]+\\'")))
@@ -79,7 +91,7 @@
   ;; Range of raw characters, multibyte.
   (should (equal (rx (any "Å\211\326-\377\177"))
                  "[\177Å\211\326-\377]"))
-  ;; Split range; \177-\377ÿ should not be optimised to \177-\377.
+  ;; Split range; \177-\377ÿ should not be optimized to \177-\377.
   (should (equal (rx (any "\177-\377" ?ÿ))
                  "[\177ÿ\200-\377]")))
 
@@ -116,6 +128,10 @@
                  "[[:lower:][:upper:]-][^[:lower:][:upper:]-]"))
   (should (equal (rx (any "]" lower upper) (not (any "]" lower upper)))
                  "[][:lower:][:upper:]][^][:lower:][:upper:]]"))
+  ;; relint suppression: Duplicated character .-.
+  ;; relint suppression: Single-character range .f-f
+  ;; relint suppression: Range .--/. overlaps previous .-
+  ;; relint suppression: Range .\*--. overlaps previous .--/
   (should (equal (rx (any "-a" "c-" "f-f" "--/*--"))
                  "[*-/acf]"))
   (should (equal (rx (any "]-a" ?-) (not (any "]-a" ?-)))
@@ -126,9 +142,15 @@
   (should (equal (rx (not (any "!a" "0-8" digit nonascii)))
                  "[^!0-8a[:digit:][:nonascii:]]"))
   (should (equal (rx (any) (not (any)))
-                 "\\`a\\`\\(?:.\\|\n\\)"))
+                 "\\`a\\`[^z-a]"))
   (should (equal (rx (any "") (not (any "")))
-                 "\\`a\\`\\(?:.\\|\n\\)")))
+                 "\\`a\\`[^z-a]"))
+  ;; relint suppression: Duplicated class .space.
+  (should (equal (rx (any space ?a digit space))
+                 "[a[:space:][:digit:]]"))
+  (should (equal (rx (not "\n") (not ?\n) (not (any "\n")) (not-char ?\n)
+                     (| (not (in "a\n")) (not (char ?\n (?b . ?b)))))
+          ".....")))
 
 (ert-deftest rx-pcase ()
   (should (equal (pcase "a 1 2 3 1 1 b"
@@ -184,8 +206,10 @@
                  "ab")))
 
 (ert-deftest rx-atoms ()
-  (should (equal (rx anything)
-                 ".\\|\n"))
+  (should (equal (rx anychar anything)
+                 "[^z-a][^z-a]"))
+  (should (equal (rx unmatchable)
+                 "\\`a\\`"))
   (should (equal (rx line-start not-newline nonl any line-end)
                  "^...$"))
   (should (equal (rx bol string-start string-end buffer-start buffer-end
@@ -266,7 +290,86 @@
   (should (equal (rx (not (syntax punctuation)) (not (syntax escape)))
                  "\\S.\\S\\"))
   (should (equal (rx (not (category tone-mark)) (not (category lao)))
-                 "\\C4\\Co")))
+                 "\\C4\\Co"))
+  (should (equal (rx (not (not ascii)) (not (not (not (any "a-z")))))
+                 "[[:ascii:]][^a-z]"))
+  (should (equal (rx (not ?a) (not "b") (not (not "c")) (not (not ?d)))
+                 "[^a][^b]cd")))
+
+(ert-deftest rx-charset-or ()
+  (should (equal (rx (or))
+                 "\\`a\\`"))
+  (should (equal (rx (or (any "ba")))
+                 "[ab]"))
+  (should (equal (rx (| (any "a-f") (any "c-k" ?y) (any ?r "x-z")))
+                 "[a-krx-z]"))
+  (should (equal (rx (or (not (any "a-m")) (not (any "f-p"))))
+                 "[^f-m]"))
+  (should (equal (rx (| (any "e-m") (not (any "a-z"))))
+                 "[^a-dn-z]"))
+  (should (equal (rx (or (not (any "g-r")) (not (any "t"))))
+                 "[^z-a]"))
+  (should (equal (rx (not (or (not (any "g-r")) (not (any "t")))))
+                 "\\`a\\`"))
+  (should (equal (rx (or (| (any "a-f") (any "u-z"))
+                         (any "g-r")))
+                 "[a-ru-z]"))
+  (should (equal (rx (or (intersection (any "c-z") (any "a-g"))
+                         (not (any "a-k"))))
+                 "[^abh-k]"))
+  (should (equal (rx (or ?f (any "b-e") "a") (not (or ?x "y" (any "s-w"))))
+                 "[a-f][^s-y]"))
+  (should (equal (rx (not (or (in "abc") (char "bcd"))))
+                 "[^a-d]"))
+  (should (equal (rx (or (not (in "abc")) (not (char "bcd"))))
+                 "[^bc]"))
+  (should (equal (rx (or "x" (? "yz")))
+                 "x\\|\\(?:yz\\)?")))
+
+(ert-deftest rx-def-in-charset-or ()
+  (rx-let ((a (any "badc"))
+           (b (| a (any "def")))
+           (c ?a)
+           (d "b"))
+    (should (equal (rx (or b (any "q")) (or c d))
+                   "[a-fq][ab]")))
+  (rx-let ((diff-| (a b) (not (or (not a) b))))
+    (should (equal (rx (diff-| (any "a-z") (any "gr")))
+                   "[a-fh-qs-z]"))))
+
+(ert-deftest rx-intersection ()
+  (should (equal (rx (intersection))
+                 "[^z-a]"))
+  (should (equal (rx (intersection (any "ba")))
+                 "[ab]"))
+  (should (equal (rx (intersection (any "a-j" "u-z") (any "c-k" ?y)
+                                   (any "a-i" "x-z")))
+                 "[c-iy]"))
+  (should (equal (rx (intersection (not (any "a-m")) (not (any "f-p"))))
+                 "[^a-p]"))
+  (should (equal (rx (intersection (any "a-z") (not (any "g-q"))))
+                 "[a-fr-z]"))
+  (should (equal (rx (intersection (any "a-d") (any "e")))
+                 "\\`a\\`"))
+  (should (equal (rx (not (intersection (any "a-d") (any "e"))))
+                 "[^z-a]"))
+  (should (equal (rx (intersection (any "d-u")
+                                   (intersection (any "e-z") (any "a-m"))))
+                 "[e-m]"))
+  (should (equal (rx (intersection (or (any "a-f") (any "f-t"))
+                                   (any "e-w")))
+                 "[e-t]"))
+  (should (equal (rx (intersection ?m (any "a-z") "m"))
+                 "m")))
+
+(ert-deftest rx-def-in-intersection ()
+  (rx-let ((a (any "a-g"))
+           (b (intersection a (any "d-j"))))
+    (should (equal (rx (intersection b (any "e-k")))
+                   "[e-g]")))
+  (rx-let ((diff-& (a b) (intersection a (not b))))
+    (should (equal (rx (diff-& (any "a-z") (any "m-p")))
+                   "[a-lq-z]"))))
 
 (ert-deftest rx-group ()
   (should (equal (rx (group nonl) (submatch "x")
@@ -401,6 +504,19 @@
   (should-error (rx-let ((punctuation "x")) nil))
   (should-error (rx-let-eval '((not-char () "x")) nil))
   (should-error (rx-let-eval '((not-char "x")) nil)))
+
+(ert-deftest rx-def-in-not ()
+  "Test definition expansion inside (not ...)."
+  (rx-let ((a alpha)
+           (b (not hex))
+           (c (not (category base)))
+           (d (x) (any ?a x ?z))
+           (e (x) (syntax x))
+           (f (not b)))
+    (should (equal (rx (not a) (not b) (not c) (not f))
+                   "[^[:alpha:]][[:xdigit:]]\\c.[^[:xdigit:]]"))
+    (should (equal (rx (not (d ?m)) (not (e symbol)))
+                   "[^amz]\\S_"))))
 
 (ert-deftest rx-constituents ()
   (let ((rx-constituents

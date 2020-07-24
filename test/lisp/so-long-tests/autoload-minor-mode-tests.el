@@ -1,6 +1,6 @@
 ;;; autoload-minor-mode-tests.el --- Test suite for so-long.el  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2019 Free Software Foundation, Inc.
+;; Copyright (C) 2019-2020 Free Software Foundation, Inc.
 
 ;; Author: Phil Sainty <psainty@orcon.net.nz>
 ;; Keywords: convenience
@@ -39,6 +39,7 @@
 (ert-deftest so-long-tests-autoload-minor-mode ()
   "File-local -*- so-long-action: so-long-minor-mode; eval: (so-long) -*-"
   (with-temp-buffer
+    (display-buffer (current-buffer))
     (so-long-tests-remember)
     (insert "-*- so-long-action: so-long-minor-mode; eval: (so-long) -*-\n")
     (put 'so-long-action 'safe-local-variable #'symbolp)

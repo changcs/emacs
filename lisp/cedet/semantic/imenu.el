@@ -1,6 +1,6 @@
 ;;; semantic/imenu.el --- Use Semantic as an imenu tag generator
 
-;; Copyright (C) 2000-2005, 2007-2008, 2010-2019 Free Software
+;; Copyright (C) 2000-2005, 2007-2008, 2010-2020 Free Software
 ;; Foundation, Inc.
 
 ;; Author: Eric M. Ludlam <zappo@gnu.org>
@@ -44,9 +44,8 @@
 
 ;; Because semantic imenu tags will hose the current imenu handling
 ;; code in speedbar, force semantic/sb in.
-(if (featurep 'speedbar)
-    (require 'semantic/sb)
-  (add-hook 'speedbar-load-hook (lambda () (require 'semantic/sb))))
+(with-eval-after-load 'speedbar
+  (require 'semantic/sb))
 
 (defgroup semantic-imenu nil
   "Semantic interface to Imenu."
@@ -240,10 +239,8 @@ Optional argument STREAM is an optional stream of tags used to create menus."
 	   (or stream (semantic-fetch-tags-fast)))
         (semantic-create-imenu-index-1
 	 (or stream (semantic-fetch-tags-fast)) nil))
-    (semantic-make-local-hook 'semantic-after-toplevel-cache-change-hook)
     (add-hook 'semantic-after-toplevel-cache-change-hook
               'semantic-imenu-flush-fcn nil t)
-    (semantic-make-local-hook 'semantic-after-partial-cache-change-hook)
     (add-hook 'semantic-after-partial-cache-change-hook
               'semantic-imenu-flush-fcn nil t)))
 
@@ -440,12 +437,7 @@ Optional argument PARENT is a tag parent of STREAM."
               ;; Rebuild the imenu
               (imenu--cleanup)
               (setq imenu--index-alist nil)
-              (funcall
-               (if (fboundp 'imenu-menu-filter)
-                   ;; XEmacs imenu
-                   'imenu-menu-filter
-                 ;; Emacs imenu
-                 'imenu-update-menubar))))))))
+              (imenu-update-menubar)))))))
 
 (defun semantic-imenu-semanticdb-hook ()
   "Function to be called from `semanticdb-mode-hook'.

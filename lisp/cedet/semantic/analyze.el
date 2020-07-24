@@ -1,6 +1,6 @@
 ;;; semantic/analyze.el --- Analyze semantic tags against local context
 
-;; Copyright (C) 2000-2005, 2007-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2000-2005, 2007-2020 Free Software Foundation, Inc.
 
 ;; Author: Eric M. Ludlam <zappo@gnu.org>
 
@@ -80,8 +80,7 @@
   "Collection of any errors thrown during analysis.")
 
 (defun semantic-analyze-push-error (err)
-  "Push the error in ERR-DATA onto the error stack.
-Argument ERR."
+  "Push the error data in ERR onto the error stack."
   (push err semantic-analyze-error-stack))
 
 ;;; Analysis Classes
@@ -356,7 +355,7 @@ This function knows of flags:
 (defun semantic-analyze-find-tag (name &optional tagclass scope)
   "Return the first tag found with NAME or nil if not found.
 Optional argument TAGCLASS specifies the class of tag to return,
-such as 'function or 'variable.
+such as `function' or `variable'.
 Optional argument SCOPE specifies a scope object which has
 additional tags which are in SCOPE and do not need prefixing to
 find.

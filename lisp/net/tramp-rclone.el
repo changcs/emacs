@@ -1,6 +1,6 @@
 ;;; tramp-rclone.el --- Tramp access functions to cloud storages  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2018-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2018-2020 Free Software Foundation, Inc.
 
 ;; Author: Michael Albinus <michael.albinus@gmx.de>
 ;; Keywords: comm, processes
@@ -70,7 +70,7 @@
   '((access-file . tramp-handle-access-file)
     (add-name-to-file . tramp-handle-add-name-to-file)
     ;; `byte-compiler-base-file-name' performed by default handler.
-    ;; `copy-directory' performed by default handler.
+    (copy-directory . tramp-handle-copy-directory)
     (copy-file . tramp-rclone-handle-copy-file)
     (delete-directory . tramp-rclone-handle-delete-directory)
     (delete-file . tramp-rclone-handle-delete-file)
@@ -135,6 +135,8 @@
     (start-file-process . ignore)
     (substitute-in-file-name . tramp-handle-substitute-in-file-name)
     (temporary-file-directory . tramp-handle-temporary-file-directory)
+    (tramp-get-remote-gid . ignore)
+    (tramp-get-remote-uid . ignore)
     (tramp-set-file-uid-gid . ignore)
     (unhandled-file-name-directory . ignore)
     (vc-registered . ignore)
@@ -147,20 +149,19 @@ Operations not mentioned here will be handled by the default Emacs primitives.")
 ;; tramp-loaddefs.el.  Otherwise, there would be recursive autoloading.
 ;;;###tramp-autoload
 (defsubst tramp-rclone-file-name-p (filename)
-  "Check if it's a filename for rclone."
+  "Check if it's a FILENAME for rclone."
   (and (tramp-tramp-file-p filename)
        (string= (tramp-file-name-method (tramp-dissect-file-name filename))
 		tramp-rclone-method)))
 
 ;;;###tramp-autoload
 (defun tramp-rclone-file-name-handler (operation &rest args)
-  "Invoke the rclone handler for OPERATION.
+  "Invoke the rclone handler for OPERATION and ARGS.
 First arg specifies the OPERATION, second arg is a list of arguments to
 pass to the OPERATION."
-  (let ((fn (assoc operation tramp-rclone-file-name-handler-alist)))
-    (if fn
-	(save-match-data (apply (cdr fn) args))
-      (tramp-run-real-handler operation args))))
+  (if-let ((fn (assoc operation tramp-rclone-file-name-handler-alist)))
+      (save-match-data (apply (cdr fn) args))
+    (tramp-run-real-handler operation args)))
 
 ;;;###tramp-autoload
 (tramp--with-startup
@@ -213,10 +214,14 @@ file names."
 	  (msg-operation (if (eq op 'copy) "Copying" "Renaming")))
 
       (with-parsed-tramp-file-name (if t1 filename newname) nil
+	(unless (file-exists-p filename)
+	  (tramp-error
+	   v tramp-file-missing
+	   "%s file" msg-operation "No such file or directory" filename))
 	(when (and (not ok-if-already-exists) (file-exists-p newname))
 	  (tramp-error v 'file-already-exists newname))
 	(when (and (file-directory-p newname)
-		   (not (tramp-compat-directory-name-p newname)))
+		   (not (directory-name-p newname)))
 	  (tramp-error v 'file-error "File is a directory %s" newname))
 
 	(if (or (and t1 (not (tramp-rclone-file-name-p filename)))
@@ -267,8 +272,8 @@ file names."
   (filename newname &optional ok-if-already-exists keep-date
    preserve-uid-gid preserve-extended-attributes)
   "Like `copy-file' for Tramp files."
-  (setq filename (expand-file-name filename))
-  (setq newname (expand-file-name newname))
+  (setq filename (expand-file-name filename)
+	newname (expand-file-name newname))
   ;; At least one file a Tramp file?
   (if (or (tramp-tramp-file-p filename)
 	  (tramp-tramp-file-p newname))
@@ -298,6 +303,10 @@ file names."
 (defun tramp-rclone-handle-directory-files
     (directory &optional full match nosort)
   "Like `directory-files' for Tramp files."
+  (unless (file-exists-p directory)
+    (tramp-error
+     (tramp-dissect-file-name directory) tramp-file-missing
+     "No such file or directory" directory))
   (when (file-directory-p directory)
     (setq directory (file-name-as-directory (expand-file-name directory)))
     (with-parsed-tramp-file-name directory nil
@@ -421,8 +430,8 @@ file names."
 (defun tramp-rclone-handle-rename-file
   (filename newname &optional ok-if-already-exists)
   "Like `rename-file' for Tramp files."
-  (setq filename (expand-file-name filename))
-  (setq newname (expand-file-name newname))
+  (setq filename (expand-file-name filename)
+	newname (expand-file-name newname))
   ;; At least one file a Tramp file?
   (if (or (tramp-tramp-file-p filename)
           (tramp-tramp-file-p newname))
@@ -450,7 +459,7 @@ file names."
     ;; to cache a nil result.
     (or (tramp-get-connection-property
 	 (tramp-get-connection-process vec) "mounted" nil)
-	(let* ((default-directory temporary-file-directory)
+	(let* ((default-directory (tramp-compat-temporary-file-directory))
 	       (mount (shell-command-to-string "mount -t fuse.rclone")))
 	  (tramp-message vec 6 "%s" "mount -t fuse.rclone")
 	  (tramp-message vec 6 "\n%s" mount)
@@ -470,7 +479,19 @@ file names."
 	   (with-tramp-connection-property
 	       (tramp-get-connection-process vec) "rclone-pid"
 	     (catch 'pid
-	       (dolist (pid (list-system-processes)) ;; "pidof rclone" ?
+	       (dolist
+		   (pid
+		    ;; Until Emacs 25, `process-attributes' could
+		    ;; crash Emacs for some processes.  So we use
+		    ;; "pidof", which might not work everywhere.
+		    (if (<= emacs-major-version 25)
+			(let ((default-directory
+				(tramp-compat-temporary-file-directory)))
+			  (mapcar
+			   #'string-to-number
+			   (split-string
+			    (shell-command-to-string "pidof rclone"))))
+		      (list-system-processes)))
 		 (and (string-match-p
 		       (regexp-quote
 			(format "rclone mount %s:" (tramp-file-name-host vec)))
@@ -556,7 +577,7 @@ connection if a previous connection has died for some reason."
 		 ,(tramp-rclone-mount-point vec)
 		 ;; This could be nil.
 		 ,(tramp-get-method-parameter vec 'tramp-mount-args))))
-	(while (not (file-exists-p (tramp-make-tramp-file-name vec 'localname)))
+	(while (not (file-exists-p (tramp-make-tramp-file-name vec 'noloc)))
 	  (tramp-cleanup-connection vec 'keep-debug 'keep-password))
 
 	;; Mark it as connected.
@@ -575,7 +596,8 @@ connection if a previous connection has died for some reason."
       vec "gid-string" (tramp-get-local-gid 'string)))
 
 (defun tramp-rclone-send-command (vec &rest args)
-  "Send the COMMAND to connection VEC."
+  "Send a command to connection VEC.
+The command is the list of strings ARGS."
   (with-current-buffer (tramp-get-connection-buffer vec)
     (erase-buffer)
     (let ((flags (tramp-get-method-parameter

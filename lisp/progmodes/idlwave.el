@@ -1,6 +1,6 @@
 ;; idlwave.el --- IDL editing mode for GNU Emacs
 
-;; Copyright (C) 1999-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1999-2020 Free Software Foundation, Inc.
 
 ;; Authors: JD Smith <jd.smith@utoledo.edu>
 ;;          Carsten Dominik <dominik@science.uva.nl>
@@ -314,7 +314,7 @@ split then a terminal beep and warning are issued."
 expression will not be changed.  Note that the indentation of a comment
 at the beginning of a line is never changed."
   :group 'idlwave-code-formatting
-  :type 'string)
+  :type 'regexp)
 
 (defcustom idlwave-begin-line-comment nil
   "A comment anchored at the beginning of line.
@@ -1096,6 +1096,8 @@ class-arrows         Object Arrows with class property"
   "Normal hook.  Executed when idlwave.el is loaded."
   :group 'idlwave-misc
   :type 'hook)
+(make-obsolete-variable 'idlwave-load-hook
+                        "use `with-eval-after-load' instead." "28.1")
 
 (defvar idlwave-experimental nil
   "Non-nil means turn on a few experimental features.
@@ -1870,7 +1872,6 @@ The main features of this mode are
 
 8. Hooks
    -----
-   Loading idlwave.el runs `idlwave-load-hook'.
    Turning on `idlwave-mode' runs `idlwave-mode-hook'.
 
 9. Documentation and Customization
@@ -3629,7 +3630,7 @@ Calling from a program, arguments are START END."
 (defun idlwave-quoted ()
   "Return t if point is in a comment or quoted string.
 Returns nil otherwise."
-  (or (idlwave-in-comment) (idlwave-in-quote)))
+  (and (or (idlwave-in-comment) (idlwave-in-quote)) t))
 
 (defun idlwave-in-quote ()
   "Return location of the opening quote
@@ -8271,7 +8272,7 @@ If we do not know about MODULE, just return KEYWORD literally."
       (select-window olh-window)
       (idlwave-help-quit))
     (when (window-live-p ri-window)
-      (delete-window ri-window))))
+      (quit-window nil ri-window))))
 
 (defun idlwave-display-calling-sequence (name type class
 					      &optional initial-class)

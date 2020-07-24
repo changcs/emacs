@@ -1,6 +1,6 @@
 ;;; srecode/map.el --- Manage a template file map
 
-;; Copyright (C) 2008-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2008-2020 Free Software Foundation, Inc.
 
 ;; Author: Eric M. Ludlam <zappo@gnu.org>
 
@@ -327,7 +327,7 @@ if that file is NEW, otherwise assume the mode has not changed."
     ;; 4) - Find new files and add them to the map.
     (dolist (dir srecode-map-load-path)
       (when (file-exists-p dir)
-	(dolist (f (directory-files dir t "\\.srt$"))
+	(dolist (f (directory-files dir t "\\.srt\\'"))
 	  (when (and (not (backup-file-name-p f))
 		     (not (auto-save-file-name-p f))
 		     (file-readable-p f))
@@ -346,8 +346,8 @@ if that file is NEW, otherwise assume the mode has not changed."
 Argument FAST implies that the file should not be reparsed if there
 is already an entry for it.
 Return non-nil if the map changed."
-  (when (or (not fast)
-	    (not (srecode-map-entry-for-file-anywhere srecode-current-map file)))
+  (unless (and fast
+               (srecode-map-entry-for-file-anywhere srecode-current-map file))
     (let ((buff-orig (get-file-buffer file))
 	  (dirty nil))
       (save-excursion

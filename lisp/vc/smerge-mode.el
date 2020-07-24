@@ -1,6 +1,6 @@
 ;;; smerge-mode.el --- Minor mode to resolve diff3 conflicts -*- lexical-binding: t -*-
 
-;; Copyright (C) 1999-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1999-2020 Free Software Foundation, Inc.
 
 ;; Author: Stefan Monnier <monnier@iro.umontreal.ca>
 ;; Keywords: vc, tools, revision control, merge, diff3, cvs, conflict
@@ -77,41 +77,41 @@ Used in `smerge-diff-base-upper' and related functions."
 
 (defface smerge-upper
   '((((class color) (min-colors 88) (background light))
-     :background "#ffdddd")
+     :background "#ffdddd" :extend t)
     (((class color) (min-colors 88) (background dark))
-     :background "#553333")
+     :background "#553333" :extend t)
     (((class color))
-     :foreground "red"))
+     :foreground "red" :extend))
   "Face for the `upper' version of a conflict.")
 (define-obsolete-face-alias 'smerge-mine 'smerge-upper "26.1")
 (defvar smerge-upper-face 'smerge-upper)
 
 (defface smerge-lower
   '((((class color) (min-colors 88) (background light))
-     :background "#ddffdd")
+     :background "#ddffdd" :extend t)
     (((class color) (min-colors 88) (background dark))
-     :background "#335533")
+     :background "#335533" :extend t)
     (((class color))
-     :foreground "green"))
+     :foreground "green" :extend))
   "Face for the `lower' version of a conflict.")
 (define-obsolete-face-alias 'smerge-other 'smerge-lower "26.1")
 (defvar smerge-lower-face 'smerge-lower)
 
 (defface smerge-base
   '((((class color) (min-colors 88) (background light))
-     :background "#ffffaa")
+     :background "#ffffaa" :extend t)
     (((class color) (min-colors 88) (background dark))
-     :background "#888833")
+     :background "#888833" :extend t)
     (((class color))
-     :foreground "yellow"))
+     :foreground "yellow" :extend t))
   "Face for the base code.")
 (defvar smerge-base-face 'smerge-base)
 
 (defface smerge-markers
   '((((background light))
-     (:background "grey85"))
+     (:background "grey85" :extend t))
     (((background dark))
-     (:background "grey30")))
+     (:background "grey30" :extend t)))
   "Face for the conflict markers.")
 (defvar smerge-markers-face 'smerge-markers)
 
@@ -797,7 +797,10 @@ An error is raised if not inside a conflict."
 	       (filename (or (match-string 1) ""))
 
 	       (_ (re-search-forward smerge-end-re))
-	       (_ (cl-assert (< orig-point (match-end 0))))
+	       (_ (when (< (match-end 0) orig-point)
+	            ;; Point is not within the conflict we found,
+                    ;; so this conflict is not ours.
+	            (signal 'search-failed (list smerge-begin-re))))
 
 	       (lower-end (match-beginning 0))
 	       (end (match-end 0))
@@ -1426,15 +1429,16 @@ with a \\[universal-argument] prefix, makes up a 3-way conflict."
     (smerge-remove-props (point-min) (point-max))))
 
 ;;;###autoload
-(defun smerge-start-session ()
+(defun smerge-start-session (&optional interactively)
   "Turn on `smerge-mode' and move point to first conflict marker.
 If no conflict maker is found, turn off `smerge-mode'."
-  (interactive)
-  (smerge-mode 1)
-  (condition-case nil
-      (unless (looking-at smerge-begin-re)
-        (smerge-next))
-    (error (smerge-auto-leave))))
+  (interactive "p")
+  (when (or (null smerge-mode) interactively)
+    (smerge-mode 1)
+    (condition-case nil
+        (unless (looking-at smerge-begin-re)
+          (smerge-next))
+      (error (smerge-auto-leave)))))
 
 (defcustom smerge-change-buffer-confirm t
   "If non-nil, request confirmation before moving to another buffer."

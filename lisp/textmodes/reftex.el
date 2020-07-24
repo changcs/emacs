@@ -1,5 +1,5 @@
 ;;; reftex.el --- minor mode for doing \label, \ref, \cite, \index in LaTeX
-;; Copyright (C) 1997-2000, 2003-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1997-2000, 2003-2020 Free Software Foundation, Inc.
 
 ;; Author: Carsten Dominik <dominik@science.uva.nl>
 ;; Maintainer: auctex-devel@gnu.org
@@ -2371,7 +2371,7 @@ what in fact did happen.
 Check if the bug is reproducible with an up-to-date version of
 RefTeX available from https://www.gnu.org/software/auctex/.
 
-If the bug is triggered by a specific \(La)TeX file, you should try
+If the bug is triggered by a specific (La)TeX file, you should try
 to produce a minimal sample file showing the problem and include it
 in your report.
 

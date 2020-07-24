@@ -1,6 +1,6 @@
 ;;; nsm.el --- Network Security Manager  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2014-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2014-2020 Free Software Foundation, Inc.
 
 ;; Author: Lars Magne Ingebrigtsen <larsi@gnus.org>
 ;; Keywords: encryption, security, network
@@ -179,7 +179,7 @@ See also: `nsm-check-tls-connection', `nsm-save-host-names',
                                (const :tag "High" high)))))
 
 (defun nsm-save-fingerprint-maybe (host port status &rest _)
-  "Saves the certificate's fingerprint.
+  "Save the certificate's fingerprint.
 
 In order to detect man-in-the-middle attacks, when
 `network-security-level' is `high', this function will save the
@@ -199,46 +199,51 @@ RESULTS is an alist where the keys are the checks run and the
 values the results of the checks.")
 
 (defun nsm-network-same-subnet (local-ip mask ip)
-  "Returns t if IP is in the same subnet as LOCAL-IP/MASK.
+  "Return t if IP is in the same subnet as LOCAL-IP/MASK.
 LOCAL-IP, MASK, and IP are specified as vectors of integers, and
 are expected to have the same length.  Works for both IPv4 and
 IPv6 addresses."
   (let ((matches t)
-        (length (length local-ip)))
-    (unless (memq length '(4 5 8 9))
+        (ip-length (length ip))
+        (local-length (length local-ip)))
+    (unless (and (memq ip-length '(4 5 8 9))
+                 (memq local-length '(4 5 8 9)))
       (error "Unexpected length of IP address %S" local-ip))
-    (dotimes (i length)
-      (setq matches (and matches
-                         (=
-                          (logand (aref local-ip i)
-                                  (aref mask i))
-                          (logand (aref ip i)
-                                  (aref mask i))))))
-    matches))
+    (if (/= ip-length local-length)
+        nil
+        (dotimes (i local-length)
+          (setq matches (and matches
+                             (=
+                              (logand (aref local-ip i)
+                                      (aref mask i))
+                              (logand (aref ip i)
+                                      (aref mask i))))))
+        matches)))
 
 (defun nsm-should-check (host)
-  "Determines whether NSM should check for TLS problems for HOST.
+  "Determine whether NSM should check for TLS problems for HOST.
 
 If `nsm-trust-local-network' is or returns non-nil, and if the
 host address is a localhost address, or in the same subnet as one
 of the local interfaces, this function returns nil.  Non-nil
 otherwise."
   (let ((addresses (network-lookup-address-info host))
-        (network-interface-list (network-interface-list))
+        (network-interface-list (network-interface-list t))
         (off-net t))
     (when
      (or (and (functionp nsm-trust-local-network)
               (funcall nsm-trust-local-network))
          nsm-trust-local-network)
      (mapc
-      (lambda (address)
+      (lambda (ip)
         (mapc
-         (lambda (iface)
-           (let ((info (network-interface-info (car iface))))
+         (lambda (info)
+           (let ((local-ip (nth 1 info))
+                 (mask (nth 2 info)))
              (when
-                 (nsm-network-same-subnet (substring (car info) 0 -1)
-                                          (substring (car (cddr info)) 0 -1)
-                                          address)
+                 (nsm-network-same-subnet (substring local-ip 0 -1)
+                                          (substring mask 0 -1)
+                                          (substring ip 0 -1))
                (setq off-net nil))))
          network-interface-list))
       addresses))
@@ -306,9 +311,9 @@ See also: `network-security-protocol-checks' and `nsm-noninteractive'"
                                                   (map-values results)
                                                   "\n")
                                                  "\n")
-                                                "\n* ")))))
-                 (delete-process process)
-                 (setq process nil)))
+						"\n* "))))))
+	(delete-process process)
+	(setq process nil))
       (run-hook-with-args 'nsm-tls-post-check-functions
                           host port status settings results)))
   process)
@@ -366,7 +371,7 @@ Reference:
 Sheffer, Holz, Saint-Andre (May 2015).  \"Recommendations for Secure
 Use of Transport Layer Security (TLS) and Datagram Transport Layer
 Security (DTLS)\", \"(4.1.  General Guidelines)\"
-`https://tools.ietf.org/html/rfc7525\#section-4.1'"
+`https://tools.ietf.org/html/rfc7525#section-4.1'"
   (let ((kx (plist-get status :key-exchange)))
     (and (string-match "^\\bRSA\\b" kx)
          (format-message
@@ -379,7 +384,7 @@ Security (DTLS)\", \"(4.1.  General Guidelines)\"
 This check is a response to Logjam[1].  Logjam is an attack that
 allows an attacker with sufficient resource, and positioned
 between the user and the server, to downgrade vulnerable TLS
-connections to insecure 512-bit export grade crypotography.
+connections to insecure 512-bit export grade cryptography.
 
 The Logjam paper suggests using 1024-bit prime on the client to
 mitigate some effects of this attack, and upgrade to 2048-bit as
@@ -463,7 +468,7 @@ Reference:
 
 GnuTLS authors (2018). \"GnuTLS Manual 4.3.3 Anonymous
 authentication\",
-`https://www.gnutls.org/manual/gnutls.html\#Anonymous-authentication'"
+`https://www.gnutls.org/manual/gnutls.html#Anonymous-authentication'"
   (let ((kx (plist-get status :key-exchange)))
     (and (string-match "\\bANON\\b" kx)
          (format-message
@@ -545,7 +550,7 @@ Security (TLS) and Datagram Transport Layer Security (DTLS)\",
 Due to its use of 64-bit block size, it is known that a
 ciphertext collision is highly likely when 2^32 blocks are
 encrypted with the same key bundle under 3-key 3DES.  Practical
-birthday attacks of this kind have been demostrated by Sweet32[1].
+birthday attacks of this kind have been demonstrated by Sweet32[1].
 As such, NIST is in the process of disallowing its use in TLS[2].
 
 [1]: Bhargavan, Leurent (2016).  \"On the Practical (In-)Security of
@@ -598,7 +603,7 @@ References:
 full SHA-1\", `https://shattered.io/static/shattered.pdf'
 [2]: Chromium Security Education TLS/SSL.  \"Deprecated and Removed
 Features (SHA-1 Certificate Signatures)\",
-`https://www.chromium.org/Home/chromium-security/education/tls\#TOC-SHA-1-Certificate-Signatures'
+`https://www.chromium.org/Home/chromium-security/education/tls#TOC-SHA-1-Certificate-Signatures'
 [3]: Jones J.C (2017).  \"The end of SHA-1 on the Public Web\",
 `https://blog.mozilla.org/security/2017/02/23/the-end-of-sha-1-on-the-public-web/'
 [4]: Apple Support (2017).  \"Move to SHA-256 signed certificates to
@@ -747,7 +752,7 @@ protocol."
         ;; Plain connection allowed.
         (memq :none saved-fingerprints)
         ;; We are pinning certs, and we have seen this host before,
-        ;; but the credientials for this host differs from the last
+        ;; but the credentials for this host differs from the last
         ;; times we saw it.
         (member (nsm-fingerprint status) saved-fingerprints))))
 
@@ -959,6 +964,7 @@ protocol."
 
 (defun nsm-write-settings ()
   (with-temp-file nsm-settings-file
+    (insert ";;;; -*- mode: lisp-data -*-\n")
     (insert "(\n")
     (dolist (setting nsm-permanent-host-settings)
       (insert " ")

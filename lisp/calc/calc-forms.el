@@ -1,6 +1,6 @@
 ;;; calc-forms.el --- data format conversion functions for Calc
 
-;; Copyright (C) 1990-1993, 2001-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1990-1993, 2001-2020 Free Software Foundation, Inc.
 
 ;; Author: David Gillespie <daveg@synaptics.com>
 
@@ -381,7 +381,7 @@
 ;;; These versions are rewritten to use arbitrary-size integers.
 
 ;;; A numerical date is the number of days since midnight on
-;;; the morning of December 31, 1 B.C. (Gregorian) or January 2, 1 A.D. (Julian).
+;;; the morning of December 31, 1 BC (Gregorian) or January 2, 1 AD (Julian).
 ;;; Emacs's calendar refers to such a date as an absolute date, some Calc function
 ;;; names also use that terminology.  If the date is a non-integer, it represents
 ;;; a specific date and time.

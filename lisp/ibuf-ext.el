@@ -1,6 +1,6 @@
 ;;; ibuf-ext.el --- extensions for ibuffer  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2000-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2000-2020 Free Software Foundation, Inc.
 
 ;; Author: Colin Walters <walters@verbum.org>
 ;; Maintainer: John Paul Wallington <jpw@gnu.org>
@@ -563,10 +563,7 @@ format.  See `ibuffer-update-saved-filters-format' and
 Does not display the buffer during evaluation.
 See `ibuffer-do-view-and-eval' for that."
   (:interactive
-   (list
-    (read-from-minibuffer
-     "Eval in buffers (form): "
-     nil read-expression-map t 'read-expression-history))
+   (list (read--expression "Eval in buffers (form): "))
    :opstring "evaluated in"
    :modifier-p :maybe)
   (eval form))
@@ -763,12 +760,11 @@ specification, with the same structure as an element of the list
 	  (i 0))
       (dolist (filtergroup filter-group-alist)
 	(let ((filterset (cdr filtergroup)))
-	  (cl-multiple-value-bind (hip-crowd lamers)
-	      (cl-values-list
-	       (ibuffer-split-list (lambda (bufmark)
-				     (ibuffer-included-in-filters-p (car bufmark)
-								    filterset))
-				   bmarklist))
+	  (cl-destructuring-bind (hip-crowd lamers)
+	      (ibuffer-split-list (lambda (bufmark)
+				    (ibuffer-included-in-filters-p (car bufmark)
+								   filterset))
+				  bmarklist)
 	    (aset vec i hip-crowd)
 	    (cl-incf i)
 	    (setq bmarklist lamers))))
@@ -1324,8 +1320,8 @@ matches against '/a/b/c.d'."
 (define-ibuffer-filter basename
     "Limit current view to buffers with file basename matching QUALIFIER.
 
-For example, for a buffer associated with file '/a/b/c.d', this
-matches against 'c.d'."
+For example, for a buffer associated with file `/a/b/c.d', this
+matches against `c.d'."
   (:description "file basename"
    :reader (read-from-minibuffer
             "Filter by file name, without directory part (regex): "))
@@ -1338,7 +1334,7 @@ matches against 'c.d'."
 
 The separator character (typically `.') is not part of the
 pattern.  For example, for a buffer associated with file
-'/a/b/c.d', this matches against 'd'."
+`/a/b/c.d', this matches against `d'."
   (:description "filename extension"
    :reader (read-from-minibuffer
             "Filter by filename extension without separator (regex): "))
@@ -1599,7 +1595,7 @@ to move by.  The default is `ibuffer-marked-char'."
   "Hide all of the currently marked lines."
   (interactive)
   (if (= (ibuffer-count-marked-lines) 0)
-      (message "No buffers marked; use 'm' to mark a buffer")
+      (message "No buffers marked; use `m' to mark a buffer")
     (let ((count
 	   (ibuffer-map-marked-lines
 	    #'(lambda (_buf _mark)
@@ -1865,8 +1861,9 @@ Otherwise buffers whose name matches an element of
          (cond ((and (not all-buffers)
                      (or
                       (memq mode ibuffer-never-search-content-mode)
-                      (cl-some (lambda (x) (string-match x (buffer-name buf)))
-                               ibuffer-never-search-content-name)))
+                      (cl-dolist (x ibuffer-never-search-content-name nil)
+                        (when-let ((found (string-match x (buffer-name buf))))
+                          (cl-return found)))))
                 (setq res nil))
                (t
                 (with-current-buffer buf

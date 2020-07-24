@@ -1,6 +1,6 @@
 ;;; diff.el --- run `diff'  -*- lexical-binding: t -*-
 
-;; Copyright (C) 1992, 1994, 1996, 2001-2019 Free Software Foundation,
+;; Copyright (C) 1992, 1994, 1996, 2001-2020 Free Software Foundation,
 ;; Inc.
 
 ;; Author: Frank Bresz
@@ -39,7 +39,12 @@
 
 ;;;###autoload
 (defcustom diff-switches (purecopy "-u")
-  "A string or list of strings specifying switches to be passed to diff."
+  "A string or list of strings specifying switches to be passed to diff.
+
+This variable is also used in the `vc-diff' command (and related
+commands) if the backend-specific diff switch variable isn't
+set (`vc-git-diff-switches' for git, for instance), and
+`vc-diff-switches' isn't set."
   :type '(choice string (repeat string))
   :group 'diff)
 
@@ -86,7 +91,10 @@ exists.  If NO-ASYNC is non-nil, call diff synchronously.
 
 When called interactively with a prefix argument, prompt
 interactively for diff switches.  Otherwise, the switches
-specified in the variable `diff-switches' are passed to the diff command."
+specified in the variable `diff-switches' are passed to the
+diff command.
+
+Non-interactively, OLD and NEW may each be a file or a buffer."
   (interactive
    (let* ((newf (if (and buffer-file-name (file-exists-p buffer-file-name))
 		    (read-file-name
@@ -107,6 +115,9 @@ specified in the variable `diff-switches' are passed to the diff command."
    (diff-no-select old new switches no-async)))
 
 (defun diff-file-local-copy (file-or-buf)
+  "Like `file-local-copy' but also supports a buffer as the argument.
+When FILE-OR-BUF is a buffer, return the filename of a local
+temporary file with the buffer's contents."
   (if (bufferp file-or-buf)
       (with-current-buffer file-or-buf
         (let ((tempfile (make-temp-file "buffer-content-")))
@@ -134,6 +145,9 @@ Possible values are:
 
 (defun diff-no-select (old new &optional switches no-async buf)
   ;; Noninteractive helper for creating and reverting diff buffers
+  "Compare the OLD and NEW file/buffer, and return a diff buffer.
+
+See `diff' for the meaning of the arguments."
   (unless (bufferp new) (setq new (expand-file-name new)))
   (unless (bufferp old) (setq old (expand-file-name old)))
   (or switches (setq switches diff-switches)) ; If not specified, use default.
@@ -237,6 +251,28 @@ This requires the external program `diff' to be in your `exec-path'."
   (let ((buf (get-buffer (or buffer (current-buffer)))))
     (with-current-buffer (or (buffer-base-buffer buf) buf)
       (diff buffer-file-name (current-buffer) nil 'noasync))))
+
+;;;###autoload
+(defun diff-buffers (old new &optional switches no-async)
+  "Find and display the differences between OLD and NEW buffers.
+
+When called interactively, read NEW, then OLD, using the
+minibuffer.  The default for NEW is the current buffer, and the
+default for OLD is the most recently selected other buffer.
+If NO-ASYNC is non-nil, call diff synchronously.
+
+When called interactively with a prefix argument, prompt
+interactively for diff switches.  Otherwise, the switches
+specified in the variable `diff-switches' are passed to the
+diff command.
+
+OLD and NEW may each be a buffer or a buffer name."
+  (interactive
+   (let ((newb (read-buffer "Diff new buffer" (current-buffer) t))
+         (oldb (read-buffer "Diff original buffer"
+                            (other-buffer (current-buffer) t) t)))
+     (list oldb newb (diff-switches))))
+  (diff (get-buffer old) (get-buffer new) switches no-async))
 
 (provide 'diff)
 

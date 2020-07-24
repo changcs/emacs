@@ -1,6 +1,6 @@
 ;;; gnus.el --- a newsreader for GNU Emacs  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1987-1990, 1993-1998, 2000-2019 Free Software
+;; Copyright (C) 1987-1990, 1993-1998, 2000-2020 Free Software
 ;; Foundation, Inc.
 
 ;; Author: Masanobu UMEDA <umerin@flab.flab.fujitsu.junet>
@@ -660,7 +660,7 @@ be used directly.")
 (defun gnus-add-buffer ()
   "Add the current buffer to the list of Gnus buffers."
   (gnus-prune-buffers)
-  (push (current-buffer) gnus-buffers))
+  (cl-pushnew (current-buffer) gnus-buffers))
 
 (defmacro gnus-kill-buffer (buffer)
   "Kill BUFFER and remove from the list of Gnus buffers."
@@ -2226,8 +2226,8 @@ Disabling the agent may result in noticeable loss of performance."
   :group 'gnus-start
   :type '(choice (function-item gnus)
 		 (function-item gnus-no-server)
-		 (function-item gnus-slave)
-		 (function-item gnus-slave-no-server)))
+		 (function-item gnus-child)
+		 (function-item gnus-child-no-server)))
 
 (declare-function gnus-group-get-new-news "gnus-group")
 
@@ -2238,8 +2238,8 @@ Disabling the agent may result in noticeable loss of performance."
   :type '(choice (function-item gnus)
 		 (function-item gnus-group-get-new-news)
 		 (function-item gnus-no-server)
-		 (function-item gnus-slave)
-		 (function-item gnus-slave-no-server)))
+		 (function-item gnus-child)
+		 (function-item gnus-child-no-server)))
 
 (defcustom gnus-other-frame-parameters nil
   "Frame parameters used by `gnus-other-frame' to create a Gnus frame."
@@ -2417,8 +2417,8 @@ such as a mark that says whether an article is stored in the cache
 (defvar gnus-article-buffer "*Article*")
 (defvar gnus-server-buffer "*Server*")
 
-(defvar gnus-slave nil
-  "Whether this Gnus is a slave or not.")
+(defvar gnus-child nil
+  "Whether this Gnus is a child or not.")
 
 (defvar gnus-batch-mode nil
   "Whether this Gnus is running in batch mode or not.")
@@ -2817,67 +2817,54 @@ See Info node `(gnus)Formatting Variables'."
 
 ;; Info access macros.
 
-(defmacro gnus-info-group (info)
-  `(nth 0 ,info))
-(defmacro gnus-info-rank (info)
-  `(nth 1 ,info))
-(defmacro gnus-info-read (info)
-  `(nth 2 ,info))
-(defmacro gnus-info-marks (info)
-  `(nth 3 ,info))
-(defmacro gnus-info-method (info)
-  `(nth 4 ,info))
-(defmacro gnus-info-params (info)
-  `(nth 5 ,info))
+(cl-defstruct (gnus-info
+               (:constructor gnus-info-make
+                (group rank read &optional marks method params))
+               (:constructor nil)
+	       ;; FIXME: gnus-newsrc-alist contains a list of those,
+               ;; so changing them to a real struct will take more work!
+               (:type list))
+  group rank read marks method params)
 
-(defmacro gnus-info-level (info)
-  `(let ((rank (gnus-info-rank ,info)))
-     (if (consp rank)
-	 (car rank)
-       rank)))
-(defmacro gnus-info-score (info)
-  `(let ((rank (gnus-info-rank ,info)))
-     (or (and (consp rank) (cdr rank)) 0)))
+(defsubst gnus-info-level (info)
+  (declare (gv-setter gnus-info--set-level))
+  (let ((rank (gnus-info-rank info)))
+    (if (consp rank)
+	(car rank)
+      rank)))
+(defsubst gnus-info-score (info)
+  (declare (gv-setter gnus-info--set-score))
+  (let ((rank (gnus-info-rank info)))
+    (or (and (consp rank) (cdr rank)) 0)))
 
-(defmacro gnus-info-set-group (info group)
-  `(setcar ,info ,group))
-(defmacro gnus-info-set-rank (info rank)
-  `(setcar (nthcdr 1 ,info) ,rank))
-(defmacro gnus-info-set-read (info read)
-  `(setcar (nthcdr 2 ,info) ,read))
-(defmacro gnus-info-set-marks (info marks &optional extend)
-  (if extend
-      `(gnus-info-set-entry ,info ,marks 3)
-    `(setcar (nthcdr 3 ,info) ,marks)))
-(defmacro gnus-info-set-method (info method &optional extend)
-  (if extend
-      `(gnus-info-set-entry ,info ,method 4)
-    `(setcar (nthcdr 4 ,info) ,method)))
-(defmacro gnus-info-set-params (info params &optional extend)
-  (if extend
-      `(gnus-info-set-entry ,info ,params 5)
-    `(setcar (nthcdr 5 ,info) ,params)))
+(defsubst gnus-info-set-marks (info marks &optional extend)
+  (if extend (gnus-info--grow-entry info 3))
+  (setf (gnus-info-marks info) marks))
+(defsubst gnus-info-set-method (info method &optional extend)
+  (if extend (gnus-info--grow-entry info 4))
+  (setf (gnus-info-method info) method))
+(defsubst gnus-info-set-params (info params &optional extend)
+  (if extend (gnus-info--grow-entry info 5))
+  (setf (gnus-info-params info) params))
 
-(defun gnus-info-set-entry (info entry number)
+(defun gnus-info--grow-entry (info number)
   ;; Extend the info until we have enough elements.
   (while (<= (length info) number)
-    (nconc info (list nil)))
-  ;; Set the entry.
-  (setcar (nthcdr number info) entry))
+    (nconc info (list nil))))
 
-(defmacro gnus-info-set-level (info level)
-  `(let ((rank (cdr ,info)))
-     (if (consp (car rank))
-	 (setcar (car rank) ,level)
-       (setcar rank ,level))))
-(defmacro gnus-info-set-score (info score)
-  `(let ((rank (cdr ,info)))
-     (if (consp (car rank))
-	 (setcdr (car rank) ,score)
-       (setcar rank (cons (car rank) ,score)))))
+(defsubst gnus-info--set-level (info level)
+  (let ((rank (gnus-info-rank info)))
+    (if (consp rank)
+        (setcar rank level)
+      (setf (gnus-info-rank info) level))))
+(defsubst gnus-info--set-score (info score)
+  (let ((rank (gnus-info-rank info)))
+     (if (consp rank)
+	 (setcdr rank score)
+       (setf (gnus-info-rank info) (cons rank score)))))
 
-(defmacro gnus-get-info (group)
-  `(nth 1 (gethash ,group gnus-newsrc-hashtb)))
+(defsubst gnus-get-info (group)
+  (nth 1 (gethash group gnus-newsrc-hashtb)))
 
 (defun gnus-set-info (group info)
   (setcdr (gethash group gnus-newsrc-hashtb)
@@ -3704,14 +3691,14 @@ GROUP can also be an INFO structure."
 	  (setq params (delq name params))
 	  (while (assq name params)
 	    (gnus-alist-pull name params))
-	  (gnus-info-set-params info params))))))
+	  (setf (gnus-info-params info) params))))))
 
 (defun gnus-group-add-score (group &optional score)
   "Add SCORE to the GROUP score.
 If SCORE is nil, add 1 to the score of GROUP."
   (let ((info (gnus-get-info group)))
     (when info
-      (gnus-info-set-score info (+ (gnus-info-score info) (or score 1))))))
+      (setf (gnus-info-score info) (+ (gnus-info-score info) (or score 1))))))
 
 (defun gnus-short-group-name (group &optional levels)
   "Collapse GROUP name LEVELS.
@@ -4047,13 +4034,20 @@ Allow completion over sensible values."
 ;;; User-level commands.
 
 ;;;###autoload
-(defun gnus-slave-no-server (&optional arg)
-  "Read network news as a slave, without connecting to the local server."
+(defun gnus-child-no-server (&optional arg)
+  "Read network news as a child, without connecting to the local server."
   (interactive "P")
   (gnus-no-server arg t))
 
 ;;;###autoload
-(defun gnus-no-server (&optional arg slave)
+(defun gnus-slave-no-server (&optional arg)
+  "Read network news as a child, without connecting to the local server."
+  (interactive "P")
+  (gnus-no-server arg t))
+(make-obsolete 'gnus-slave-no-server 'gnus-child-no-server "28.1")
+
+;;;###autoload
+(defun gnus-no-server (&optional arg child)
   "Read network news.
 If ARG is a positive number, Gnus will use that as the startup level.
 If ARG is nil, Gnus will be started at level 2.  If ARG is non-nil
@@ -4062,13 +4056,20 @@ an NNTP server to use.
 As opposed to `gnus', this command will not connect to the local
 server."
   (interactive "P")
-  (gnus-no-server-1 arg slave))
+  (gnus-no-server-1 arg child))
+
+;;;###autoload
+(defun gnus-child (&optional arg)
+  "Read news as a child."
+  (interactive "P")
+  (gnus arg nil 'child))
 
 ;;;###autoload
 (defun gnus-slave (&optional arg)
-  "Read news as a slave."
+  "Read news as a child."
   (interactive "P")
-  (gnus arg nil 'slave))
+  (gnus arg nil 'child))
+(make-obsolete 'gnus-slave 'gnus-child "28.1")
 
 (defun gnus-delete-gnus-frame ()
   "Delete gnus frame unless it is the only one.
@@ -4129,7 +4130,7 @@ current display is used."
   (add-hook 'gnus-suspend-gnus-hook #'gnus-delete-gnus-frame)))))
 
 ;;;###autoload
-(defun gnus (&optional arg dont-connect slave)
+(defun gnus (&optional arg dont-connect child)
   "Read network news.
 If ARG is non-nil and a positive number, Gnus will use that as the
 startup level.  If ARG is non-nil and not a positive number, Gnus will
@@ -4143,7 +4144,7 @@ prompt the user for the name of an NNTP server to use."
     (message "You should byte-compile Gnus")
     (sit-for 2))
   (let ((gnus-action-message-log (list nil)))
-    (gnus-1 arg dont-connect slave)
+    (gnus-1 arg dont-connect child)
     (gnus-final-warning)))
 
 (declare-function debbugs-gnu "ext:debbugs-gnu"

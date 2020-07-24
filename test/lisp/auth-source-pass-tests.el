@@ -1,6 +1,6 @@
 ;;; auth-source-pass-tests.el --- Tests for auth-source-pass.el  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2013, 2017-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2013, 2017-2020 Free Software Foundation, Inc.
 
 ;; Author: Damien Cassou <damien.cassou@gmail.com>
 
@@ -352,6 +352,10 @@ HOSTNAME, USER and PORT are passed unchanged to
 (ert-deftest auth-source-pass--matching-entries-find-entries-with-a-port ()
   (auth-source-pass--with-store '(("bar.com:8080"))
     (should (auth-source-pass-match-entry-p "bar.com:8080" "bar.com" nil "8080"))))
+
+(ert-deftest auth-source-pass--matching-entries-find-entries-with-a-port-when-passed-multiple-ports ()
+  (auth-source-pass--with-store '(("bar.com:8080"))
+    (should (auth-source-pass-match-entry-p "bar.com:8080" "bar.com" nil '("http" "https" "80" "8080")))))
 
 (ert-deftest auth-source-pass--matching-entries-find-entries-with-slash ()
   ;; match if entry filename matches user

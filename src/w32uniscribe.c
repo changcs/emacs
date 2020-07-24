@@ -1,6 +1,6 @@
 /* Font backend for the Microsoft W32 Uniscribe API.
    Windows-specific parts of the HarfBuzz font backend.
-   Copyright (C) 2008-2019 Free Software Foundation, Inc.
+   Copyright (C) 2008-2020 Free Software Foundation, Inc.
 
 This file is part of GNU Emacs.
 
@@ -1549,7 +1549,7 @@ syms_of_w32uniscribe_for_pdumper (void)
   harfbuzz_font_driver.list = w32hb_list;
   harfbuzz_font_driver.match = w32hb_match;
   harfbuzz_font_driver.encode_char = w32hb_encode_char;
-  harfbuzz_font_driver.otf_capability = hbfont_otf_capability,
+  harfbuzz_font_driver.otf_capability = hbfont_otf_capability;
   harfbuzz_font_driver.shape = hbfont_shape;
   harfbuzz_font_driver.get_variation_glyphs = w32hb_get_variation_glyphs;
   harfbuzz_font_driver.combining_capability = hbfont_combining_capability;

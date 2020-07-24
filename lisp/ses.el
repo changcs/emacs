@@ -1,6 +1,6 @@
 ;;; ses.el -- Simple Emacs Spreadsheet  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2002-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2002-2020 Free Software Foundation, Inc.
 
 ;; Author: Jonathan Yavner <jyavner@member.fsf.org>
 ;; Maintainer: Vincent Belaïche <vincentb1@users.sourceforge.net>
@@ -506,7 +506,7 @@ This can alter PLIST."
       (setplist name (ses-plist-delq (symbol-plist name) 'ses-cell))) ))
 
 (defmacro ses--letref (vars place &rest body)
-  (declare (indent 2) (debug (sexp form &rest body)))
+  (declare (indent 2) (debug (sexp form body)))
   (gv-letplace (getter setter) place
     `(cl-macrolet ((,(nth 0 vars) () ',getter)
                    (,(nth 1 vars) (v) (funcall ',setter v)))
@@ -670,17 +670,6 @@ variables `minrow', `maxrow', `mincol', and `maxcol'."
              (dotimes (,c (- maxcol mincol -1))
                (let ((col (+ ,c mincol)))
                  ,@body))))))))
-
-;;Support for coverage testing.
-(defmacro 1value (form)
-  "For code-coverage testing, indicate that FORM is expected to always have
-the same value."
-  (declare (debug t))
-  form)
-(defmacro noreturn (form)
-  "For code-coverage testing, indicate that FORM will always signal an error."
-  (declare (debug t))
-  form)
 
 
 ;;----------------------------------------------------------------------------

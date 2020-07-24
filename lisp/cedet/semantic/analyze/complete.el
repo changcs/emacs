@@ -1,6 +1,6 @@
 ;;; semantic/analyze/complete.el --- Smart Completions
 
-;; Copyright (C) 2007-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2007-2020 Free Software Foundation, Inc.
 
 ;; Author: Eric M. Ludlam <zappo@gnu.org>
 
@@ -93,8 +93,10 @@ in a buffer."
 			  context
 			(semantic-analyze-current-context context)))
 	     (ans (if (not context)
-		      (error "Nothing to complete")
-		    (:override))))
+		      (when (called-interactively-p 'any)
+			(error "Nothing to complete"))
+		    (with-demoted-errors "%S"
+		      (:override)))))
 	;; If interactive, display them.
 	(when (called-interactively-p 'any)
 	  (with-output-to-temp-buffer "*Possible Completions*"

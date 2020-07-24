@@ -1,6 +1,6 @@
 ;;; semantic/mru-bookmark.el --- Automatic bookmark tracking
 
-;; Copyright (C) 2007-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2007-2020 Free Software Foundation, Inc.
 
 ;; Author: Eric M. Ludlam <zappo@gnu.org>
 
@@ -77,7 +77,7 @@ Set this when the tag gets unlinked from the buffer it belongs to.")
 	   :initform t
 	   :documentation
 	   "The reason this tag is interesting.
-Nice values are 'edit, 'read, 'jump, and 'mark.
+Nice values include the following:
  edit - created because the tag text was edited.
  read - created because point lingered in tag text.
  jump - jumped to another tag from this tag.
@@ -288,7 +288,6 @@ non-nil if the minor mode is enabled."
             (setq semantic-mru-bookmark-mode nil)
             (error "Buffer %s was not set up for parsing"
                    (buffer-name)))
-        (semantic-make-local-hook 'semantic-edits-new-change-functions)
         (add-hook 'semantic-edits-new-change-functions
                   'semantic-mru-bookmark-change-hook-fcn nil t)
         (add-hook 'semantic-edits-move-change-hooks

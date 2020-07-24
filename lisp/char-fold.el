@@ -1,6 +1,6 @@
 ;;; char-fold.el --- match unicode to similar ASCII -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2015-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2015-2020 Free Software Foundation, Inc.
 
 ;; Maintainer: emacs-devel@gnu.org
 ;; Keywords: matching
@@ -253,7 +253,7 @@ Each entry is a list of a character and the strings that fold into it."
   :version "27.1")
 
 (defcustom char-fold-exclude char-fold--default-exclude
-  "Character foldings to remove from default decompisitions.
+  "Character foldings to remove from default decompositions.
 Each entry is a list of a character and the strings to remove from folding."
   :type '(alist :key-type (character :tag "Fold to character")
                 :value-type (repeat (string :tag "Fold from string")))
@@ -370,11 +370,7 @@ from which to start."
       (setq i (1+ i)))
     (when (> spaces 0)
       (push (char-fold--make-space-string spaces) out))
-    (let ((regexp (apply #'concat (nreverse out))))
-      ;; Limited by `MAX_BUF_SIZE' in `regex-emacs.c'.
-      (if (> (length regexp) 5000)
-          (regexp-quote string)
-        regexp))))
+    (apply #'concat (nreverse out))))
 
 
 ;;; Commands provided for completeness.

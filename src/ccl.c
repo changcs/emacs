@@ -1,5 +1,5 @@
 /* CCL (Code Conversion Language) interpreter.
-   Copyright (C) 2001-2019 Free Software Foundation, Inc.
+   Copyright (C) 2001-2020 Free Software Foundation, Inc.
    Copyright (C) 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004,
      2005, 2006, 2007, 2008, 2009, 2010, 2011
      National Institute of Advanced Industrial Science and Technology (AIST)
@@ -854,6 +854,13 @@ struct ccl_prog_stack
 
 /* For the moment, we only support depth 256 of stack.  */
 static struct ccl_prog_stack ccl_prog_stack_struct[256];
+
+/* Return a translation table of id number ID.  */
+static inline Lisp_Object
+GET_TRANSLATION_TABLE (int id)
+{
+  return XCDR (XVECTOR (Vtranslation_table_vector)->contents[id]);
+}
 
 void
 ccl_driver (struct ccl_program *ccl, int *source, int *destination, int src_size, int dst_size, Lisp_Object charset_list)
@@ -2101,7 +2108,7 @@ usage: (ccl-execute-on-string CCL-PROGRAM STATUS STRING &optional CONTINUE UNIBY
 	  source[j++] = *p++;
       else
 	while (j < CCL_EXECUTE_BUF_SIZE && p < endp)
-	  source[j++] = STRING_CHAR_ADVANCE (p);
+	  source[j++] = string_char_advance (&p);
       consumed_chars += j;
       consumed_bytes = p - SDATA (str);
 
@@ -2126,7 +2133,7 @@ usage: (ccl-execute-on-string CCL-PROGRAM STATUS STRING &optional CONTINUE UNIBY
 	  if (NILP (unibyte_p))
 	    {
 	      for (j = 0; j < ccl.produced; j++)
-		CHAR_STRING_ADVANCE (destination[j], outp);
+		outp += CHAR_STRING (destination[j], outp);
 	    }
 	  else
 	    {
